@@ -1,10 +1,11 @@
 from openai import OpenAI
 import cv2 as cv
 import base64
+import os
 import tkinter as tk
 from PIL import Image, ImageTk
 
-api_key_joe = ""
+api_key_joe = os.getenv("OPEN_AI_KEY") or os.getenv("OPENAI_API_KEY")
 
 root = tk.Tk()
 root.title("Conclusion")
