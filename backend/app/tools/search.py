@@ -2,6 +2,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .. import repository
 from ..async_utils import retry_async
 from ..cache import cache_key, get_json, set_json
 from ..knowledge.base import GENERIC_AUTHORITY_SOURCES, KNOWLEDGE_SOURCES, KnowledgeSource
@@ -306,6 +307,9 @@ def infer_source_bucket(domain: str) -> SourceBucket:
         return "tier_2_scholarly"
     if any(lowered == token or lowered.endswith(f".{token}") for token in settings.general_sources_list):
         return "tier_1_blog"
+    learned_bucket = repository.lookup_source_bucket(lowered)
+    if learned_bucket in {"tier_3_authority", "tier_2_scholarly", "tier_1_blog"}:
+        return learned_bucket
     if any(token in lowered for token in ["jamanetwork", "bmj", "thelancet", "nejm", "nature", "sciencedirect", "springer", ".edu", ".gov", ".org"]):
         return "tier_2_scholarly"
     return "tier_1_blog"

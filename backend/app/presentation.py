@@ -162,6 +162,8 @@ def _build_bias_notes(source: SourceAssessment) -> list[str]:
 
 
 def _build_relevance_summary(source: SourceAssessment, claim_analysis: ClaimAnalysis) -> str:
+    if source.relevanceCheckSummary:
+        return source.relevanceCheckSummary
     focus_hits = [term for term in claim_analysis.focusTerms if term in f"{source.title} {source.snippet}".lower()]
     focus_text = ", ".join(focus_hits[:2]) if focus_hits else "the core claim"
     stance_text = {
@@ -281,7 +283,9 @@ def build_sentiment_distribution(sources: list[SourceAssessment]) -> SentimentDi
 
 
 def build_source_groups(sources: list[SourceAssessment]) -> tuple[list[EvidenceGroup], list[SourceAssessment]]:
-    ranked = sorted(sources, key=_display_rank, reverse=True)
+    relevance_filtered = [source for source in sources if source.relevanceScore >= 38]
+    pool = relevance_filtered or sources
+    ranked = sorted(pool, key=_display_rank, reverse=True)
     target_count = min(max(18, len(ranked)), 30) if ranked else 0
     selected = ranked[:target_count]
 
@@ -447,6 +451,16 @@ def build_step_summaries(
                 "Broken or inaccessible links were discarded before analysis.",
                 groups[0].summary,
                 groups[2].summary,
+            ],
+        ),
+        PipelineStepSummary(
+            key="relevance_filter",
+            title="Relevance Filter",
+            status="completed",
+            summary=f"{total_sources} sources remained materially relevant after semantic relevance screening.",
+            details=[
+                "Generic or weakly related pages were discarded before scoring.",
+                "Contradiction evidence was retained when it answered the same claim in the opposite direction.",
             ],
         ),
         PipelineStepSummary(

@@ -117,6 +117,42 @@ def _llm_source_validation(claim: str, source: SourceAssessment, extracted_text:
     )
 
 
+def _llm_source_validation_check(
+    claim: str,
+    source: SourceAssessment,
+    extracted_text: str,
+    draft: SourceValidationOutput,
+) -> SourceValidationOutput | None:
+    return generate_structured_output(
+        "audit",
+        (
+            "You check a source-validation decision for a health-claim investigation. "
+            "Return JSON only with keep, linkAlive, contentAccessible, extractedText, and note. "
+            "Reject sources that are still broken, inaccessible, or obviously unrelated."
+        ),
+        {
+            "claim": claim,
+            "draft": draft.model_dump(),
+            "source": {
+                "title": source.title,
+                "url": source.url,
+                "domain": source.domain,
+                "snippet": source.snippet,
+                "evidenceTier": source.evidenceTier,
+                "sourceBucket": source.sourceBucket,
+            },
+            "extracted_excerpt": extracted_text[:2200],
+            "instructions": [
+                "Keep contradiction evidence when it clearly addresses the claim.",
+                "Do not approve a source just because it is reachable if the content is off-topic or too thin.",
+                "You may correct the draft if it is too permissive or too strict.",
+            ],
+        },
+        SourceValidationOutput,
+        preferred_providers=["claude", "openai", "xai"],
+    )
+
+
 async def _validate_one(payload: tuple[int, SourceAssessment], claim: str, mode: str) -> SourceAssessment | None:
     index, source = payload
     link_alive, content_accessible, extracted_text, note, cache_status = await _fetch_source_text(source, mode)
@@ -126,11 +162,13 @@ async def _validate_one(payload: tuple[int, SourceAssessment], claim: str, mode:
     if keep and index < 16:
         llm_review = await asyncio.to_thread(_llm_source_validation, claim, source, extracted_text or source.snippet)
     if llm_review is not None:
-        keep = keep and llm_review.keep and llm_review.linkAlive and llm_review.contentAccessible
-        link_alive = llm_review.linkAlive
-        content_accessible = llm_review.contentAccessible
-        extracted_text = llm_review.extractedText or extracted_text
-        note = llm_review.note
+        checker_review = await asyncio.to_thread(_llm_source_validation_check, claim, source, extracted_text or source.snippet, llm_review)
+        effective_review = checker_review or llm_review
+        keep = keep and effective_review.keep and effective_review.linkAlive and effective_review.contentAccessible
+        link_alive = effective_review.linkAlive
+        content_accessible = effective_review.contentAccessible
+        extracted_text = effective_review.extractedText or extracted_text
+        note = effective_review.note
 
     if not keep:
         return None

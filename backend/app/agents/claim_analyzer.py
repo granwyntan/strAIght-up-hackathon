@@ -365,6 +365,29 @@ def _llm_semantic_pass(claim: str, context: str, baseline: ClaimSemantics, claim
     )
 
 
+def _llm_semantic_check(claim: str, context: str, draft: ClaimAnalyzerOutput, baseline: ClaimSemantics) -> ClaimAnalyzerOutput | None:
+    return generate_structured_output(
+        "audit",
+        (
+            "You are the checker for a health-claim semantic analysis. "
+            "Review the draft claim parsing and return JSON only with claimType, summary, focusTerms, redFlags, subject, intervention, action, outcome, relationshipType, and strength."
+        ),
+        {
+            "claim": claim,
+            "context": context,
+            "draft": draft.model_dump(),
+            "baseline": baseline.model_dump(),
+            "instructions": [
+                "Preserve the full meaning of the claim and correct any over-fragmentation.",
+                "Be strict about exaggerated language and causal wording.",
+                "If the draft is sound, keep it close rather than rewriting for style alone.",
+            ],
+        },
+        ClaimAnalyzerOutput,
+        preferred_providers=["openai", "gemini", "claude"],
+    )
+
+
 def analyze_claim(claim: str, context: str = "", desired_depth: str = "standard") -> ClaimAnalysis:
     cleaned_claim = _clean_phrase(claim)
     focus_terms = _focus_terms(f"{cleaned_claim} {context}")
@@ -374,6 +397,8 @@ def analyze_claim(claim: str, context: str = "", desired_depth: str = "standard"
     nlp_cloud_signals = refine_claim_with_nlp_cloud(cleaned_claim, context)
 
     llm_analysis = _llm_semantic_pass(cleaned_claim, context, heuristics, claim_type, red_flags)
+    if llm_analysis is not None:
+        llm_analysis = _llm_semantic_check(cleaned_claim, context, llm_analysis, heuristics) or llm_analysis
     semantics = heuristics
     summary = (
         f'The claim is treated as one semantic assertion about {heuristics.subject or "the subject"}, '

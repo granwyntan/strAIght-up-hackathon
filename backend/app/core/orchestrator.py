@@ -7,6 +7,7 @@ from ..agents.consensus_reviewer import review_consensus
 from ..agents.citation_auditor import audit_citations
 from ..agents.decision_agent import summarize_decision, user_facing_verdict_label
 from ..agents.query_planner import refine_claim_analysis
+from ..agents.relevance_filter import filter_relevant_sources
 from ..agents.quote_verifier import verify_quotes
 from ..agents.report_writer import draft_report
 from ..agents.sentiment_consensus import apply_sentiment_consensus
@@ -83,10 +84,22 @@ def _state_cache_status(sources) -> str:
     return "live"
 
 
+def _truth_classification(verdict: str | None) -> str:
+    if verdict == "trustworthy":
+        return "Likely fact pattern"
+    if verdict == "untrustworthy":
+        return "Likely falsehood or hoax"
+    return "Needs nuance"
+
+
 async def run_investigation(investigation_id: str, request: InvestigationCreateRequest) -> None:
     tracker = ProgressTracker(investigation_id)
     repository.set_investigation_status(investigation_id, "running", summary="Investigation running.")
     reset_stage_rotation()
+    repository.update_state(
+        investigation_id,
+        lambda state: state.model_copy(update={"progressPercent": 3, "discoveredDomains": repository.list_known_source_domains()}),
+    )
 
     try:
         resolved_mode = _resolved_mode(request)
@@ -97,6 +110,9 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                 update={
                     "resolvedMode": resolved_mode,
                     "cacheStatus": "cached",
+                    "progressPercent": 100,
+                    "truthClassification": _truth_classification(cached_result.get("verdict")),
+                    "discoveredDomains": repository.list_known_source_domains(),
                     "orchestrationNotes": ["Loaded a fresh final result from cache."],
                 }
             )
@@ -162,8 +178,10 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                 update={
                     "claimAnalysis": claim_analysis,
                     "recommendedQueries": claim_analysis.generatedQueries,
+                    "progressPercent": 14,
                     "resolvedMode": resolved_mode,
                     "cacheStatus": "live",
+                    "discoveredDomains": repository.list_known_source_domains(),
                     "orchestrationNotes": [f"Mode resolved to {resolved_mode}.", f"Prepared {len(claim_analysis.generatedQueries)} semantic queries."],
                 }
             ),
@@ -179,9 +197,17 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             ),
         )
         tracker.info("search", f"Source scout collected {len(raw_sources)} candidate sources.")
+        repository.register_source_domains(raw_sources)
         repository.update_state(
             investigation_id,
-            lambda state: state.model_copy(update={"sources": raw_sources, "cacheStatus": _state_cache_status(raw_sources)}),
+            lambda state: state.model_copy(
+                update={
+                    "sources": raw_sources,
+                    "progressPercent": 28,
+                    "cacheStatus": _state_cache_status(raw_sources),
+                    "discoveredDomains": repository.list_known_source_domains(),
+                }
+            ),
         )
 
         validated_sources = await _run_stage(
@@ -194,9 +220,38 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             ),
         )
         tracker.info("validate", f"Source validator retained {len(validated_sources)} accessible sources.")
+        repository.register_source_domains(validated_sources)
         repository.update_state(
             investigation_id,
-            lambda state: state.model_copy(update={"sources": validated_sources, "cacheStatus": _state_cache_status(validated_sources)}),
+            lambda state: state.model_copy(
+                update={
+                    "sources": validated_sources,
+                    "progressPercent": 42,
+                    "cacheStatus": _state_cache_status(validated_sources),
+                    "discoveredDomains": repository.list_known_source_domains(),
+                }
+            ),
+        )
+
+        relevant_sources = await _run_stage(
+            investigation_id,
+            "relevance",
+            "Relevance filter",
+            lambda: _with_summary(
+                filter_relevant_sources(request.claim, claim_analysis, validated_sources),
+                "Removed weakly related sources and kept only evidence that materially addressed the claim or its contradiction path.",
+            ),
+        )
+        tracker.info("relevance", f"Relevance filter kept {len(relevant_sources)} claim-relevant sources.")
+        repository.update_state(
+            investigation_id,
+            lambda state: state.model_copy(
+                update={
+                    "sources": relevant_sources,
+                    "progressPercent": 54,
+                    "cacheStatus": _state_cache_status(relevant_sources),
+                }
+            ),
         )
 
         classified_sources = await _run_stage(
@@ -205,7 +260,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             "Study classifier",
             lambda: asyncio.to_thread(
                 lambda: (
-                    classify_sources(validated_sources),
+                    classify_sources(relevant_sources),
                     "Classified evidence tiers from reviews and RCTs down to observational work and general web content.",
                 )
             ),
@@ -213,7 +268,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
         tracker.info("classify", "Study classifier assigned evidence tiers and study-quality factors.")
         repository.update_state(
             investigation_id,
-            lambda state: state.model_copy(update={"sources": classified_sources}),
+            lambda state: state.model_copy(update={"sources": classified_sources, "progressPercent": 64}),
         )
 
         audited_sources = await _run_stage(
@@ -231,7 +286,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
         enriched_sources = enrich_sources(audited_sources, claim_analysis)
         repository.update_state(
             investigation_id,
-            lambda state: state.model_copy(update={"sources": enriched_sources}),
+            lambda state: state.model_copy(update={"sources": enriched_sources, "progressPercent": 72}),
         )
 
         quote_verified_sources = await _run_stage(
@@ -246,7 +301,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
         tracker.info("quotes", "Quote verifier removed any quote that could not be confirmed directly.")
         repository.update_state(
             investigation_id,
-            lambda state: state.model_copy(update={"sources": quote_verified_sources}),
+            lambda state: state.model_copy(update={"sources": quote_verified_sources, "progressPercent": 80}),
         )
 
         sentiment_sources = await _run_stage(
@@ -261,7 +316,14 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
         tracker.info("sentiment", "Dual stance review completed and confidence factors were calibrated.")
         repository.update_state(
             investigation_id,
-            lambda state: state.model_copy(update={"sources": sentiment_sources, "cacheStatus": _state_cache_status(sentiment_sources)}),
+            lambda state: state.model_copy(
+                update={
+                    "sources": sentiment_sources,
+                    "progressPercent": 88,
+                    "cacheStatus": _state_cache_status(sentiment_sources),
+                    "discoveredDomains": repository.list_known_source_domains(),
+                }
+            ),
         )
 
         matrix, consensus_breakdown, score, verdict, narrative, strengths, concerns, misinformation_risk = await _run_stage(
@@ -276,6 +338,10 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             ),
         )
         tracker.info("decision", "Decision engine produced the calibrated credibility verdict.")
+        repository.update_state(
+            investigation_id,
+            lambda state: state.model_copy(update={"progressPercent": 92, "truthClassification": _truth_classification(verdict)}),
+        )
 
         llm_verdicts = [verdict]
         llm_score_adjustments: list[int] = []
@@ -330,6 +396,10 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                 tracker.info("consensus", "Consensus challenger returned no changes, so the reviewed verdict was kept.")
         else:
             tracker.info("review", "Cross-validation reviewers skipped because no LLM providers are configured.")
+        repository.update_state(
+            investigation_id,
+            lambda state: state.model_copy(update={"progressPercent": 96, "truthClassification": _truth_classification(verdict)}),
+        )
 
         if settings.llm_agents_enabled:
             writer_target = stage_target_label("writer")
@@ -355,12 +425,15 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             )
             if report_draft is not None:
                 narrative = report_draft.narrative
+                ai_summary = report_draft.userSummary
                 strengths = report_draft.strengths or strengths
                 concerns = report_draft.concerns or concerns
                 tracker.info("report", "Report writer polished the final narrative and key takeaways.")
             else:
+                ai_summary = narrative
                 tracker.info("report", "Report writer returned no draft, so the baseline decision narrative was kept.")
         else:
+            ai_summary = narrative
             tracker.info("report", "Report writer skipped because no LLM providers are configured.")
 
         source_groups, display_sources = build_source_groups(sentiment_sources)
@@ -414,14 +487,18 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             confidenceLevel=confidence_level,
             llmAgreementScore=llm_agreement_score,
             misinformationRisk=misinformation_risk,
+            progressPercent=100,
             resolvedMode=resolved_mode,
             cacheStatus=cache_status,
+            truthClassification=_truth_classification(verdict),
+            discoveredDomains=repository.list_known_source_domains(),
             orchestrationNotes=[
                 f"Mode resolved to {resolved_mode}.",
                 f"Final result assembled from {len(display_sources)} visible sources.",
                 f"Cache state: {cache_status}.",
             ],
             expertInsight=verdict_summary or narrative,
+            aiSummary=ai_summary,
             verdictSummary=verdict_summary or narrative,
             finalNarrative=narrative,
             evidenceBreakdown=evidence_breakdown,

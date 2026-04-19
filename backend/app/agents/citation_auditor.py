@@ -42,6 +42,43 @@ def _llm_citation_review(claim: str, source: SourceAssessment, resolved_citation
     )
 
 
+def _llm_citation_check(
+    claim: str,
+    source: SourceAssessment,
+    resolved_citations: list[CitationAssessment],
+    draft_review: CitationReviewOutput,
+) -> CitationReviewOutput | None:
+    return generate_structured_output(
+        "audit",
+        (
+            "You are the checker for a citation-audit stage in a health-claim investigation. "
+            "Return JSON only with citationIntegrity, stance, and note. "
+            "Verify whether the draft review matches the citation chain and the source's apparent relationship to the claim."
+        ),
+        {
+            "claim": claim,
+            "source": {
+                "title": source.title,
+                "url": source.url,
+                "domain": source.domain,
+                "snippet": source.snippet,
+                "sourceBucket": source.sourceBucket,
+                "evidenceTier": source.evidenceTier,
+                "query": source.query,
+            },
+            "resolved_citations": [citation.model_dump() for citation in resolved_citations],
+            "draft_review": draft_review.model_dump(),
+            "instructions": [
+                "Keep the stance limited to supportive, mixed, contradictory, or unclear.",
+                "Use lower integrity when the citation chain is weak, broken, or generic.",
+                "Use higher integrity when the chain includes strong guidance, reviews, or trials that actually address the claim.",
+            ],
+        },
+        CitationReviewOutput,
+        preferred_providers=["openai", "claude", "gemini"],
+    )
+
+
 def audit_citations(claim: str, sources: list[SourceAssessment]) -> list[SourceAssessment]:
     audited: list[SourceAssessment] = []
 
@@ -98,10 +135,15 @@ def audit_citations(claim: str, sources: list[SourceAssessment]) -> list[SourceA
             llm_review = _llm_citation_review(claim, source, resolved_citations)
         reviewed_stance = source.stance
         if llm_review is not None:
-            citation_integrity = round((citation_integrity + llm_review.citationIntegrity) / 2)
-            if llm_review.stance in {"supportive", "mixed", "contradictory", "unclear"}:
-                reviewed_stance = llm_review.stance
-            note = f"{note} {llm_review.note}"
+            checker_review = _llm_citation_check(claim, source, resolved_citations, llm_review)
+            effective_review = checker_review or llm_review
+            integrity_values = [citation_integrity, llm_review.citationIntegrity]
+            if checker_review is not None:
+                integrity_values.append(checker_review.citationIntegrity)
+            citation_integrity = round(sum(integrity_values) / len(integrity_values))
+            if effective_review.stance in {"supportive", "mixed", "contradictory", "unclear"}:
+                reviewed_stance = effective_review.stance
+            note = f"{note} {effective_review.note}"
 
         notes = list(source.notes)
         notes.append(note)
