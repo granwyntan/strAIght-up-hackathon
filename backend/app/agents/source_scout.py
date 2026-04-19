@@ -1,45 +1,121 @@
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from ..core.scoring import EVIDENCE_TIER_TO_SCORE, SOURCE_BUCKET_TO_SCORE
+from ..async_utils import gather_limited
 from ..models import SourceAssessment
-from ..tools.search import SearchDocument, infer_evidence_tier, infer_source_bucket, infer_stance, search
+from ..settings import settings
+from ..tools.search import (
+    EVIDENCE_TIER_TO_SCORE,
+    SOURCE_BUCKET_TO_SCORE,
+    SearchDocument,
+    infer_evidence_tier,
+    infer_source_bucket,
+    infer_stance,
+    search,
+)
 
 
-def _rank_source(document: SearchDocument, claim: str) -> tuple[int, int, int]:
+def _rank_source(document: SearchDocument, claim: str) -> tuple[int, int, int, int]:
     source_bucket = document.sourceBucket if document.sourceBucket else infer_source_bucket(document.domain)
     evidence_tier = document.evidenceTier if document.evidenceTier else infer_evidence_tier(document.title, document.snippet)
     stance = document.stance if document.stance != "unclear" else infer_stance(claim, document.snippet)
-    stance_bonus = 1 if stance in {"supportive", "contradictory", "mixed"} else 0
+    stance_bonus = {"supportive": 1, "mixed": 1, "contradictory": 2, "unclear": 0}[stance]
     return (
         SOURCE_BUCKET_TO_SCORE[source_bucket],
         EVIDENCE_TIER_TO_SCORE[evidence_tier],
         stance_bonus,
+        len((document.snippet or "").split()),
     )
 
 
-def scout_sources(claim: str, queries: list[str], source_urls: list[str], mode: str = "auto", desired_depth: str = "standard") -> list[SourceAssessment]:
-    seen_urls: set[str] = set()
-    discovered: list[SearchDocument] = []
-    sources: list[SourceAssessment] = []
-    max_sources = 70 if desired_depth == "deep" else 50
-    query_budget = len(queries) if mode == "offline" else min(len(queries), 12 if desired_depth == "standard" else 16)
+def _query_budget(desired_depth: str) -> int:
+    return settings.search_query_budget_deep if desired_depth == "deep" else settings.search_query_budget_standard
 
-    for query in queries[:query_budget]:
-        for result in search(query, mode=mode):
+
+def _source_target(desired_depth: str) -> int:
+    return settings.source_target_deep if desired_depth == "deep" else settings.source_target_standard
+
+
+def _dynamic_query_budget(queries: list[str], desired_depth: str) -> int:
+    if not queries:
+        return 0
+    configured = _query_budget(desired_depth)
+    scaled = round(len(queries) * (0.82 if desired_depth == "deep" else 0.75))
+    floor = 14 if desired_depth == "deep" else 10
+    return min(len(queries), max(floor, configured, scaled))
+
+
+def _dynamic_source_target(queries: list[str], source_urls: list[str], desired_depth: str) -> int:
+    configured = _source_target(desired_depth)
+    per_query_target = round(len(queries) * (2.7 if desired_depth == "deep" else 2.1))
+    manual_bonus = min(8, len(source_urls) * 2)
+    ceiling = 96 if desired_depth == "deep" else 64
+    return max(configured, min(ceiling, per_query_target + manual_bonus))
+
+
+def _diversify(documents: list[SearchDocument], claim: str, limit: int) -> list[SearchDocument]:
+    ranked = sorted(documents, key=lambda item: _rank_source(item, claim), reverse=True)
+    contradictory = [item for item in ranked if (item.stance if item.stance != "unclear" else infer_stance(claim, item.snippet)) == "contradictory"]
+    mixed = [item for item in ranked if (item.stance if item.stance != "unclear" else infer_stance(claim, item.snippet)) == "mixed"]
+    supportive = [item for item in ranked if (item.stance if item.stance != "unclear" else infer_stance(claim, item.snippet)) == "supportive"]
+    unclear = [item for item in ranked if item not in contradictory and item not in mixed and item not in supportive]
+
+    selected: list[SearchDocument] = []
+    seen_urls: set[str] = set()
+    target_negative = max(6, round(limit * 0.18))
+    target_neutral = max(8, round(limit * 0.22))
+
+    for bucket, bucket_limit in ((contradictory, target_negative), (mixed, target_neutral)):
+        for item in bucket[:bucket_limit]:
+            if item.url not in seen_urls:
+                selected.append(item)
+                seen_urls.add(item.url)
+
+    for bucket in (supportive, unclear, ranked):
+        for item in bucket:
+            if len(selected) >= limit:
+                break
+            if item.url in seen_urls:
+                continue
+            selected.append(item)
+            seen_urls.add(item.url)
+        if len(selected) >= limit:
+            break
+
+    return selected[:limit]
+
+
+async def scout_sources(
+    claim: str,
+    queries: list[str],
+    source_urls: list[str],
+    mode: str = "auto",
+    desired_depth: str = "standard",
+) -> list[SourceAssessment]:
+    seen_urls: set[str] = set()
+    sources: list[SourceAssessment] = []
+    max_sources = _dynamic_source_target(queries, source_urls, desired_depth)
+    query_budget = _dynamic_query_budget(queries, desired_depth)
+
+    discovered_batches = await gather_limited(
+        queries[:query_budget],
+        lambda query: search(query, mode=mode),
+        concurrency=settings.pipeline_max_concurrency,
+    )
+
+    discovered: list[SearchDocument] = []
+    for batch in discovered_batches:
+        for result in batch:
             if result.url in seen_urls:
                 continue
             seen_urls.add(result.url)
             discovered.append(result)
-            if mode != "offline" and len(discovered) >= max_sources * 4:
-                break
-        if mode != "offline" and len(discovered) >= max_sources * 4:
-            break
 
-    for result in sorted(discovered, key=lambda item: _rank_source(item, claim), reverse=True):
+    for result in _diversify(discovered, claim, max_sources):
         source_bucket = result.sourceBucket if result.sourceBucket else infer_source_bucket(result.domain)
         evidence_tier = result.evidenceTier if result.evidenceTier else infer_evidence_tier(result.title, result.snippet)
         stance = result.stance if result.stance != "unclear" else infer_stance(claim, result.snippet)
+        cache_status = result.cacheStatus if result.cacheStatus in {"live", "cached", "fallback"} else "live"
 
         sources.append(
             SourceAssessment(
@@ -56,7 +132,9 @@ def scout_sources(claim: str, queries: list[str], source_urls: list[str], mode: 
                 evidenceTier=evidence_tier,
                 evidenceScore=EVIDENCE_TIER_TO_SCORE[evidence_tier],
                 stance=stance,
-                notes=[f"Discovered from query: {result.query}", f"Retrieved via {result.provider}."],
+                cacheStatus=cache_status,
+                sourceWeight=settings.source_weight_for_bucket(source_bucket),
+                notes=[f"Discovered from query: {result.query}", f"Retrieved via {result.provider} ({cache_status})."],
             )
         )
 
@@ -81,6 +159,7 @@ def scout_sources(claim: str, queries: list[str], source_urls: list[str], mode: 
                 evidenceTier=evidence_tier,
                 evidenceScore=EVIDENCE_TIER_TO_SCORE[evidence_tier],
                 stance="unclear",
+                sourceWeight=settings.source_weight_for_bucket(source_bucket),
                 notes=["Added directly by the user."],
             )
         )

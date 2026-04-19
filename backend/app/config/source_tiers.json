@@ -1,0 +1,51 @@
+{
+  "verifiedAuthorities": {
+    "weight": 1.0,
+    "domains": [
+      "who.int",
+      "nih.gov",
+      "cdc.gov",
+      "fda.gov",
+      "ods.od.nih.gov",
+      "nccih.nih.gov",
+      "medlineplus.gov",
+      "ncbi.nlm.nih.gov",
+      "pubmed.ncbi.nlm.nih.gov",
+      "pmc.ncbi.nlm.nih.gov",
+      "cochrane.org",
+      "cochranelibrary.com",
+      "nice.org.uk",
+      "aap.org",
+      "mayoclinicproceedings.org"
+    ]
+  },
+  "establishedSources": {
+    "weight": 0.75,
+    "domains": [
+      "jamanetwork.com",
+      "bmj.com",
+      "thelancet.com",
+      "nejm.org",
+      "nature.com",
+      "sciencedirect.com",
+      "springer.com",
+      "cell.com",
+      "harvard.edu",
+      "hsph.harvard.edu",
+      "stanford.edu",
+      "mayoclinic.org",
+      "clevelandclinic.org",
+      "aad.org",
+      "aasm.org"
+    ]
+  },
+  "generalSources": {
+    "weight": 0.4,
+    "domains": [
+      "healthline.com",
+      "webmd.com",
+      "medicalnewstoday.com",
+      "patient.info"
+    ]
+  }
+}

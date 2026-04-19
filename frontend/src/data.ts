@@ -1,8 +1,8 @@
-export type AppTab = "home" | "investigate" | "history" | "stack";
+export type AppTab = "home" | "consultant" | "nutrition" | "supplements" | "profile";
 export type InvestigationStatus = "queued" | "running" | "completed" | "failed";
 export type ClaimVerdict = "trustworthy" | "mixed" | "overstated" | "untrustworthy";
 export type SourceSentiment = "positive" | "neutral" | "negative";
-export type ConfidenceLevel = "low" | "moderate" | "high";
+export type ConfidenceLevel = "low" | "medium" | "high";
 export type MisinformationRisk = "low" | "moderate" | "high";
 
 export interface BrandInfo {
@@ -67,9 +67,11 @@ export interface AtomicClaim {
 
 export interface ClaimSemantics {
   subject: string;
+  intervention: string;
   action: string;
   outcome: string;
   impliedCausation: boolean;
+  relationshipType: "causal" | "correlational" | "opinion";
   strength: number;
 }
 
@@ -111,6 +113,12 @@ export interface SourceAssessment {
   sentimentScientific: SourceSentiment | null;
   sentimentCritical: SourceSentiment | null;
   agreementFactor: number;
+  clarityFactor: number;
+  studyQualityFactor: number;
+  confidenceFactor: number;
+  sourceWeight: number;
+  weightedContribution: number;
+  cacheStatus: "live" | "cached" | "fallback";
   evidence: EvidenceExtraction | null;
 }
 
@@ -174,6 +182,10 @@ export interface ConsensusBreakdown {
   contradictingWeight: number;
   disagreementWeight: number;
   rawScore: number;
+  totalWeight: number;
+  supportShare: number;
+  contradictionShare: number;
+  credibilityScore: number;
   normalizedScore: number;
   summary: string;
 }
@@ -211,6 +223,9 @@ export interface InvestigationDetail extends InvestigationSummary {
   confidenceLevel: ConfidenceLevel | null;
   llmAgreementScore: number | null;
   misinformationRisk: MisinformationRisk | null;
+  resolvedMode: "auto" | "offline" | "live" | null;
+  cacheStatus: "live" | "cached" | "fallback";
+  orchestrationNotes: string[];
   expertInsight: string;
   verdictSummary: string;
   finalNarrative: string;
@@ -268,58 +283,82 @@ export const defaultBootstrap: BootstrapPayload = {
   architecture: [
     {
       id: "a1",
-      title: "Claim analyzer",
-      summary: "Understands the claim semantically as one meaning-preserving health assertion and scores its certainty."
+      title: "Claim Analyst · Medical Doctor",
+      summary: "Understands the claim semantically as one meaning-preserving health assertion and checks whether the clinical wording overreaches."
     },
     {
       id: "a2",
-      title: "Source scout",
-      summary: "Uses SerpAPI for breadth and Tavily for deeper retrieval before ranking candidate evidence."
+      title: "Research Agent · Scientist",
+      summary: "Uses broad and deep retrieval paths to gather studies, reviews, guidelines, and contradiction-seeking evidence."
     },
     {
       id: "a3",
-      title: "Source validator",
+      title: "Validation Agent · Data Engineer",
       summary: "Keeps only accessible links with readable content so dead or empty sources never reach the result."
     },
     {
       id: "a4",
-      title: "Quote verifier",
-      summary: "Checks that any displayed quote actually exists in the source text before it can be shown."
+      title: "Stance Agent · Epidemiologist",
+      summary: "Interprets whether each source supports, contradicts, or stays uncertain based on actual evidence quality."
     },
     {
       id: "a5",
-      title: "Decision engine",
-      summary: "Combines evidence quality, contradiction pressure, and dual-model agreement into the final score."
+      title: "Consensus Agent · Statistician",
+      summary: "Combines evidence quality, contradiction pressure, and agreement into the final credibility score."
+    },
+    {
+      id: "a6",
+      title: "Verifier Agent · Auditor",
+      summary: "Checks quotes, contradictions, and model mismatches before the result is allowed to settle."
+    },
+    {
+      id: "a7",
+      title: "Summary Agent · Health Communicator",
+      summary: "Turns the technical review into plain-language evidence guidance without medical jargon."
     }
   ],
   suggestedLibraries: [
     {
       id: "l1",
-      name: "Tavily / SerpAPI",
-      category: "Search",
-      whyItHelps: "Live web discovery for secondary queries.",
-      adoptionNote: "Best first live-search upgrade."
+      name: "TanStack Query",
+      category: "Caching",
+      whyItHelps: "Reliable data fetching, caching, and background refresh.",
+      adoptionNote: "Best next frontend upgrade."
     },
     {
       id: "l2",
-      name: "OpenAlex / Crossref / Semantic Scholar",
-      category: "Academic graph",
-      whyItHelps: "Metadata, citation graph enrichment, and journal lookups.",
-      adoptionNote: "Strong next step for evidence depth."
+      name: "Zustand",
+      category: "State",
+      whyItHelps: "Simple global state for tabs, filters, and result preferences.",
+      adoptionNote: "Keeps the app clean as screens grow."
     },
     {
       id: "l3",
-      name: "trafilatura",
-      category: "Extraction",
-      whyItHelps: "Cleaner article text extraction before agent analysis.",
-      adoptionNote: "Useful once you move beyond snippets."
+      name: "NLP Cloud",
+      category: "NLP",
+      whyItHelps: "Semantic parsing, entity extraction, and text classification for claim understanding.",
+      adoptionNote: "Best added with guarded fallbacks."
     },
     {
       id: "l4",
-      name: "OpenAI structured outputs",
-      category: "LLM reasoning",
-      whyItHelps: "Better query generation and narrative synthesis.",
-      adoptionNote: "Optional upgrade on top of this architecture."
+      name: "react-native-paper",
+      category: "UI",
+      whyItHelps: "Production-grade components with polished mobile defaults.",
+      adoptionNote: "Good fit for the next design pass."
+    },
+    {
+      id: "l5",
+      name: "react-native-reanimated",
+      category: "Motion",
+      whyItHelps: "Smooth swipes, expansions, and bottom-sheet motion.",
+      adoptionNote: "Recommended for premium interactions."
+    },
+    {
+      id: "l6",
+      name: "AsyncStorage",
+      category: "Offline cache",
+      whyItHelps: "Keeps lightweight result data available when connections wobble.",
+      adoptionNote: "Helpful for mobile resilience."
     }
   ],
   storageNote: "SQLite persists investigations, stage runs, and progress logs so work survives restarts."

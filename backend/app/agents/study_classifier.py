@@ -10,6 +10,14 @@ def classify_sources(sources: list[SourceAssessment]) -> list[SourceAssessment]:
         if evidence_tier == "blog" and source.sourceScore >= 2:
             evidence_tier = infer_evidence_tier(source.title, source.snippet)
 
+        study_quality_factor = {
+            "review": 1.0,
+            "rct": 0.95,
+            "observational": 0.8,
+            "case_report": 0.65,
+            "blog": 0.5,
+        }[evidence_tier]
+
         journal_type = source.journalType
         if journal_type in {"", "user supplied"}:
             journal_type = evidence_tier.replace("_", " ")
@@ -23,10 +31,10 @@ def classify_sources(sources: list[SourceAssessment]) -> list[SourceAssessment]:
                 update={
                     "evidenceTier": evidence_tier,
                     "evidenceScore": EVIDENCE_TIER_TO_SCORE[evidence_tier],
+                    "studyQualityFactor": study_quality_factor,
                     "journalType": journal_type,
                     "notes": notes,
                 }
             )
         )
     return classified
-

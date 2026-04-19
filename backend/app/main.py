@@ -42,6 +42,7 @@ def health() -> dict[str, object]:
             "gemini": settings.has_gemini,
             "xai": settings.has_xai,
             "deepseek": settings.has_deepseek,
+            "nlpcloud": settings.has_nlpcloud,
             "tavily": settings.has_tavily,
             "serpapi": settings.has_serpapi,
         },
@@ -56,6 +57,16 @@ def health() -> dict[str, object]:
         "searchStrategy": {
             "breadth": "SerpAPI",
             "depth": "Tavily",
+        },
+        "cache": {
+            "searchStableTtlSeconds": settings.search_cache_ttl_stable_seconds,
+            "searchTrendingTtlSeconds": settings.search_cache_ttl_trending_seconds,
+            "finalTtlSeconds": settings.final_cache_ttl_seconds,
+        },
+        "pipeline": {
+            "maxConcurrency": settings.pipeline_max_concurrency,
+            "standardSourceTarget": settings.source_target_standard,
+            "deepSourceTarget": settings.source_target_deep,
         },
     }
 

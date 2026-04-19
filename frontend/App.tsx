@@ -17,6 +17,7 @@ import {
   TextInput,
   View
 } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import {
   defaultBootstrap,
@@ -30,6 +31,22 @@ import {
   type InvestigationStatus,
   type InvestigationSummary
 } from "./src/data";
+
+function safeText(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function safeTrim(value: unknown) {
+  return safeText(value).trim();
+}
+
+function safeUpper(value: unknown) {
+  return safeText(value).toUpperCase();
+}
+
+function safeLower(value: unknown) {
+  return safeText(value).toLowerCase();
+}
 
 function metroHost(): string | null {
   const scriptURL = (NativeModules.SourceCode as { scriptURL?: string } | undefined)?.scriptURL;
@@ -47,8 +64,8 @@ function metroHost(): string | null {
   }
 }
 
-function normalizeApiBaseUrl(rawValue: string) {
-  const trimmed = rawValue.trim();
+function normalizeApiBaseUrl(rawValue?: string | null) {
+  const trimmed = safeTrim(rawValue);
   if (!trimmed) {
     return "";
   }
@@ -58,10 +75,10 @@ function normalizeApiBaseUrl(rawValue: string) {
 }
 
 function parseCandidateEnv(value?: string) {
-  if (!value) {
+  if (!safeTrim(value)) {
     return [];
   }
-  return value
+  return safeText(value)
     .split(/[,\n]/)
     .map((item) => normalizeApiBaseUrl(item))
     .filter(Boolean);
@@ -120,7 +137,7 @@ function formatTimestamp(value: string) {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return `${padTimestamp(date.getDate())}/${padTimestamp(date.getMonth() + 1)}/${date.getFullYear()}, ${padTimestamp(date.getHours())}:${padTimestamp(date.getMinutes())}:${padTimestamp(date.getSeconds())}`;
+  return `${padTimestamp(date.getDate())}/${padTimestamp(date.getMonth() + 1)}/${date.getFullYear()}, ${padTimestamp(date.getHours())}:${padTimestamp(date.getMinutes())}`;
 }
 
 async function readApiError(response: Response, fallback: string) {
@@ -128,17 +145,17 @@ async function readApiError(response: Response, fallback: string) {
     const contentType = response.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const payload = (await response.json()) as { detail?: unknown; message?: unknown };
-      if (typeof payload.detail === "string" && payload.detail.trim()) {
-        return payload.detail;
+      if (safeTrim(payload.detail)) {
+        return safeTrim(payload.detail);
       }
-      if (typeof payload.message === "string" && payload.message.trim()) {
-        return payload.message;
+      if (safeTrim(payload.message)) {
+        return safeTrim(payload.message);
       }
     }
 
     const text = await response.text();
-    if (text.trim()) {
-      return text.trim();
+    if (safeTrim(text)) {
+      return safeTrim(text);
     }
   } catch {
     return `${fallback} (HTTP ${response.status})`;
@@ -163,6 +180,9 @@ const displayFont = Platform.select({
   android: "serif",
   default: undefined
 });
+const androidStatusInset = Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0;
+const bottomBarOffset = Platform.OS === "android" ? 24 : 18;
+const contentBottomPadding = Platform.OS === "android" ? 164 : 144;
 
 export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(resolveApiBaseUrl);
@@ -184,7 +204,6 @@ export default function App() {
   const [claimDraft, setClaimDraft] = useState("Gut health supplements can fix eczema");
   const [contextDraft, setContextDraft] = useState("Focus on whether evidence supports the wording and whether blogs are overclaiming.");
   const [sourceUrlDraft, setSourceUrlDraft] = useState("");
-  const [mode, setMode] = useState<"auto" | "offline" | "live">("auto");
   const [depth, setDepth] = useState<"standard" | "deep">("deep");
 
   useEffect(() => {
@@ -215,7 +234,7 @@ export default function App() {
   }, [selectedInvestigation]);
 
   const filteredHistory = useMemo(() => {
-    const query = historyQuery.trim().toLowerCase();
+    const query = safeLower(safeTrim(historyQuery));
     const ordered = [
       ...history
         .slice()
@@ -230,7 +249,7 @@ export default function App() {
     if (!query) {
       return ordered;
     }
-    return ordered.filter((item) => `${item.claim} ${item.summary}`.toLowerCase().includes(query));
+    return ordered.filter((item) => safeLower(`${safeText(item.claim)} ${safeText(item.summary)}`).includes(query));
   }, [history, historyOrder, historyQuery]);
 
   async function requestApi(path: string, init?: RequestInit) {
@@ -353,7 +372,7 @@ export default function App() {
   }
 
   async function submitInvestigation() {
-    if (claimDraft.trim().length < 5) {
+    if (safeTrim(claimDraft).length < 5) {
       Alert.alert("Add a stronger prompt", "Enter a full claim so the agents have something meaningful to investigate.");
       return;
     }
@@ -371,9 +390,9 @@ export default function App() {
           context: contextDraft,
           sourceUrls: sourceUrlDraft
             .split(/\s|,|\n/)
-            .map((item) => item.trim())
+            .map((item) => safeTrim(item))
             .filter(Boolean),
-          mode,
+          mode: "auto",
           desiredDepth: depth
         })
       });
@@ -385,7 +404,7 @@ export default function App() {
       const payload = (await response.json()) as InvestigationDetail;
       setSelectedId(payload.id);
       setSelectedInvestigation(payload);
-      setActiveTab("investigate");
+      setActiveTab("consultant");
       await loadHistory(false);
     } catch (error) {
       console.warn("Could not start investigation", error);
@@ -447,7 +466,7 @@ export default function App() {
   function applyFeaturedClaim(item: FeaturedClaim) {
     setClaimDraft(item.claim);
     setContextDraft(item.whyItIsInteresting);
-    setActiveTab("investigate");
+    setActiveTab("consultant");
   }
 
   function moveHistoryItem(id: string, direction: -1 | 1) {
@@ -481,9 +500,9 @@ export default function App() {
               loadingBootstrap={loadingBootstrap}
               history={history}
               onUseClaim={applyFeaturedClaim}
-              onOpenInvestigate={() => setActiveTab("investigate")}
+              onOpenInvestigate={() => setActiveTab("consultant")}
             />
-          ) : activeTab === "investigate" ? (
+          ) : activeTab === "consultant" ? (
             <InvestigateScreen
               apiError={apiError}
               onRetryBackend={() => void retryBackendConnection()}
@@ -493,28 +512,35 @@ export default function App() {
               setContextDraft={setContextDraft}
               sourceUrlDraft={sourceUrlDraft}
               setSourceUrlDraft={setSourceUrlDraft}
-              mode={mode}
-              setMode={setMode}
               depth={depth}
               setDepth={setDepth}
               submitting={submitting}
               onSubmit={() => void submitInvestigation()}
               investigation={selectedInvestigation}
               loadingSelected={loadingSelected}
-            />
-          ) : activeTab === "history" ? (
-            <HistoryScreen
               history={filteredHistory}
               loadingHistory={loadingHistory}
               historyQuery={historyQuery}
               setHistoryQuery={setHistoryQuery}
-              onOpen={(id) => void openHistorySheet(id)}
-              onDelete={confirmDeleteHistory}
-              onMoveUp={(id) => moveHistoryItem(id, -1)}
-              onMoveDown={(id) => moveHistoryItem(id, 1)}
+              onOpenHistory={(id) => void openHistorySheet(id)}
+              onDeleteHistory={confirmDeleteHistory}
+              onMoveHistoryUp={(id) => moveHistoryItem(id, -1)}
+              onMoveHistoryDown={(id) => moveHistoryItem(id, 1)}
+            />
+          ) : activeTab === "nutrition" ? (
+            <PlaceholderTab
+              title="Diet / Nutrition Analyzer"
+              subtitle="A clean placeholder for meal-quality scoring, nutrition pattern review, and food log insights."
+              tone="lime"
+            />
+          ) : activeTab === "supplements" ? (
+            <PlaceholderTab
+              title="Medicine / Supplement Analyzer"
+              subtitle="A focused placeholder for medication checks, supplement safety, and interaction-aware evidence reviews."
+              tone="aqua"
             />
           ) : (
-            <StackScreen bootstrap={bootstrap} />
+            <ProfileScreen history={history} />
           )}
         </ScrollView>
 
@@ -581,7 +607,7 @@ function HomeScreen({
         <View style={styles.heroActionRow}>
           <PrimaryButton label="Run investigation" onPress={onOpenInvestigate} icon={<AppIcon kind="play" color="#fffdfa" size={18} />} />
           <SecondaryButton
-            label={latest ? `${latest.status.toUpperCase()} latest run` : "No runs yet"}
+            label={latest ? `${statusLabel(latest.status)} latest run` : "No runs yet"}
             onPress={onOpenInvestigate}
             icon={<AppIcon kind="insights" color={palette.blue} size={18} />}
           />
@@ -609,7 +635,7 @@ function HomeScreen({
         ))}
       </View>
 
-      <SectionHeader title="Agent pipeline" body="This mirrors the backend structure you asked for: agents, orchestration, tools, knowledge, progress, and context." />
+      <SectionHeader title="Agent team" body="Each specialist has a clear role, from medical claim analysis through auditing and plain-language explanation." />
 
       <View style={styles.cardStack}>
         {bootstrap.architecture.map((block, index) => (
@@ -632,14 +658,20 @@ function InvestigateScreen({
   setContextDraft,
   sourceUrlDraft,
   setSourceUrlDraft,
-  mode,
-  setMode,
   depth,
   setDepth,
   submitting,
   onSubmit,
   investigation,
-  loadingSelected
+  loadingSelected,
+  history,
+  loadingHistory,
+  historyQuery,
+  setHistoryQuery,
+  onOpenHistory,
+  onDeleteHistory,
+  onMoveHistoryUp,
+  onMoveHistoryDown
 }: {
   apiError: string | null;
   onRetryBackend: () => void;
@@ -649,26 +681,32 @@ function InvestigateScreen({
   setContextDraft: (value: string) => void;
   sourceUrlDraft: string;
   setSourceUrlDraft: (value: string) => void;
-  mode: "auto" | "offline" | "live";
-  setMode: (value: "auto" | "offline" | "live") => void;
   depth: "standard" | "deep";
   setDepth: (value: "standard" | "deep") => void;
   submitting: boolean;
   onSubmit: () => void;
   investigation: InvestigationDetail | null;
   loadingSelected: boolean;
+  history: InvestigationSummary[];
+  loadingHistory: boolean;
+  historyQuery: string;
+  setHistoryQuery: (value: string) => void;
+  onOpenHistory: (id: string) => void;
+  onDeleteHistory: (id: string) => void;
+  onMoveHistoryUp: (id: string) => void;
+  onMoveHistoryDown: (id: string) => void;
 }) {
   return (
     <View style={styles.pageStack}>
       <View style={styles.panel}>
         <Text style={styles.sectionEyebrow}>START A RUN</Text>
         <Text style={styles.pageTitle}>Investigate a claim</Text>
-        <Text style={styles.pageSubtitle}>Simple at first glance, deeper when you expand. The app keeps technical routing hidden and focuses on evidence, contradictions, and clear verdicts.</Text>
+        <Text style={styles.pageSubtitle}>Search a claim, run the full evidence pipeline, and reopen prior investigations from one place. The interface stays clean while the reasoning stays strict.</Text>
         {apiError ? (
           <View style={styles.connectionBanner}>
-            <Text style={styles.connectionBannerTitle}>Connection issue</Text>
+            <Text style={styles.connectionBannerTitle}>No connection</Text>
             <Text style={styles.connectionBannerBody}>{apiError}</Text>
-            <SecondaryButton label="Retry connection" onPress={onRetryBackend} icon={<AppIcon kind="history" color={palette.blue} size={18} />} />
+            <SecondaryButton label="Reconnecting..." onPress={onRetryBackend} icon={<AppIcon kind="history" color={palette.blue} size={18} />} />
           </View>
         ) : null}
 
@@ -699,12 +737,6 @@ function InvestigateScreen({
         />
 
         <View style={styles.segmentedRow}>
-          <SegmentButton selected={mode === "auto"} label="Auto" onPress={() => setMode("auto")} />
-          <SegmentButton selected={mode === "offline"} label="Offline" onPress={() => setMode("offline")} />
-          <SegmentButton selected={mode === "live"} label="Live" onPress={() => setMode("live")} />
-        </View>
-
-        <View style={styles.segmentedRow}>
           <SegmentButton selected={depth === "standard"} label="Standard depth" onPress={() => setDepth("standard")} />
           <SegmentButton selected={depth === "deep"} label="Deep dive" onPress={() => setDepth("deep")} />
         </View>
@@ -714,7 +746,7 @@ function InvestigateScreen({
         </Pressable>
       </View>
 
-      <SectionHeader title="Current result" body="Step status stays compact, while evidence, findings, contradictions, and methodology stay hidden until you open them." />
+      <SectionHeader title="Current result" body="The report stays hidden until the full pipeline finishes, then only the verdict, evidence, and plain-language explanation are shown." />
 
       {loadingSelected ? (
         <LoadingCard text="Loading investigation..." />
@@ -725,6 +757,36 @@ function InvestigateScreen({
           title="No investigation selected"
           body="Start a run or choose one from History to inspect the full multi-agent output."
         />
+      )}
+
+      <SectionHeader title="History" body="Search previous investigations, tap to reopen, swipe left to delete, or drag to reorder." />
+      <TextInput
+        style={styles.primaryInput}
+        value={historyQuery}
+        onChangeText={setHistoryQuery}
+        placeholder="Search past claims"
+        placeholderTextColor={palette.muted}
+      />
+
+      {loadingHistory ? (
+        <LoadingCard text="Loading investigation history..." />
+      ) : history.length > 0 ? (
+        <View style={styles.cardStack}>
+          {history.map((item, index) => (
+            <SwipeHistoryCard
+              key={item.id}
+              item={item}
+              canMoveUp={index > 0}
+              canMoveDown={index < history.length - 1}
+              onOpen={onOpenHistory}
+              onDelete={onDeleteHistory}
+              onMoveUp={onMoveHistoryUp}
+              onMoveDown={onMoveHistoryDown}
+            />
+          ))}
+        </View>
+      ) : (
+        <EmptyState title="No saved runs found" body="Your completed investigations will appear here." />
       )}
     </View>
   );
@@ -873,7 +935,7 @@ function SwipeHistoryCard({
           <View style={styles.agentCardTop}>
             <Text style={styles.historyClaim}>{item.claim}</Text>
             <View style={styles.historyCardHeaderSide}>
-              <Chip label={item.verdict ? item.verdict.toUpperCase() : statusLabel(item.status)} tone={item.verdict ? verdictTone(item.verdict) : statusTone(item.status)} />
+              <Chip label={item.verdict ? verdictLabel(item.verdict) : statusLabel(item.status)} tone={item.verdict ? verdictTone(item.verdict) : statusTone(item.status)} />
               <View style={styles.historyGrip}>
                 <AppIcon kind="drag" color={palette.muted} size={16} />
               </View>
@@ -883,9 +945,7 @@ function SwipeHistoryCard({
           <View style={styles.historyMetaRow}>
             <Text style={styles.historyMetaText}>{formatTimestamp(item.createdAt)}</Text>
             <Text style={styles.historyMetaDot}>•</Text>
-            <Text style={styles.historyMetaText}>{item.mode}</Text>
-            <Text style={styles.historyMetaDot}>•</Text>
-            <Text style={styles.historyMetaText}>{item.desiredDepth}</Text>
+            <Text style={styles.historyMetaText}>{item.desiredDepth === "deep" ? "Deep review" : "Standard review"}</Text>
             <Text style={styles.historyMetaDot}>•</Text>
             <Text style={styles.historyMetaText}>{item.overallScore !== null ? `${item.overallScore}/100` : "--"}</Text>
           </View>
@@ -896,17 +956,33 @@ function SwipeHistoryCard({
 }
 
 function InvestigationResultView({ investigation }: { investigation: InvestigationDetail }) {
-  const visibleSteps = investigation.stepSummaries.length > 0 ? investigation.stepSummaries : fallbackStepSummaries(investigation);
+  const resultLabel = investigation.verdict ? verdictLabel(investigation.verdict) : statusLabel(investigation.status);
+  const resultTone = investigation.verdict ? verdictTone(investigation.verdict) : statusTone(investigation.status);
+  const showProcessing = isRunning(investigation.status);
+
+  if (showProcessing) {
+    return (
+      <>
+        <View style={styles.heroPanel}>
+          <View style={styles.heroTopRow}>
+            <Chip label={resultLabel} tone={resultTone} />
+            <Chip label="PIPELINE RUNNING" tone="aqua" />
+          </View>
+
+          <Text style={styles.heroTitle}>{investigation.claim}</Text>
+          <Text style={styles.heroSubtitle}>Claim analysis, search, validation, quote checks, stance review, and scoring are still running.</Text>
+        </View>
+        <LoadingCard text="Finishing the full investigation before rendering the evidence report..." />
+      </>
+    );
+  }
 
   return (
     <>
       <View style={styles.heroPanel}>
         <View style={styles.heroTopRow}>
-          <Chip label={statusLabel(investigation.status)} tone={statusTone(investigation.status)} />
-          <Chip label={investigation.confidenceLevel ? `${investigation.confidenceLevel.toUpperCase()} CONFIDENCE` : "ANALYZING"} tone={confidenceTone(investigation.confidenceLevel)} />
-          {investigation.misinformationRisk ? (
-            <Chip label={`${investigation.misinformationRisk.toUpperCase()} MISINFO RISK`} tone={misinformationTone(investigation.misinformationRisk)} />
-          ) : null}
+          <Chip label={resultLabel} tone={resultTone} />
+          <Chip label={investigation.confidenceLevel ? `${safeUpper(investigation.confidenceLevel)} CONFIDENCE` : "ANALYZING"} tone={confidenceTone(investigation.confidenceLevel)} />
         </View>
 
         <Text style={styles.heroTitle}>{investigation.claim}</Text>
@@ -917,42 +993,15 @@ function InvestigationResultView({ investigation }: { investigation: Investigati
 
         <View style={styles.statsRow}>
           <MetricTile label="Credibility Score" value={investigation.overallScore !== null ? String(investigation.overallScore) : "--"} tone="blue" />
-          <MetricTile label="Confidence" value={investigation.confidenceLevel ? investigation.confidenceLevel.toUpperCase() : "--"} tone="aqua" />
-          <MetricTile label="Verdict" value={verdictLabel(investigation.verdict)} tone={verdictTone(investigation.verdict)} />
-        </View>
-
-        <View style={styles.cardStackRow}>
-          {investigation.llmAgreementScore !== null ? (
-            <View style={[styles.infoPill, toneStyles.aqua.soft]}>
-              <Text style={styles.infoPillText}>LLM agreement {investigation.llmAgreementScore}/100</Text>
-            </View>
-          ) : null}
-          {investigation.consensus ? (
-            <View style={[styles.infoPill, toneStyles.lime.soft]}>
-              <Text style={styles.infoPillText}>Consensus {investigation.consensus.normalizedScore}/100</Text>
-            </View>
-          ) : null}
+          <MetricTile label="Confidence" value={investigation.confidenceLevel ? safeUpper(investigation.confidenceLevel) : "--"} tone="aqua" />
+          <MetricTile label="Verdict" value={resultLabel} tone={resultTone} />
         </View>
       </View>
 
-      <View style={styles.panel}>
-        <SectionHeader title="Pipeline steps" body="Each step stays short by default. Open a step only when you want the detail behind it." />
-        <View style={styles.cardStack}>
-          {visibleSteps.map((step) => (
-            <StepAccordion key={step.key} step={step} />
-          ))}
-        </View>
-      </View>
-
-      <AccordionCard title="Evidence Breakdown" summary={`${investigation.sources.length} visible sources grouped into stronger evidence, supporting context, and contradictions.`}>
-        <View style={styles.cardStack}>
-          {investigation.evidenceBreakdown.map((item) => (
-            <BulletRow key={item} text={item} tone="blue" />
-          ))}
-        </View>
+      <AccordionCard title="Evidence" summary={`${investigation.sources.length} visible sources grouped into strongest support, mixed context, and contradictions.`}>
         <View style={styles.groupStack}>
           {investigation.sourceGroups.map((group) => (
-            <EvidenceGroupCard key={group.key} group={group} focusTerms={investigation.claimAnalysis?.focusTerms ?? []} />
+            <EvidenceGroupCard key={group.key} group={group} />
           ))}
         </View>
       </AccordionCard>
@@ -963,22 +1012,12 @@ function InvestigationResultView({ investigation }: { investigation: Investigati
             <BulletRow key={item} text={item} tone="lime" />
           ))}
         </View>
-        {investigation.sentiment ? <SentimentCard sentiment={investigation.sentiment} /> : null}
-        {investigation.consensus ? <ConsensusCard consensus={investigation.consensus} llmAgreementScore={investigation.llmAgreementScore} /> : null}
       </AccordionCard>
 
       <AccordionCard title="Contradictions" summary={`${investigation.contradictions.length || investigation.concerns.length} contradiction checks kept visible instead of hidden.`}>
         <View style={styles.cardStack}>
           {(investigation.contradictions.length > 0 ? investigation.contradictions : investigation.concerns).map((item) => (
             <BulletRow key={item} text={item} tone="red" />
-          ))}
-        </View>
-      </AccordionCard>
-
-      <AccordionCard title="Methodology" summary={`${investigation.methodology.length} methodology notes highlight limitations, bias risk, and causation gaps.`}>
-        <View style={styles.cardStack}>
-          {investigation.methodology.map((item) => (
-            <BulletRow key={item} text={item} tone="aqua" />
           ))}
         </View>
       </AccordionCard>
@@ -1003,20 +1042,14 @@ function StepAccordion({ step }: { step: InvestigationDetail["stepSummaries"][nu
   );
 }
 
-function EvidenceGroupCard({
-  group,
-  focusTerms
-}: {
-  group: InvestigationDetail["sourceGroups"][number];
-  focusTerms: string[];
-}) {
+function EvidenceGroupCard({ group }: { group: InvestigationDetail["sourceGroups"][number] }) {
   return (
     <View style={styles.groupCard}>
       <Text style={styles.groupTitle}>{group.title}</Text>
       <Text style={styles.groupSummary}>{group.summary}</Text>
       <View style={styles.cardStack}>
         {group.sources.map((source) => (
-          <SourceCard key={source.id} source={source} focusTerms={focusTerms} />
+          <SourceCard key={source.id} source={source} />
         ))}
       </View>
     </View>
@@ -1095,6 +1128,52 @@ function HistorySheet({
   );
 }
 
+function PlaceholderTab({
+  title,
+  subtitle,
+  tone
+}: {
+  title: string;
+  subtitle: string;
+  tone: Tone;
+}) {
+  return (
+    <View style={styles.pageStack}>
+      <View style={styles.heroPanel}>
+        <Chip label="Coming next" tone={tone} />
+        <Text style={styles.heroTitle}>{title}</Text>
+        <Text style={styles.heroSubtitle}>{subtitle}</Text>
+      </View>
+      <View style={styles.cardStack}>
+        <View style={[styles.infoCard, toneStyles[tone].soft]}>
+          <Text style={styles.infoCardTitle}>Planned experience</Text>
+          <Text style={styles.infoCardBody}>This section is scaffolded so we can expand it without disturbing the consultant workflow.</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ProfileScreen({ history }: { history: InvestigationSummary[] }) {
+  const completedCount = history.filter((item) => item.status === "completed").length;
+  const latestScore = history.find((item) => item.overallScore !== null)?.overallScore;
+
+  return (
+    <View style={styles.pageStack}>
+      <View style={styles.heroPanel}>
+        <Chip label="Profile" tone="blue" />
+        <Text style={styles.heroTitle}>Personal health space</Text>
+        <Text style={styles.heroSubtitle}>A clean placeholder for goals, personal context, and future wellness summaries without cluttering the evidence workflow.</Text>
+        <View style={styles.statsRow}>
+          <MetricTile label="Saved Runs" value={String(history.length)} tone="blue" />
+          <MetricTile label="Completed" value={String(completedCount)} tone="lime" />
+          <MetricTile label="Latest Score" value={latestScore !== undefined && latestScore !== null ? String(latestScore) : "--"} tone="aqua" />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function StackScreen({ bootstrap }: { bootstrap: BootstrapPayload }) {
   return (
     <View style={styles.pageStack}>
@@ -1132,47 +1211,28 @@ function MetricTile({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
-function SourceCard({
-  source,
-  focusTerms
-}: {
-  source: InvestigationDetail["sources"][number];
-  focusTerms: string[];
-}) {
-  const effectLabel =
-    source.evidence?.effectDirection === "support"
-      ? "Supports"
-      : source.evidence?.effectDirection === "contradict"
-        ? "Contradicts"
-        : "Inconclusive";
-  const effectTone =
-    source.evidence?.effectDirection === "support"
-      ? "lime"
-      : source.evidence?.effectDirection === "contradict"
-        ? "red"
-        : "aqua";
+function SourceCard({ source }: { source: InvestigationDetail["sources"][number] }) {
+  const effectLabel = sentimentLabel(source.sentiment);
+  const effectTone = sentimentTone(source.sentiment);
+  const siteTitle = safeText(source.sourceName || source.domain || "Source");
+  const explanation = safeText(source.evidence?.expertAnalysis || source.sentimentSummary || source.relevanceSummary);
+  const quotedText = safeText(source.evidence?.quoteVerified ? source.evidence?.quotedEvidence : "");
+  const articleTitle = safeText(source.title);
 
   return (
     <View style={styles.sourceCard}>
       <View style={styles.agentCardTop}>
         <Pressable onPress={() => void Linking.openURL(source.url)} style={styles.sourceLinkWrap}>
-          <Text style={styles.sourceTitle}>{highlightTerms(source.title, focusTerms)}</Text>
+          <Text style={styles.sourceTitle}>{siteTitle}</Text>
         </Pressable>
-        <Chip label={sentimentLabel(source.sentiment)} tone={sentimentTone(source.sentiment)} />
+        <Chip label={effectLabel} tone={effectTone} />
       </View>
-      <Text style={styles.sourceMeta}>{source.sourceName}</Text>
       <Pressable onPress={() => void Linking.openURL(source.url)}>
         <Text style={styles.sourceUrl}>{source.url}</Text>
       </Pressable>
-      <Text style={styles.sourceSnippet}>{source.relevanceSummary || source.sentimentSummary}</Text>
-      {source.evidence?.quoteVerified && source.evidence.quotedEvidence ? <Text style={styles.sourceQuote}>"{source.evidence.quotedEvidence}"</Text> : null}
-      {source.evidence?.expertAnalysis ? <Text style={styles.sourceMethodology}>{source.evidence.expertAnalysis}</Text> : null}
-      <View style={styles.sourceEvidenceMeta}>
-        {source.evidence?.studyType ? <Text style={styles.sourceEvidenceMetaText}>{source.evidence.studyType}</Text> : null}
-        {source.evidence?.sampleSize ? <Text style={styles.sourceEvidenceMetaText}>{source.evidence.sampleSize}</Text> : null}
-        <Text style={styles.sourceEvidenceMetaText}>{Math.round(source.agreementFactor * 100)}% agreement</Text>
-      </View>
-      <Text style={[styles.sourceOutcome, toneStyles[effectTone].text]}>{effectLabel === "Supports" ? "✔" : effectLabel === "Contradicts" ? "✖" : "?"}</Text>
+      {articleTitle && articleTitle !== siteTitle ? <Text style={styles.sourceMeta}>{articleTitle}</Text> : null}
+      {quotedText ? <Text style={styles.sourceQuote}>"{quotedText}"</Text> : <Text style={styles.sourceSnippet}>{safeText(source.snippet)}</Text>}
+      {explanation ? <Text style={styles.sourceMethodology}>{explanation}</Text> : null}
     </View>
   );
 }
@@ -1207,6 +1267,9 @@ function ConsensusCard({
         <MiniMetric label="Neutral" value={String(consensus.neutralWeight)} tone="aqua" />
         <MiniMetric label="Contradict" value={String(consensus.contradictingWeight)} tone="red" />
       </View>
+      <Text style={styles.consensusFootnote}>
+        Weighted evidence score: {consensus.credibilityScore}/100. Contradiction share: {Math.round(consensus.contradictionShare * 100)}%.
+      </Text>
       {llmAgreementScore !== null ? <Text style={styles.consensusFootnote}>Verifier agreement: {llmAgreementScore}/100.</Text> : null}
     </View>
   );
@@ -1344,9 +1407,10 @@ function Chip({ label, tone }: { label: string; tone: Tone }) {
 function BottomTabBar({ activeTab, onSelect }: { activeTab: AppTab; onSelect: (tab: AppTab) => void }) {
   const tabs: Array<{ key: AppTab; label: string }> = [
     { key: "home", label: "Home" },
-    { key: "investigate", label: "Investigate" },
-    { key: "history", label: "History" },
-    { key: "stack", label: "Stack" }
+    { key: "consultant", label: "Consultant" },
+    { key: "nutrition", label: "Nutrition" },
+    { key: "supplements", label: "Supplements" },
+    { key: "profile", label: "Profile" }
   ];
 
   return (
@@ -1368,109 +1432,39 @@ function TabIcon({ tab, selected }: { tab: AppTab; selected: boolean }) {
   if (tab === "home") {
     return <AppIcon kind="home" color={color} size={20} />;
   }
-  if (tab === "investigate") {
-    return <AppIcon kind="play" color={color} size={20} />;
+  if (tab === "consultant") {
+    return <AppIcon kind="consultant" color={color} size={20} />;
   }
-  if (tab === "history") {
-    return <AppIcon kind="history" color={color} size={20} />;
+  if (tab === "nutrition") {
+    return <AppIcon kind="nutrition" color={color} size={20} />;
   }
-  return <AppIcon kind="stack" color={color} size={20} />;
+  if (tab === "supplements") {
+    return <AppIcon kind="supplements" color={color} size={20} />;
+  }
+  if (tab === "profile") {
+    return <AppIcon kind="profile" color={color} size={20} />;
+  }
+  return <AppIcon kind="home" color={color} size={20} />;
 }
 
-type IconKind = "home" | "play" | "history" | "stack" | "insights" | "trash" | "drag";
+type IconKind = "home" | "play" | "consultant" | "history" | "nutrition" | "supplements" | "profile" | "insights" | "trash" | "drag";
 type Tone = "lime" | "aqua" | "blue" | "red";
 
 function AppIcon({ kind, color, size }: { kind: IconKind; color: string; size: number }) {
-  const stroke = Math.max(2, Math.round(size / 9));
+  const iconName: Record<IconKind, React.ComponentProps<typeof MaterialCommunityIcons>["name"]> = {
+    home: "home-outline",
+    play: "play-circle-outline",
+    consultant: "stethoscope",
+    history: "sync",
+    nutrition: "food-apple-outline",
+    supplements: "pill",
+    profile: "account-outline",
+    insights: "chart-box-outline",
+    trash: "trash-can-outline",
+    drag: "drag-vertical-variant"
+  };
 
-  if (kind === "home") {
-    return (
-      <View style={{ width: size, height: size, alignItems: "center", justifyContent: "flex-end" }}>
-        <View
-          style={{
-            position: "absolute",
-            top: size * 0.08,
-            width: size * 0.62,
-            height: size * 0.62,
-            transform: [{ rotate: "45deg" }],
-            borderTopWidth: stroke,
-            borderLeftWidth: stroke,
-            borderColor: color
-          }}
-        />
-        <View style={{ width: size * 0.7, height: size * 0.45, borderWidth: stroke, borderColor: color, borderRadius: size * 0.12 }} />
-      </View>
-    );
-  }
-
-  if (kind === "play") {
-    return (
-      <View
-        style={{
-          width: 0,
-          height: 0,
-          borderTopWidth: size * 0.34,
-          borderBottomWidth: size * 0.34,
-          borderLeftWidth: size * 0.56,
-          borderTopColor: "transparent",
-          borderBottomColor: "transparent",
-          borderLeftColor: color,
-          marginLeft: size * 0.12
-        }}
-      />
-    );
-  }
-
-  if (kind === "history") {
-    return (
-      <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-        <View style={{ width: size * 0.82, height: size * 0.82, borderRadius: 999, borderWidth: stroke, borderColor: color }} />
-        <View style={{ position: "absolute", width: stroke, height: size * 0.28, backgroundColor: color, top: size * 0.22 }} />
-        <View style={{ position: "absolute", width: size * 0.22, height: stroke, backgroundColor: color, top: size * 0.46, left: size * 0.5 }} />
-      </View>
-    );
-  }
-
-  if (kind === "insights") {
-    return (
-      <View style={{ width: size, height: size, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }}>
-        <View style={{ width: size * 0.18, height: size * 0.34, backgroundColor: color, borderRadius: 999 }} />
-        <View style={{ width: size * 0.18, height: size * 0.56, backgroundColor: color, borderRadius: 999 }} />
-        <View style={{ width: size * 0.18, height: size * 0.78, backgroundColor: color, borderRadius: 999 }} />
-      </View>
-    );
-  }
-
-  if (kind === "trash") {
-    return (
-      <View style={{ width: size, height: size, alignItems: "center" }}>
-        <View style={{ width: size * 0.66, height: stroke, backgroundColor: color, borderRadius: 999, marginTop: size * 0.08 }} />
-        <View style={{ width: size * 0.52, height: size * 0.54, borderWidth: stroke, borderColor: color, borderTopWidth: 0, borderBottomLeftRadius: size * 0.12, borderBottomRightRadius: size * 0.12, marginTop: size * 0.06 }} />
-      </View>
-    );
-  }
-
-  if (kind === "drag") {
-    return (
-      <View style={{ width: size, height: size, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-        {[0, 1].map((column) => (
-          <View key={column} style={{ justifyContent: "space-between", height: size * 0.7 }}>
-            {[0, 1, 2].map((dot) => (
-              <View key={`${column}-${dot}`} style={{ width: stroke + 1, height: stroke + 1, borderRadius: 999, backgroundColor: color }} />
-            ))}
-          </View>
-        ))}
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ width: size, height: size, justifyContent: "space-between" }}>
-      <View style={{ width: "100%", height: stroke, backgroundColor: color, borderRadius: 999 }} />
-      <View style={{ width: "100%", height: stroke, backgroundColor: color, borderRadius: 999 }} />
-      <View style={{ width: "100%", height: stroke, backgroundColor: color, borderRadius: 999 }} />
-    </View>
-  );
+  return <MaterialCommunityIcons name={iconName[kind]} color={color} size={size} />;
 }
 
 function isRunning(status: InvestigationStatus) {
@@ -1500,17 +1494,24 @@ function statusTone(status: InvestigationStatus): Tone {
   return "aqua";
 }
 
-function verdictTone(verdict: InvestigationDetail["verdict"]): Tone {
+function userFacingVerdict(verdict: InvestigationDetail["verdict"] | InvestigationSummary["verdict"]) {
   if (verdict === "trustworthy") {
-    return "lime";
-  }
-  if (verdict === "mixed") {
-    return "aqua";
-  }
-  if (verdict === "overstated") {
-    return "blue";
+    return "trustworthy";
   }
   if (verdict === "untrustworthy") {
+    return "untrustworthy";
+  }
+  if (verdict === "mixed" || verdict === "overstated") {
+    return "uncertain";
+  }
+  return "";
+}
+
+function verdictTone(verdict: InvestigationDetail["verdict"]): Tone {
+  if (userFacingVerdict(verdict) === "trustworthy") {
+    return "lime";
+  }
+  if (userFacingVerdict(verdict) === "untrustworthy") {
     return "red";
   }
   return "aqua";
@@ -1520,7 +1521,7 @@ function confidenceTone(confidence: InvestigationDetail["confidenceLevel"]): Ton
   if (confidence === "high") {
     return "lime";
   }
-  if (confidence === "moderate") {
+  if (confidence === "medium") {
     return "aqua";
   }
   return "red";
@@ -1537,10 +1538,11 @@ function misinformationTone(risk: InvestigationDetail["misinformationRisk"]): To
 }
 
 function verdictLabel(verdict: InvestigationDetail["verdict"]) {
-  if (!verdict) {
+  const simplified = userFacingVerdict(verdict);
+  if (!simplified) {
     return "--";
   }
-  return verdict.replace(/_/g, " ").toUpperCase();
+  return safeUpper(simplified.replace(/_/g, " "));
 }
 
 function sentimentTone(sentiment: InvestigationDetail["sources"][number]["sentiment"]): Tone {
@@ -1560,7 +1562,7 @@ function sentimentLabel(sentiment: InvestigationDetail["sources"][number]["senti
   if (sentiment === "negative") {
     return "Contradicts";
   }
-  return "Mixed";
+  return "Uncertain";
 }
 
 function fallbackStepSummaries(investigation: InvestigationDetail): InvestigationDetail["stepSummaries"] {
@@ -1587,24 +1589,6 @@ function fallbackStepSummaries(investigation: InvestigationDetail): Investigatio
     summary: safeSummaries[run.agentKey] || "This step is in progress.",
     details: []
   }));
-}
-
-function highlightTerms(title: string, focusTerms: string[]) {
-  if (focusTerms.length === 0) {
-    return title;
-  }
-
-  const normalized = focusTerms.map((term) => term.toLowerCase());
-  const pieces = title.split(/(\s+)/);
-  return pieces.map((piece, index) => {
-    const cleaned = piece.replace(/[^a-z0-9]/gi, "").toLowerCase();
-    const match = cleaned && normalized.some((term) => cleaned.includes(term) || term.includes(cleaned));
-    return (
-      <Text key={`${piece}-${index}`} style={match ? styles.sourceTitleHighlight : undefined}>
-        {piece}
-      </Text>
-    );
-  });
 }
 
 const toneStyles = {
@@ -1641,7 +1625,8 @@ const shadow = {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: palette.background
+    backgroundColor: palette.background,
+    paddingTop: androidStatusInset
   },
   appShell: {
     flex: 1
@@ -1652,7 +1637,10 @@ const styles = StyleSheet.create({
   screenContent: {
     paddingHorizontal: 18,
     paddingTop: 14,
-    paddingBottom: 118
+    paddingBottom: contentBottomPadding,
+    width: "100%",
+    maxWidth: 960,
+    alignSelf: "center"
   },
   pageStack: {
     gap: 22
@@ -2093,10 +2081,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: "900"
   },
-  sourceTitleHighlight: {
-    color: palette.blue,
-    fontWeight: "900"
-  },
   sourceMeta: {
     color: palette.blue,
     fontSize: 13,
@@ -2117,10 +2101,12 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 14,
     lineHeight: 21,
-    backgroundColor: "#fff6b8",
+    backgroundColor: "#f4efe6",
     borderRadius: 14,
     paddingHorizontal: 12,
-    paddingVertical: 10
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: palette.border
   },
   sourceMethodology: {
     color: palette.ink,
@@ -2494,7 +2480,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     paddingHorizontal: 18,
     paddingTop: 10,
-    paddingBottom: 28
+    paddingBottom: 36
   },
   sheetHandle: {
     alignSelf: "center",
@@ -2528,13 +2514,14 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 18,
     right: 18,
-    bottom: 18,
+    bottom: bottomBarOffset,
     backgroundColor: "rgba(255,253,250,0.98)",
     borderRadius: 28,
     borderWidth: 1,
     borderColor: palette.border,
     paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === "android" ? 14 : 10,
     flexDirection: "row",
     justifyContent: "space-between",
     ...shadow

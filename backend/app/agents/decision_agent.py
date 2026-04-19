@@ -1,7 +1,15 @@
 from collections import Counter
 
-from ..core.scoring import build_matrix, weighted_consensus_breakdown, weighted_score
+from ..core.scoring import build_matrix, calibrated_credibility_score
 from ..models import ClaimAnalysis, ClaimVerdict, ConsensusBreakdown, DecisionMatrixFactor, MisinformationRisk, SourceAssessment
+
+
+def user_facing_verdict_label(verdict: ClaimVerdict) -> str:
+    if verdict == "trustworthy":
+        return "Trustworthy"
+    if verdict == "untrustworthy":
+        return "Untrustworthy"
+    return "Uncertain"
 
 
 def _verdict(score: int, claim_analysis: ClaimAnalysis, sources: list[SourceAssessment]) -> ClaimVerdict:
@@ -12,11 +20,11 @@ def _verdict(score: int, claim_analysis: ClaimAnalysis, sources: list[SourceAsse
     negative = sentiments.get("negative", 0)
     strongest_claim = max((item.strength for item in claim_analysis.atomicClaims), default=1)
 
-    if score >= 78 and positive > negative and negative <= max(1, positive // 2):
+    if score >= 72 and positive > negative and negative <= max(1, positive // 2):
         return "trustworthy"
-    if score < 42 or negative >= max(3, positive + neutral):
+    if score < 35 or negative >= max(3, positive + neutral):
         return "untrustworthy"
-    if strongest_claim >= 4 and (score < 82 or neutral >= positive or negative > 0):
+    if strongest_claim >= 4 and score < 72:
         return "overstated"
     return "mixed"
 
@@ -53,8 +61,7 @@ def summarize_decision(
     MisinformationRisk,
 ]:
     matrix = build_matrix(claim_analysis, sources)
-    consensus = weighted_consensus_breakdown(sources)
-    score = weighted_score(matrix)
+    score, penalties, consensus = calibrated_credibility_score(claim_analysis, sources)
 
     supportive = [source for source in sources if source.sentiment == "positive" and source.sourceScore >= 2]
     contradictory = [source for source in sources if source.sentiment == "negative" and source.sourceScore >= 2]
@@ -62,20 +69,15 @@ def summarize_decision(
     weak_sources = [source for source in sources if source.sourceScore == 1]
     sentiments = Counter(source.sentiment for source in sources)
     total_sources = max(1, len(sources))
-    contradiction_penalty = min(22, round((sentiments.get("negative", 0) / total_sources) * 34))
-    mixed_penalty = 10 if sentiments.get("neutral", 0) / total_sources >= 0.45 else 0
-    mismatch_penalty = 14 if max((item.strength for item in claim_analysis.atomicClaims), default=1) >= 4 and len(strong_sources) < 4 else 0
-    support_bonus = 6 if sentiments.get("positive", 0) / total_sources >= 0.5 and len(strong_sources) >= 3 else 0
-    score = max(0, min(100, score - contradiction_penalty - mixed_penalty - mismatch_penalty + support_bonus))
     verdict = _verdict(score, claim_analysis, sources)
     misinformation_risk = _misinformation_risk(verdict, claim_analysis, sentiments, total_sources)
 
     strengths = [
-        f"{len(strong_sources)} higher-authority sources were found." if strong_sources else "No top-tier authority sources were found.",
+        f"{len(strong_sources)} verified-authority sources were found." if strong_sources else "No verified-authority sources were found.",
         consensus.summary,
     ]
     if supportive:
-        strengths.append(f"{len(supportive)} credible sources partially or directly support the claim.")
+        strengths.append(f"{len(supportive)} credible sources materially support the claim.")
     if contradictory:
         strengths.append(f"{len(contradictory)} credible sources push back against the claim or narrow it substantially.")
     if sentiments.get("negative", 0):
@@ -92,6 +94,7 @@ def summarize_decision(
         concerns.append("A large share of the evidence remains mixed or inconclusive.")
     if sentiments.get("negative", 0) / total_sources >= 0.25:
         concerns.append("Contradicting evidence is too substantial to ignore.")
+    concerns.extend(penalties)
 
     if verdict == "trustworthy":
         narrative = (
@@ -100,12 +103,12 @@ def summarize_decision(
         )
     elif verdict == "overstated":
         narrative = (
-            f'The investigation suggests the claim "{claim}" is overstated. There may be some supportive signal underneath, '
+            f'The investigation returns an uncertain result for "{claim}". There may be some supportive signal underneath, '
             "but the wording overshoots what the current evidence base can safely support."
         )
     elif verdict == "mixed":
         narrative = (
-            f'The investigation returned a mixed result for "{claim}". Some evidence is directionally supportive, '
+            f'The investigation returns an uncertain result for "{claim}". Some evidence is directionally supportive, '
             "but source quality, study depth, or consistency across sources is not strong enough for a clean yes."
         )
     else:

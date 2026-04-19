@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Verity Lens",
-    "slug": "verity-lens",
-    "scheme": "veritylens",
+    "name": "GramWIN",
+    "slug": "gramwin",
+    "scheme": "gramwin",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -12,8 +12,8 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Verity Lens can use the camera for future document and source capture flows.",
-        "NSPhotoLibraryUsageDescription": "Verity Lens can use your photos for future source and evidence uploads."
+        "NSCameraUsageDescription": "GramWIN can use the camera for future document and source capture flows.",
+        "NSPhotoLibraryUsageDescription": "GramWIN can use your photos for future source and evidence uploads."
       }
     },
     "android": {

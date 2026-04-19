@@ -12,9 +12,10 @@ SourceStance = Literal["supportive", "mixed", "contradictory", "unclear"]
 SourceBucket = Literal["tier_1_blog", "tier_2_scholarly", "tier_3_authority"]
 EvidenceTier = Literal["review", "rct", "observational", "case_report", "blog"]
 SourceSentiment = Literal["positive", "neutral", "negative"]
-ConfidenceLevel = Literal["low", "moderate", "high"]
+ConfidenceLevel = Literal["low", "medium", "high"]
 EffectDirection = Literal["support", "neutral", "contradict"]
 MisinformationRisk = Literal["low", "moderate", "high"]
+CacheStatus = Literal["live", "cached", "fallback"]
 
 
 class BrandInfo(BaseModel):
@@ -97,6 +98,7 @@ class AtomicClaim(BaseModel):
 
 class ClaimSemantics(BaseModel):
     subject: str = ""
+    intervention: str = ""
     action: str = ""
     outcome: str = ""
     impliedCausation: bool = False
@@ -153,6 +155,12 @@ class SourceAssessment(BaseModel):
     sentimentScientific: SourceSentiment | None = None
     sentimentCritical: SourceSentiment | None = None
     agreementFactor: float = Field(default=1.0, ge=0.0, le=1.0)
+    clarityFactor: float = Field(default=0.5, ge=0.5, le=1.0)
+    studyQualityFactor: float = Field(default=0.5, ge=0.5, le=1.0)
+    confidenceFactor: float = Field(default=0.5, ge=0.5, le=1.0)
+    sourceWeight: float = Field(default=0.4, ge=0.0, le=1.0)
+    weightedContribution: float = 0.0
+    cacheStatus: CacheStatus = "live"
     evidence: EvidenceExtraction | None = None
 
 
@@ -187,6 +195,10 @@ class ConsensusBreakdown(BaseModel):
     contradictingWeight: float = 0.0
     disagreementWeight: float = 0.0
     rawScore: float = 0.0
+    totalWeight: float = 0.0
+    supportShare: float = 0.0
+    contradictionShare: float = 0.0
+    credibilityScore: int = Field(default=50, ge=0, le=100)
     normalizedScore: int = Field(default=50, ge=0, le=100)
     summary: str = ""
 
@@ -210,6 +222,9 @@ class InvestigationState(BaseModel):
     confidenceLevel: ConfidenceLevel | None = None
     llmAgreementScore: int | None = Field(default=None, ge=0, le=100)
     misinformationRisk: MisinformationRisk | None = None
+    resolvedMode: InvestigationMode | None = None
+    cacheStatus: CacheStatus = "live"
+    orchestrationNotes: list[str] = Field(default_factory=list)
     expertInsight: str = ""
     verdictSummary: str = ""
     finalNarrative: str = ""
