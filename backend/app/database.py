@@ -52,6 +52,13 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (investigation_id) REFERENCES investigations (id)
             );
+
+            CREATE TABLE IF NOT EXISTS cache_entries (
+                cache_key TEXT PRIMARY KEY,
+                category TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
-

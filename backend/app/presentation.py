@@ -30,6 +30,7 @@ NEGATIVE_PHRASES = [
     "ineffective",
     "null findings",
     "lack of evidence",
+    "no significant effect",
 ]
 
 NEUTRAL_SIGNALS = [
@@ -42,14 +43,47 @@ NEUTRAL_SIGNALS = [
     "more research needed",
     "under investigation",
     "needs validation",
+    "insufficient evidence",
 ]
-
-TOKEN_PATTERN = re.compile(r"[a-z0-9']+")
 
 
 def _source_name(domain: str) -> str:
     cleaned = domain.lower().replace("www.", "")
-    return cleaned or "source"
+    if not cleaned:
+        return "Source"
+
+    known_names = {
+        "who.int": "WHO",
+        "nih.gov": "NIH",
+        "pubmed.ncbi.nlm.nih.gov": "PubMed",
+        "pmc.ncbi.nlm.nih.gov": "PubMed Central",
+        "nccih.nih.gov": "NCCIH",
+        "ods.od.nih.gov": "ODS",
+        "medlineplus.gov": "MedlinePlus",
+        "cochrane.org": "Cochrane",
+        "cochranelibrary.com": "Cochrane Library",
+        "jamanetwork.com": "JAMA Network",
+        "bmj.com": "BMJ",
+        "nejm.org": "NEJM",
+        "aad.org": "AAD",
+        "aap.org": "AAP",
+        "aasm.org": "AASM",
+        "mayoclinic.org": "Mayo Clinic",
+        "clevelandclinic.org": "Cleveland Clinic",
+        "medicalnewstoday.com": "Medical News Today",
+        "webmd.com": "WebMD",
+    }
+    if cleaned in known_names:
+        return known_names[cleaned]
+
+    parts = cleaned.split(".")
+    if len(parts) >= 3 and parts[-2] in {"co", "gov", "org", "ac"}:
+        candidate = parts[-3]
+    elif len(parts) >= 2:
+        candidate = parts[-2]
+    else:
+        candidate = cleaned
+    return candidate.replace("-", " ").title()
 
 
 def _quoted_evidence(text: str, fallback: str) -> str:
@@ -64,7 +98,7 @@ def classify_source_sentiment(source: SourceAssessment) -> tuple[SourceSentiment
         [
             source.title,
             source.snippet,
-            source.extractedText[:1200],
+            source.extractedText[:1400],
             *(source.notes or []),
         ]
     ).lower()
@@ -75,7 +109,8 @@ def classify_source_sentiment(source: SourceAssessment) -> tuple[SourceSentiment
 
     for signal in NEUTRAL_SIGNALS:
         if signal in text:
-            return "neutral", f'The source describes the evidence as "{signal}", so it remains inconclusive.'
+            return "neutral", f'The source describes the evidence as "{signal}", so it remains inconclusive rather than supportive.'
+
     if source.stance == "contradictory":
         return "negative", "The source assessment indicates the evidence materially challenges or narrows the claim."
     if source.stance in {"mixed", "unclear"}:
@@ -84,8 +119,6 @@ def classify_source_sentiment(source: SourceAssessment) -> tuple[SourceSentiment
         if source.linkAlive and source.contentAccessible and (source.quoteVerified or source.evidenceScore >= 3 or source.citationIntegrity >= 45):
             return "positive", "The accessible source content aligns with the claim and clears the minimum evidence-integrity bar."
         return "neutral", "The source leans supportive, but the accessible evidence is too thin to treat as confirmed support."
-    if source.sourceScore == 1 or source.evidenceScore <= 2:
-        return "neutral", "Low-strength source, so the direction stays uncertain."
     return "neutral", "The source direction is not strong enough to classify beyond neutral."
 
 
@@ -215,13 +248,12 @@ def enrich_sources(sources: list[SourceAssessment], claim_analysis: ClaimAnalysi
 
 
 def _display_rank(source: SourceAssessment) -> float:
-    stance_bonus = {"positive": 6, "neutral": 2, "negative": 5}[source.sentiment]
-    contradiction_bonus = 5 if source.sentiment == "negative" else 0
+    contradiction_bonus = 6 if source.sentiment == "negative" else 0
     return (
-        source.sourceScore * 22
-        + source.evidenceScore * 12
-        + source.citationIntegrity * 0.35
-        + stance_bonus
+        source.sourceScore * 24
+        + source.evidenceScore * 14
+        + source.citationIntegrity * 0.3
+        + source.confidenceFactor * 18
         + contradiction_bonus
     )
 
@@ -250,65 +282,61 @@ def build_sentiment_distribution(sources: list[SourceAssessment]) -> SentimentDi
 
 def build_source_groups(sources: list[SourceAssessment]) -> tuple[list[EvidenceGroup], list[SourceAssessment]]:
     ranked = sorted(sources, key=_display_rank, reverse=True)
-    target_count = min(max(20, len(ranked)), 36) if ranked else 0
-    selected: list[SourceAssessment] = []
-    selected_ids: set[str] = set()
+    target_count = min(max(18, len(ranked)), 30) if ranked else 0
+    selected = ranked[:target_count]
 
-    contradicting = [source for source in ranked if source.sentiment == "negative"][: max(4, min(8, len(ranked)))]
-    for source in contradicting:
-        if source.id not in selected_ids:
-            selected.append(source)
-            selected_ids.add(source.id)
+    best_evidence = [source for source in selected if source.sourceScore >= 2 and source.evidenceScore >= 4]
+    contradictions = [source for source in selected if source.sentiment == "negative"]
+    mixed_limited = [source for source in selected if source not in best_evidence and source not in contradictions]
 
-    high_quality = [
-        source
-        for source in ranked
-        if source.id not in selected_ids and source.sourceScore >= 2 and source.evidenceScore >= 4 and source.citationIntegrity >= 45
-    ][:10]
-    for source in high_quality:
-        selected.append(source)
-        selected_ids.add(source.id)
-
-    for source in ranked:
-        if len(selected) >= target_count:
-            break
-        if source.id in selected_ids:
-            continue
-        selected.append(source)
-        selected_ids.add(source.id)
-
-    high_quality_ids = {source.id for source in high_quality}
-    contradicting_ids = {source.id for source in contradicting}
     groups = [
         EvidenceGroup(
-            key="high_quality_evidence",
-            title="High-quality evidence",
-            summary=f"{sum(1 for source in selected if source.id in high_quality_ids)} stronger review, trial, or authority-led sources retained.",
-            sources=[source for source in selected if source.id in high_quality_ids],
+            key="best_evidence",
+            title="Best evidence",
+            summary=f"{len(best_evidence)} stronger review, trial, or authority-led sources stayed visible.",
+            sources=best_evidence,
         ),
         EvidenceGroup(
-            key="supporting_context",
-            title="Supporting context",
-            summary=f"{sum(1 for source in selected if source.id not in high_quality_ids and source.id not in contradicting_ids)} additional sources add nuance, mechanisms, or broader context.",
-            sources=[source for source in selected if source.id not in high_quality_ids and source.id not in contradicting_ids],
+            key="mixed_or_limited",
+            title="Mixed or limited",
+            summary=f"{len(mixed_limited)} sources add nuance, limited support, or mechanism context without settling the claim.",
+            sources=mixed_limited,
         ),
         EvidenceGroup(
-            key="contradicting_evidence",
-            title="Contradicting evidence",
-            summary=f"{sum(1 for source in selected if source.id in contradicting_ids)} sources materially challenge or narrow the claim.",
-            sources=[source for source in selected if source.id in contradicting_ids],
+            key="contradictions",
+            title="Contradictions",
+            summary=f"{len(contradictions)} sources materially challenge or narrow the claim.",
+            sources=contradictions,
         ),
     ]
     return groups, selected
 
 
-def infer_confidence_level(score: int, sentiment: SentimentDistribution, contradictions: list[str], llm_agreement_score: int | None = None) -> ConfidenceLevel:
-    verifier_penalty = 0 if llm_agreement_score is None else max(0, 75 - llm_agreement_score)
-    adjusted_score = score - round(verifier_penalty * 0.4)
-    if adjusted_score >= 78 and sentiment.negativePct <= 20 and sentiment.neutralPct <= 30 and len(contradictions) <= 2:
+def infer_confidence_level(
+    score: int,
+    sources: list[SourceAssessment],
+    llm_agreement_score: int | None = None,
+) -> ConfidenceLevel:
+    if not sources:
+        return "low"
+
+    high_quality_sources = sum(1 for source in sources if source.sourceScore >= 2 and source.evidenceScore >= 4)
+    sentiments = Counter(source.sentiment for source in sources)
+    total = max(1, len(sources))
+    variance = 1 - max(sentiments.values(), default=0) / total
+    agreement_component = 60 if llm_agreement_score is None else llm_agreement_score
+    confidence_score = round(
+        (
+            score * 0.4
+            + min(100, high_quality_sources * 12) * 0.35
+            + agreement_component * 0.25
+        )
+        - (variance * 30)
+    )
+    if confidence_score >= 75:
         return "high"
-    if adjusted_score >= 55 and sentiment.negativePct <= 40:
-        return "moderate"
+    if confidence_score >= 50:
+        return "medium"
     return "low"
 
 
@@ -325,10 +353,11 @@ def build_sections(
     evidence_breakdown = list(
         dict.fromkeys(
             [
-                *matrix_lines,
+                f"Calibrated evidence score before penalties: {consensus.credibilityScore}/100.",
                 f"{len(selected_sources)} filtered sources were retained for the visible evidence set.",
                 groups[0].summary,
                 groups[2].summary,
+                *matrix_lines,
                 consensus.summary,
             ]
         )
@@ -359,6 +388,7 @@ def build_sections(
             [
                 *(insight for source in selected_sources[:10] for insight in source.methodologyInsights),
                 "Correlation should not be treated as proof of causation unless stronger trial evidence supports it.",
+                "Limited or inconclusive evidence remains neutral and should not be counted as support.",
                 "Aggressive claim wording should be downgraded when the evidence base is narrow, short, or inconsistent.",
             ]
         )
@@ -387,6 +417,7 @@ def build_step_summaries(
     semantic_lines = [
         claim_analysis.summary,
         f"Subject: {semantics.subject}" if semantics and semantics.subject else "",
+        f"Intervention: {semantics.intervention}" if semantics and semantics.intervention else "",
         f"Action: {semantics.action}" if semantics and semantics.action else "",
         f"Outcome: {semantics.outcome}" if semantics and semantics.outcome else "",
         f"Relationship: {semantics.relationshipType}" if semantics and semantics.relationshipType else "",
@@ -404,7 +435,7 @@ def build_step_summaries(
             key="query_generation",
             title="Query Generation",
             status="completed",
-            summary=f"{len(claim_analysis.generatedQueries)} semantic research queries prepared across synonyms, clinical evidence, and contradiction angles.",
+            summary=f"{len(claim_analysis.generatedQueries)} semantic research queries prepared across synonyms, medical phrasing, and contradiction angles.",
             details=claim_analysis.generatedQueries[:6],
         ),
         PipelineStepSummary(

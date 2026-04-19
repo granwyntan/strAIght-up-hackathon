@@ -20,7 +20,27 @@ def _dedupe(items: list[str], limit: int) -> list[str]:
     return cleaned[:limit]
 
 
+def _target_query_count(desired_depth: str, baseline: ClaimAnalysis) -> int:
+    base = 18 if desired_depth == "standard" else 24
+    semantics = baseline.semantics
+    if semantics is not None:
+        if semantics.relationshipType == "causal":
+            base += 3
+        if semantics.strength >= 4:
+            base += 3
+    if len(baseline.focusTerms) >= 5:
+        base += 2
+    if baseline.redFlags:
+        base += 2
+
+    floor = 16 if desired_depth == "standard" else 22
+    ceiling = 28 if desired_depth == "standard" else 36
+    return max(floor, min(ceiling, base))
+
+
 def refine_claim_analysis(claim: str, context: str, desired_depth: str, baseline: ClaimAnalysis) -> ClaimAnalysis:
+    target_query_count = _target_query_count(desired_depth, baseline)
+    query_limit = max(target_query_count, min(36, len(baseline.generatedQueries) or target_query_count))
     result = generate_structured_output(
         "research",
         (
@@ -36,12 +56,13 @@ def refine_claim_analysis(claim: str, context: str, desired_depth: str, baseline
             "instructions": [
                 "Preserve the full semantic meaning of the claim instead of fragmenting it into keywords.",
                 "Prefer review, guideline, randomized trial, meta-analysis, mechanism, contradictory-evidence, and safety-oriented searches.",
-                "Use synonyms, medical terminology, and alternative phrasing where helpful.",
+                "Use synonyms, medical terminology, inverse contradiction queries, and alternative phrasing where helpful.",
                 "Do not change the baseline languageRiskScore or languageLabel.",
-                "Return 12 to 20 high-signal search queries.",
+                f"Return around {target_query_count} high-signal search queries, expanding only when the claim needs more breadth.",
             ],
         },
         QueryPlannerOutput,
+        preferred_providers=["gemini", "openai", "claude"],
     )
 
     if result is None:
@@ -52,6 +73,6 @@ def refine_claim_analysis(claim: str, context: str, desired_depth: str, baseline
             "summary": result.summary.strip() or baseline.summary,
             "focusTerms": _dedupe(result.focusTerms or baseline.focusTerms, 8) or baseline.focusTerms,
             "redFlags": _dedupe([*baseline.redFlags, *result.redFlags], 8),
-            "generatedQueries": _dedupe(result.generatedQueries or baseline.generatedQueries, 20) or baseline.generatedQueries,
+            "generatedQueries": _dedupe(result.generatedQueries or baseline.generatedQueries, query_limit) or baseline.generatedQueries,
         }
     )

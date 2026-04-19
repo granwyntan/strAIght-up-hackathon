@@ -1,10 +1,26 @@
+import json
+from functools import cached_property
 from pathlib import Path
+
+from pydantic import BaseModel, Field
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = BASE_DIR / "backend" / "data" / "investigations.sqlite3"
+DEFAULT_SOURCE_TIER_PATH = BASE_DIR / "backend" / "app" / "config" / "source_tiers.json"
+
+
+class SourceTierBucketConfig(BaseModel):
+    weight: float = Field(default=0.4, ge=0.0, le=1.0)
+    domains: list[str] = Field(default_factory=list)
+
+
+class SourceTierConfig(BaseModel):
+    verifiedAuthorities: SourceTierBucketConfig = Field(default_factory=lambda: SourceTierBucketConfig(weight=1.0))
+    establishedSources: SourceTierBucketConfig = Field(default_factory=lambda: SourceTierBucketConfig(weight=0.75))
+    generalSources: SourceTierBucketConfig = Field(default_factory=SourceTierBucketConfig)
 
 
 class Settings(BaseSettings):
@@ -15,15 +31,25 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = "*"
     agentic_workflow_enabled: bool = True
     llm_max_output_tokens: int = 1200
-    llm_timeout_seconds: float = 12.0
+    llm_timeout_seconds: float = 14.0
+    pipeline_max_concurrency: int = 8
+    search_query_budget_standard: int = 20
+    search_query_budget_deep: int = 32
+    source_target_standard: int = 48
+    source_target_deep: int = 84
+    search_cache_ttl_trending_seconds: int = 1800
+    search_cache_ttl_stable_seconds: int = 86400
+    extraction_cache_ttl_seconds: int = 43200
+    final_cache_ttl_seconds: int = 21600
+    cache_cleanup_probability: float = 0.08
 
     openai_api_key: str | None = None
     openai_api_base_url: str = "https://api.openai.com/v1"
-    openai_model: str = "gpt-5.2"
-    openai_research_model: str = "gpt-5-mini"
-    openai_reasoning_model: str = "gpt-5.2"
-    openai_synthesis_model: str = "gpt-4.1"
-    openai_citation_auditor_model: str = "gpt-5-mini"
+    openai_model: str = "gpt-5.4"
+    openai_research_model: str = "gpt-5.4-mini"
+    openai_reasoning_model: str = "gpt-5.4"
+    openai_synthesis_model: str = "gpt-5.4"
+    openai_citation_auditor_model: str = "gpt-5.4-mini"
 
     claude_api_key: str | None = None
     claude_api_base_url: str = "https://api.anthropic.com/v1/messages"
@@ -57,6 +83,13 @@ class Settings(BaseSettings):
     deepseek_synthesis_model: str = "deepseek-chat"
     deepseek_citation_auditor_model: str = "deepseek-chat"
 
+    nlpcloud_api_key: str | None = None
+    nlpcloud_api_base_url: str = "https://api.nlpcloud.io/v1"
+    nlpcloud_entity_model: str = "en_core_web_lg"
+    nlpcloud_classification_model: str = "bart-large-mnli-yahoo-answers"
+    nlpcloud_timeout_seconds: float = 8.0
+    nlpcloud_max_stance_refinements: int = 10
+
     research_stage_providers: str = "gemini,openai,claude,deepseek,xai"
     audit_stage_providers: str = "claude,openai,gemini,deepseek,xai"
     reasoning_stage_providers: str = "openai,xai,claude,deepseek,gemini"
@@ -64,20 +97,12 @@ class Settings(BaseSettings):
     consensus_stage_providers: str = "deepseek,claude,openai,gemini,xai"
 
     tavily_api_key: str | None = None
-    tavily_max_results: int = 8
+    tavily_max_results: int = 12
     serpapi_api_key: str | None = None
     serpapi_engine: str = "google"
-    serpapi_num_results: int = 8
-    search_timeout_seconds: float = 3.0
-    verified_authorities: str = (
-        "who.int,nih.gov,cdc.gov,fda.gov,ods.od.nih.gov,nccih.nih.gov,medlineplus.gov,"
-        "ncbi.nlm.nih.gov,pubmed.ncbi.nlm.nih.gov,cochrane.org,cochranelibrary.com"
-    )
-    established_sources: str = (
-        "jamanetwork.com,bmj.com,thelancet.com,nejm.org,nature.com,sciencedirect.com,"
-        "springer.com,cell.com,harvard.edu,stanford.edu,mayoclinic.org,clevelandclinic.org"
-    )
-    general_sources: str = ""
+    serpapi_num_results: int = 12
+    search_timeout_seconds: float = 4.5
+    source_tier_config_path: str = str(DEFAULT_SOURCE_TIER_PATH)
     database_path: str = str(DEFAULT_DB_PATH)
 
     model_config = SettingsConfigDict(
@@ -116,6 +141,10 @@ class Settings(BaseSettings):
         return any([self.has_openai, self.has_claude, self.has_gemini, self.has_xai, self.has_deepseek])
 
     @property
+    def has_nlpcloud(self) -> bool:
+        return bool(self.nlpcloud_api_key)
+
+    @property
     def llm_agents_enabled(self) -> bool:
         return self.agentic_workflow_enabled and self.has_any_llm
 
@@ -133,20 +162,51 @@ class Settings(BaseSettings):
         return values or ["*"]
 
     @staticmethod
-    def _split_domains(raw_value: str) -> list[str]:
-        return [item.strip().lower() for item in raw_value.split(",") if item.strip()]
+    def _normalize_domains(raw_values: list[str]) -> list[str]:
+        domains: list[str] = []
+        for item in raw_values:
+            normalized = item.strip().lower()
+            if normalized and normalized not in domains:
+                domains.append(normalized)
+        return domains
+
+    def _resolve_config_path(self, raw_path: str) -> Path:
+        candidate = Path(raw_path)
+        if not candidate.is_absolute():
+            candidate = BASE_DIR / candidate
+        return candidate
+
+    @cached_property
+    def source_tier_config(self) -> SourceTierConfig:
+        config_path = self._resolve_config_path(self.source_tier_config_path)
+        try:
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+            return SourceTierConfig.model_validate(payload)
+        except Exception:
+            return SourceTierConfig()
 
     @property
     def verified_authorities_list(self) -> list[str]:
-        return self._split_domains(self.verified_authorities)
+        return self._normalize_domains(self.source_tier_config.verifiedAuthorities.domains)
 
     @property
     def established_sources_list(self) -> list[str]:
-        return self._split_domains(self.established_sources)
+        return self._normalize_domains(self.source_tier_config.establishedSources.domains)
 
     @property
     def general_sources_list(self) -> list[str]:
-        return self._split_domains(self.general_sources)
+        return self._normalize_domains(self.source_tier_config.generalSources.domains)
+
+    @property
+    def source_bucket_weights(self) -> dict[str, float]:
+        return {
+            "tier_3_authority": self.source_tier_config.verifiedAuthorities.weight,
+            "tier_2_scholarly": self.source_tier_config.establishedSources.weight,
+            "tier_1_blog": self.source_tier_config.generalSources.weight,
+        }
+
+    def source_weight_for_bucket(self, bucket: str) -> float:
+        return self.source_bucket_weights.get(bucket, self.source_tier_config.generalSources.weight)
 
 
 settings = Settings()

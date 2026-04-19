@@ -47,7 +47,7 @@ def draft_report(
         "writer",
         (
             "You are the final synthesis agent for a health-claim investigation. "
-            "Write a tight evidence-focused summary in JSON only. "
+            "Write a tight evidence-focused expert synthesis in JSON only. "
             "Match the provided verdict and score. Avoid medical advice and avoid certainty beyond the evidence."
         ),
         {
@@ -60,10 +60,11 @@ def draft_report(
             "baseline_strengths": baseline_strengths,
             "baseline_concerns": baseline_concerns,
             "instructions": [
-                "Keep the narrative to 2 or 3 sentences.",
+                "Keep the narrative to 2 or 3 sentences with expert interpretation and real-world implications.",
                 "List 2 to 4 strengths and 2 to 4 concerns.",
                 "Ground the answer in source quality, evidence depth, citation quality, and claim language discipline.",
             ],
         },
         ReportWriterOutput,
+        preferred_providers=["openai", "claude", "gemini"],
     )
