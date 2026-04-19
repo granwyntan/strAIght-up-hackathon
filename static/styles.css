@@ -163,6 +163,7 @@ body {
 }
 
 textarea,
+input[type="number"],
 input[type="file"] {
     width: 100%;
     border: 1px solid var(--line);
@@ -177,6 +178,12 @@ textarea {
     min-height: 96px;
     resize: vertical;
     line-height: 1.55;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
 }
 
 .upload-field input[type="file"] {
@@ -342,8 +349,38 @@ textarea {
     color: var(--accent-deep);
 }
 
-.infographic-heading {
-    margin-top: 1.4rem;
+.summary-card {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 22px;
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(236, 231, 251, 0.7), rgba(216, 240, 228, 0.6));
+}
+
+.summary-pill {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 110px;
+    margin: 0 0.75rem 0.75rem 0;
+    padding: 0.8rem 0.95rem;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(125, 111, 154, 0.12);
+}
+
+.summary-pill span {
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+.summary-pill strong {
+    font-size: 1.05rem;
+}
+
+.summary-note {
+    margin: 0.2rem 0 0;
+    color: var(--muted);
 }
 
 .placeholder {
@@ -357,6 +394,10 @@ textarea {
 @media (max-width: 900px) {
     .hero,
     .workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .metrics-grid {
         grid-template-columns: 1fr;
     }
 

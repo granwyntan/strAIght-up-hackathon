@@ -1,1 +1,1 @@
-What is the supplement in this image? What is the brand, type of supplement, what are the ingredients in this supplement?  what are the medical benefits and possible negative side effects when consuming this supplement? You are acting as a pharmacist with medicinal knowledge, do you recommend that the user takes this supplement based on his medical history? His medical history is {}.
+Analyze this meal photo. For each visible food item or ingredient, estimate the mass in grams and the calories, then show a clear total estimated calorie count at the end.
