@@ -1,0 +1,26 @@
+{
+    "name": "nourishlens-mobile",
+    "version": "1.0.0",
+    "private": true,
+    "main": "expo/AppEntry",
+    "scripts": {
+        "start": "expo start",
+        "start:lan": "expo start --lan --clear",
+        "start:tunnel": "expo start --tunnel --clear",
+        "android": "expo start --android",
+        "ios": "expo start --ios",
+        "web": "expo start --web"
+    },
+    "dependencies": {
+        "expo": "~54.0.0",
+        "expo-image-picker": "~17.0.10",
+        "react": "19.1.0",
+        "react-native": "0.81.5"
+    },
+    "devDependencies": {
+        "@babel/core": "^7.26.0",
+        "@types/react": "~19.1.10",
+        "babel-preset-expo": "~54.0.0",
+        "typescript": "^5.9.3"
+    }
+}

@@ -1,0 +1,39 @@
+**/node_modules/
+frontend/.expo/
+frontend/dist/
+frontend/.expo-shared/
+backend/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+*.pyc
+
+# Environment / secrets (keep examples)
+.env
+.env.local
+.env.*
+**/.env
+**/.env.local
+**/.env.*
+!**/.env.example
+!**/.env.sample
+
+# Local script outputs / private scripts
+scripts/local/
+scripts/private/
+scripts/tmp/
+scripts/**/.env*
+scripts/**/*.local.*
+scripts/**/*.secret.*
+
+# Local data / caches
+*.log
+*.sqlite3
+*.db
+backend/data/
+
+# Key material
+*.pem
+*.key
+*.p12
+*.pfx
