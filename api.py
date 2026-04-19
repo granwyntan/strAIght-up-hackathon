@@ -4,17 +4,19 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 import os, uvicorn
 
+# setup
 load_dotenv()
 app = FastAPI()
 client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
 
 # Gets prompt
 with open("prompt.txt", "r") as file:
-    text_prompt = file.readline()
+    text_prompt = " ".join([i.strip() for i in file.readlines()])
 
 with open("image_prompt.txt", "r") as file:
-    image_prompt = file.readline()
+    image_prompt = " ".join([i.strip() for i in file.readlines()])
 
+# class to process json headers
 class Message(BaseModel):
     msg: str
 
@@ -33,7 +35,6 @@ def chat(message:Message):
     )
     return {"response" : response.output_text}
 
-# TODO: take base64 string of image, and prompt chatgpt with it
 @app.post("/scan_meds")
 def scan_meds(image:Message):
     """Receives a Base64 encoded image, prompts chatGPT, and returns the result"""
@@ -42,6 +43,7 @@ def scan_meds(image:Message):
         input = [{"role": "user", "content": [{"type": "input_text", "text" :image_prompt.format(", ".join(underlying_conditions))},{"type": "input_image", "image_url": f"data:image/png;base64,{image.msg}"}]}]
     )
     return {"response" : response.output_text}
+
 
 if __name__ == "__main__":
     uvicorn.run(app)
