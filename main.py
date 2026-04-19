@@ -1,8 +1,11 @@
 from flask import Flask, request, render_template
 from openai import OpenAI
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 app = Flask(__name__)
-client = OpenAI(api_key="")
+client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
 
 # Gets prompt
 with open("prompt.txt", "r") as file:
