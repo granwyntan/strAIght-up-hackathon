@@ -1,1 +1,28 @@
+# Environment files
 .env
+.env.*
+!.env.example
+
+# macOS / editor noise
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.venv/
+venv/
+env/
+backend/.venv/
+
+# Local app data
+*.sqlite3
+uploads/
+static/uploads/
+
+# Frontend dependencies / local tooling
+frontend/node_modules/
+frontend/.expo/
