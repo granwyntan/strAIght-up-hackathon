@@ -6,7 +6,11 @@ import re
 import uuid
 from pathlib import Path
 
-from flask import Flask, render_template, request
+import uvicorn
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from openai import OpenAI
 from werkzeug.utils import secure_filename
 
@@ -19,10 +23,14 @@ if load_dotenv is not None:
     load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR / "static" / "uploads"
+STATIC_DIR = BASE_DIR / "static"
+TEMPLATE_DIR = BASE_DIR / "templates"
+UPLOAD_DIR = STATIC_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
+app = FastAPI()
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
@@ -87,7 +95,7 @@ def build_calorie_prompt(age: float, bmi: float, daily_target: int) -> str:
     )
 
 
-def save_uploaded_file(file_storage) -> str:
+async def save_uploaded_file(file_storage: UploadFile) -> str:
     filename = secure_filename(file_storage.filename or "")
     if not filename or not allowed_file(filename):
         raise ValueError("Please upload a PNG, JPG, JPEG, or WEBP image.")
@@ -95,7 +103,7 @@ def save_uploaded_file(file_storage) -> str:
     extension = filename.rsplit(".", 1)[1].lower()
     stored_name = f"{uuid.uuid4().hex}.{extension}"
     destination = UPLOAD_DIR / stored_name
-    file_storage.save(destination)
+    destination.write_bytes(await file_storage.read())
     return stored_name
 
 
@@ -200,65 +208,78 @@ def render_analysis_html(raw_text: str) -> str:
     return "\n".join(parts)
 
 
-@app.route("/", methods=["GET", "POST"])
-def index():
-    response_html = None
-    error_message = None
-    image_path = None
-    calorie_context = None
-    form_values = {
-        "age": DEFAULT_AGE,
-        "bmi": DEFAULT_BMI,
+def build_index_context(request: Request) -> dict[str, object]:
+    return {
+        "request": request,
+        "response_html": None,
+        "error": None,
+        "image_path": None,
+        "calorie_context": None,
+        "form_values": {
+            "age": DEFAULT_AGE,
+            "bmi": DEFAULT_BMI,
+        },
     }
 
-    if request.method == "POST":
-        form_values["age"] = request.form.get("age", DEFAULT_AGE).strip()
-        form_values["bmi"] = request.form.get("bmi", DEFAULT_BMI).strip()
-        webcam_image = request.form.get("webcam_image", "").strip()
-        uploaded_file = request.files.get("photo")
 
-        try:
-            age = parse_positive_number(form_values["age"], "age")
-            bmi = parse_positive_number(form_values["bmi"], "BMI")
+def ensure_api_key() -> None:
+    if client.api_key is None:
+        raise RuntimeError("Set OPENAI_API_KEY or OPEN_AI_KEY before using the calorie calculator.")
 
-            if webcam_image:
-                image_filename = save_webcam_capture(webcam_image)
-            elif uploaded_file and uploaded_file.filename:
-                image_filename = save_uploaded_file(uploaded_file)
-            else:
-                raise ValueError("Please upload an image or take one with the webcam.")
 
-            image_path = f"uploads/{image_filename}"
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    context = build_index_context(request)
+    return templates.TemplateResponse(request, "index.html", context)
 
-            if client.api_key is None:
-                raise RuntimeError("Set OPENAI_API_KEY or OPEN_AI_KEY before using the calorie calculator.")
 
-            calorie_note, daily_target = estimate_daily_calories(age, bmi)
-            response_text = analyze_food(
-                image_filename=image_filename,
-                age=age,
-                bmi=bmi,
-                daily_target=daily_target,
-            )
-            response_html = render_analysis_html(response_text)
-            calorie_context = {
-                "age": int(age) if age.is_integer() else age,
-                "bmi": f"{bmi:.1f}",
-                "daily_target": daily_target,
-                "note": calorie_note,
-            }
-        except Exception as exc:
-            error_message = str(exc)
+@app.post("/", response_class=HTMLResponse)
+async def analyze_index(
+    request: Request,
+    age: str = Form(DEFAULT_AGE),
+    bmi: str = Form(DEFAULT_BMI),
+    webcam_image: str = Form(""),
+    photo: UploadFile | None = File(default=None),
+):
+    context = build_index_context(request)
+    context["form_values"] = {
+        "age": age.strip(),
+        "bmi": bmi.strip(),
+    }
 
-    return render_template(
-        "index.html",
-        response_html=response_html,
-        error=error_message,
-        image_path=image_path,
-        calorie_context=calorie_context,
-        form_values=form_values,
-    )
+    try:
+        parsed_age = parse_positive_number(context["form_values"]["age"], "age")
+        parsed_bmi = parse_positive_number(context["form_values"]["bmi"], "BMI")
+
+        if webcam_image.strip():
+            image_filename = save_webcam_capture(webcam_image.strip())
+        elif photo and photo.filename:
+            image_filename = await save_uploaded_file(photo)
+        else:
+            raise ValueError("Please upload an image or take one with the webcam.")
+
+        context["image_path"] = f"uploads/{image_filename}"
+        ensure_api_key()
+
+        calorie_note, daily_target = estimate_daily_calories(parsed_age, parsed_bmi)
+        response_text = analyze_food(
+            image_filename=image_filename,
+            age=parsed_age,
+            bmi=parsed_bmi,
+            daily_target=daily_target,
+        )
+        context["response_html"] = render_analysis_html(response_text)
+        context["calorie_context"] = {
+            "age": int(parsed_age) if parsed_age.is_integer() else parsed_age,
+            "bmi": f"{parsed_bmi:.1f}",
+            "daily_target": daily_target,
+            "note": calorie_note,
+        }
+    except Exception as exc:
+        context["error"] = str(exc)
+
+    return templates.TemplateResponse(request, "index.html", context)
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
