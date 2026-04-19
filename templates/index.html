@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en-US">
+    <head>
+        <meta charset="utf-8">
+        <title>GramVVIN - Your health buddy</title>
+    </head>
+    <body>
+        <form method="post" action="/">
+            <input type="text" name="msg"></input>
+            <button type="submit">Submit</button>
+        </form>
+        <form method="post" enctype="multipart/form-data" action="/">
+            <input type="file" name="photo" />
+            <button type="submit">Submit</button>
+        </form>
+        {% if response %}
+        <p>{{response}}</p>
+        {% endif %}
+    </body>
+</html>
