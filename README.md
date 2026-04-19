@@ -1,105 +1,250 @@
 # GramWIN
 
-Health and Wellness at your fingertips.
+Health and wellness claim checker with:
 
-A multi-agent health-claim credibility app with an Expo frontend and a FastAPI backend. The backend is designed to minimize hallucination by validating sources and quotes before they can appear in the UI, and by cross-checking sentiment across multiple LLM roles.
+- `backend/`: FastAPI API
+- `frontend/`: Expo app for mobile and web
 
-## Product focus
+This repo originally included PowerShell launch scripts for Windows. It now also includes Python launch scripts so you can run it on macOS and Windows without needing PowerShell.
 
-- Investigate health and wellness claims with a staged multi-agent workflow
-- Validate source accessibility and quote integrity before rendering evidence
-- Score source quality, evidence depth, citation integrity, weighted consensus, and agreement penalties
-- Persist investigation history, agent runs, and progress logs in SQLite
-- Review results in a mobile-friendly Expo frontend
+## What you need
 
-## Stack
+- Python 3.10+
+- Node.js 18+
+- npm
 
-- Frontend: Expo + React Native + TypeScript
-- Backend: FastAPI + Python
-- Search: SerpAPI (breadth) + Tavily (depth)
-- Multi-LLM: OpenAI, Claude, Gemini, xAI, DeepSeek (optional; driven by env keys)
+Check that these work:
 
-## Structure
+```bash
+python3 --version
+node --version
+npm --version
+```
 
-- `frontend/` Expo React Native client
-- `backend/` FastAPI API
+On Windows, `python` usually works instead of `python3`.
 
-## Pipeline (high level)
+## First-time setup
 
-- Claim understanding: semantic subject/action/outcome + claim-strength score
-- Query generation: meaning-preserving search queries
-- Retrieval: SerpAPI breadth + Tavily depth (or offline seeded sources)
-- Source validation: discard dead/inaccessible pages, extract readable text
-- Quote verification: only show quotes that match extracted text
-- Dual sentiment: scientific + critical passes; disagreements downgrade to neutral and reduce weight
-- Weighted consensus: source weight × sentiment × agreement factor
-- Cross-agent validation: reviewer + challenger adjust and flag overclaiming
+1. Copy the example env file:
 
-## Run locally
+```bash
+cp backend/.env.example backend/.env
+```
 
-### Quick scripts
+On Windows Command Prompt:
 
-From the repository root:
+```cmd
+copy backend\.env.example backend\.env
+```
 
-- `pwsh -ExecutionPolicy Bypass -File .\run-backend.ps1`
-- `pwsh -ExecutionPolicy Bypass -File .\run-frontend.ps1`
-- `pwsh -ExecutionPolicy Bypass -File .\run-dev.ps1`
+2. Open `backend/.env`
+3. Fill in the API keys you want to use
+4. Leave `BACKEND_PORT=8000` unless you specifically want a different port
 
-### Configuration
+## Easiest way to open the app
 
-1. Copy `backend/.env.example` to `backend/.env` (do not commit it)
-2. Update the deployment/runtime values first:
+### macOS
 
-- `BACKEND_HOST`
-- `BACKEND_PORT`
-- `BACKEND_PUBLIC_BASE_URL`
-- `CORS_ALLOWED_ORIGINS`
+Start both backend and frontend together:
 
-3. Then fill in the providers you want to use:
+```bash
+python3 run_dev.py
+```
 
-- `OPENAI_API_KEY`
-- `CLAUDE_API_KEY`
-- `GEMINI_API_KEY`
-- `XAI_API_KEY`
-- `DEEPSEEK_API_KEY`
-- `TAVILY_API_KEY`
-- `SERPAPI_API_KEY`
+If you want the app in your browser instead of Expo mobile mode:
 
-The backend loads configuration from:
+```bash
+python3 run_dev.py --web
+```
 
-- `backend/.env`
-- `backend/.env.local`
-- `.env`
-- `.env.local`
+### Windows
 
-The frontend launcher reads `backend/.env` and generates `frontend/.env.local` automatically. Users should not need to type API addresses into the app for normal local use.
+You can use either Python or the original PowerShell scripts.
 
-Optional frontend API override:
+Python:
 
-- `pwsh -ExecutionPolicy Bypass -File .\run-frontend.ps1 -ApiBaseUrl http://127.0.0.1:8000`
-- `pwsh -ExecutionPolicy Bypass -File .\run-dev.ps1 -ApiBaseUrl http://127.0.0.1:8000`
+```cmd
+python run_dev.py
+```
 
-If `-ApiBaseUrl` is omitted, `run-frontend.ps1` uses `BACKEND_PUBLIC_BASE_URL` first and also generates fallback candidates from your machine's current LAN IPs.
+Browser mode:
 
-### Phone / emulator notes
+```cmd
+python run_dev.py --web
+```
 
-- Android emulator: `http://10.0.2.2:8000`
-- Physical phone: set `BACKEND_PUBLIC_BASE_URL` to `http://YOUR_PC_LAN_IP:8000` and ensure your firewall allows inbound connections to port `8000`.
+PowerShell:
 
-### Frontend
+```powershell
+pwsh -ExecutionPolicy Bypass -File .\run-dev.ps1
+```
 
-1. `cd frontend`
-2. `npm install`
-3. `npm run start:lan`
+## Open backend and frontend separately
 
-For Android emulators, `http://10.0.2.2:8000` is still added automatically as a fallback candidate.
+### macOS
 
-### Backend
+Backend:
 
-1. `cd backend`
-2. `python -m venv .venv`
-3. `.venv\\Scripts\\activate`
-4. `pip install -r requirements.txt`
-5. `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
+```bash
+python3 run_backend.py
+```
 
-If you launch from VS Code, use the `Backend: FastAPI` launch configuration so the API is reachable from emulators and devices on your local network.
+Frontend:
+
+```bash
+python3 run_frontend.py
+```
+
+Frontend in browser:
+
+```bash
+python3 run_frontend.py --web
+```
+
+### Windows
+
+Backend:
+
+```cmd
+python run_backend.py
+```
+
+Frontend:
+
+```cmd
+python run_frontend.py
+```
+
+Frontend in browser:
+
+```cmd
+python run_frontend.py --web
+```
+
+## What these scripts do
+
+`run_backend.py`
+
+- creates `backend/.venv` if needed
+- installs backend dependencies from `backend/requirements.txt`
+- starts FastAPI with uvicorn
+
+`run_frontend.py`
+
+- installs frontend dependencies in `frontend/`
+- generates `frontend/.env.local` from `backend/.env`
+- starts Expo
+
+`run_dev.py`
+
+- starts the backend in the background
+- starts the frontend in the foreground
+- stops the backend when you exit
+
+## If you want to open the app in a browser
+
+Use:
+
+```bash
+python3 run_frontend.py --web
+```
+
+or:
+
+```bash
+python3 run_dev.py --web
+```
+
+Expo will print a local URL in the terminal, usually something like:
+
+- `http://localhost:8081`
+
+Open that URL in your browser.
+
+## If you want to open the app on your phone
+
+Run:
+
+```bash
+python3 run_dev.py
+```
+
+Then:
+
+1. Install Expo Go on your phone
+2. Make sure your phone and computer are on the same Wi‑Fi
+3. Scan the QR code shown by Expo
+
+## Useful options
+
+Skip backend auto-reload:
+
+```bash
+python3 run_backend.py --no-reload
+```
+
+Update Python and frontend packages while starting:
+
+```bash
+python3 run_dev.py --update-deps
+```
+
+Override the API URL manually:
+
+```bash
+python3 run_frontend.py --api-base-url http://127.0.0.1:8000
+```
+
+## Troubleshooting
+
+### `python3: command not found`
+
+Try:
+
+```bash
+python --version
+```
+
+If `python` works, use `python` instead of `python3`.
+
+### `npm: command not found`
+
+Install Node.js from:
+
+- https://nodejs.org/
+
+### The frontend opens but cannot reach the backend
+
+Check:
+
+- `backend/.env` exists
+- `BACKEND_PORT` matches what you expect
+- the backend terminal says it started successfully
+
+You can also force the frontend to use localhost:
+
+```bash
+python3 run_frontend.py --api-base-url http://127.0.0.1:8000
+```
+
+### I only want the backend API
+
+Run:
+
+```bash
+python3 run_backend.py
+```
+
+Then open:
+
+- `http://127.0.0.1:8000/docs`
+
+## Legacy Windows scripts
+
+These still work on Windows:
+
+- `run-backend.ps1`
+- `run-frontend.ps1`
+- `run-dev.ps1`
+
+They are no longer required on macOS because the Python launchers provide the same local workflow.
