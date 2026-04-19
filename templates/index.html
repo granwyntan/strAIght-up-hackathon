@@ -12,7 +12,7 @@
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='styles.css') }}"
+      href="{{ url_for('static', path='styles.css') }}"
     />
   </head>
   <body>
@@ -133,7 +133,7 @@
           {% if image_path %}
           <img
             class="result-image"
-            src="{{ url_for('static', filename=image_path) }}"
+            src="{{ url_for('static', path=image_path) }}"
             alt="Submitted supplement image"
           />
           {% else %}
@@ -156,7 +156,7 @@
           {% if infographic_path %}
           <img
             class="infographic-image"
-            src="{{ url_for('static', filename=infographic_path) }}"
+            src="{{ url_for('static', path=infographic_path) }}"
             alt="Generated supplement infographic"
           />
           {% else %}

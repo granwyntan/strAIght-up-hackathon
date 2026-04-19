@@ -1,13 +1,19 @@
 import base64
-import imghdr
+import hashlib
 import html
+import imghdr
 import os
 import re
 import uuid
 from pathlib import Path
 
-from flask import Flask, render_template, request
+import uvicorn
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from openai import OpenAI
+from pydantic import BaseModel
 from werkzeug.utils import secure_filename
 
 try:
@@ -19,18 +25,40 @@ if load_dotenv is not None:
     load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR / "static" / "uploads"
-INFOGRAPHIC_DIR = BASE_DIR / "static" / "infographics"
+STATIC_DIR = BASE_DIR / "static"
+TEMPLATE_DIR = BASE_DIR / "templates"
+UPLOAD_DIR = STATIC_DIR / "uploads"
+INFOGRAPHIC_DIR = STATIC_DIR / "infographics"
+PROMPT_PATH = BASE_DIR / "prompt.txt"
+IMAGE_PROMPT_PATH = BASE_DIR / "image_prompt.txt"
+
 UPLOAD_DIR.mkdir(exist_ok=True)
 INFOGRAPHIC_DIR.mkdir(exist_ok=True)
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+API_KEY = os.environ.get("OPENAI_API_KEY") or os.environ.get("OPEN_AI_KEY")
+
+app = FastAPI()
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+client = OpenAI(api_key=API_KEY)
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 
 DEFAULT_CONDITIONS = "NIL"
 DEFAULT_GOALS = "Reduce belly fat, Improve cognitive power"
+CHAT_UNDERLYING_CONDITIONS = ["High blood pressure", "Type 2 Diabetes", "Joint Pain"]
+
+TEXT_PROMPT = " ".join(line.strip() for line in PROMPT_PATH.read_text().splitlines())
+IMAGE_PROMPT = " ".join(line.strip() for line in IMAGE_PROMPT_PATH.read_text().splitlines())
+
+analysis_cache: dict[str, str] = {}
+infographic_cache: dict[str, str] = {}
+chat_cache: dict[str, str] = {}
+scan_cache: dict[str, str] = {}
+
+
+class Message(BaseModel):
+    msg: str
 
 
 def allowed_file(filename: str) -> bool:
@@ -71,16 +99,29 @@ def build_infographic_prompt(analysis_text: str, conditions: str, goals: str) ->
     )
 
 
-def save_uploaded_file(file_storage) -> str:
-    filename = secure_filename(file_storage.filename or "")
+async def save_uploaded_file(uploaded_file: UploadFile) -> str:
+    filename = secure_filename(uploaded_file.filename or "")
     if not filename or not allowed_file(filename):
         raise ValueError("Please upload a PNG, JPG, JPEG, or WEBP image.")
 
     extension = filename.rsplit(".", 1)[1].lower()
     stored_name = f"{uuid.uuid4().hex}.{extension}"
     destination = UPLOAD_DIR / stored_name
-    file_storage.save(destination)
+    destination.write_bytes(await uploaded_file.read())
     return stored_name
+
+
+async def read_uploaded_file(uploaded_file: UploadFile) -> tuple[bytes, str]:
+    filename = secure_filename(uploaded_file.filename or "")
+    if not filename or not allowed_file(filename):
+        raise ValueError("Please upload a PNG, JPG, JPEG, or WEBP image.")
+
+    image_bytes = await uploaded_file.read()
+    if not image_bytes:
+        raise ValueError("The uploaded image was empty. Please choose another file.")
+
+    extension = filename.rsplit(".", 1)[1].lower()
+    return image_bytes, extension
 
 
 def save_webcam_capture(data_url: str) -> str:
@@ -93,6 +134,7 @@ def save_webcam_capture(data_url: str) -> str:
         image_bytes = base64.b64decode(encoded)
     except Exception as exc:
         raise ValueError("The webcam image data could not be read.") from exc
+
     extension = imghdr.what(None, h=image_bytes) or "png"
     if extension == "jpeg":
         extension = "jpg"
@@ -105,10 +147,45 @@ def save_webcam_capture(data_url: str) -> str:
     return stored_name
 
 
-def analyze_supplement(image_filename: str, conditions: str, goals: str) -> str:
-    image_path = UPLOAD_DIR / image_filename
-    image_bytes = image_path.read_bytes()
-    mime_type = f"image/{image_filename.rsplit('.', 1)[1].lower()}".replace("jpg", "jpeg")
+def decode_webcam_capture(data_url: str) -> tuple[bytes, str]:
+    if not data_url or "," not in data_url:
+        raise ValueError("The webcam image was empty. Please take the photo again.")
+
+    _, encoded = data_url.split(",", 1)
+
+    try:
+        image_bytes = base64.b64decode(encoded)
+    except Exception as exc:
+        raise ValueError("The webcam image data could not be read.") from exc
+
+    extension = imghdr.what(None, h=image_bytes) or "png"
+    if extension == "jpeg":
+        extension = "jpg"
+    if extension not in ALLOWED_EXTENSIONS:
+        raise ValueError("Unsupported webcam image format.")
+
+    return image_bytes, extension
+
+
+def store_image_bytes(image_bytes: bytes, extension: str) -> str:
+    stored_name = f"{uuid.uuid4().hex}.{extension}"
+    destination = UPLOAD_DIR / stored_name
+    destination.write_bytes(image_bytes)
+    return stored_name
+
+
+def build_analysis_cache_key(image_bytes: bytes, conditions: str, goals: str) -> str:
+    digest = hashlib.sha256(image_bytes).hexdigest()
+    return f"{digest}|{conditions.strip()}|{goals.strip()}"
+
+
+def build_infographic_cache_key(analysis_text: str, conditions: str, goals: str) -> str:
+    payload = f"{analysis_text}|{conditions.strip()}|{goals.strip()}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def analyze_supplement(image_bytes: bytes, extension: str, conditions: str, goals: str) -> str:
+    mime_type = f"image/{extension.lower()}".replace("jpg", "jpeg")
     image_data = base64.b64encode(image_bytes).decode("utf-8")
 
     response = client.responses.create(
@@ -198,61 +275,160 @@ def render_analysis_html(raw_text: str) -> str:
     return "\n".join(parts)
 
 
-@app.route("/", methods=["GET", "POST"])
-def index():
-    response_text = None
-    response_html = None
-    error_message = None
-    image_path = None
-    infographic_path = None
-    form_values = {
-        "conditions": DEFAULT_CONDITIONS,
-        "goals": DEFAULT_GOALS,
+def build_index_context() -> dict[str, object]:
+    return {
+        "response": None,
+        "response_html": None,
+        "error": None,
+        "image_path": None,
+        "infographic_path": None,
+        "form_values": {
+            "conditions": DEFAULT_CONDITIONS,
+            "goals": DEFAULT_GOALS,
+        },
     }
 
-    if request.method == "POST":
-        form_values["conditions"] = request.form.get("conditions", DEFAULT_CONDITIONS)
-        form_values["goals"] = request.form.get("goals", DEFAULT_GOALS)
-        webcam_image = request.form.get("webcam_image", "").strip()
-        uploaded_file = request.files.get("photo")
 
-        try:
-            if webcam_image:
-                image_filename = save_webcam_capture(webcam_image)
-            elif uploaded_file and uploaded_file.filename:
-                image_filename = save_uploaded_file(uploaded_file)
-            else:
-                raise ValueError("Please upload an image or take one with the webcam.")
+def ensure_api_key() -> None:
+    if API_KEY is None:
+        raise RuntimeError("Set OPENAI_API_KEY or OPEN_AI_KEY before using the scanner.")
 
-            image_path = f"uploads/{image_filename}"
 
-            if client.api_key is None:
-                raise RuntimeError("Set OPENAI_API_KEY or OPEN_AI_KEY before using the scanner.")
+def get_cached_analysis(image_bytes: bytes, extension: str, conditions: str, goals: str) -> str:
+    cache_key = build_analysis_cache_key(image_bytes, conditions, goals)
+    cached_response = analysis_cache.get(cache_key)
+    if cached_response is not None:
+        return cached_response
 
-            response_text = analyze_supplement(
-                image_filename=image_filename,
-                conditions=form_values["conditions"],
-                goals=form_values["goals"],
-            )
-            response_html = render_analysis_html(response_text)
-            infographic_path = generate_infographic(
-                analysis_text=response_text,
-                conditions=form_values["conditions"],
-                goals=form_values["goals"],
-            )
-        except Exception as exc:
-            error_message = str(exc)
-
-    return render_template(
-        "index.html",
-        response=response_text,
-        response_html=response_html,
-        error=error_message,
-        image_path=image_path,
-        infographic_path=infographic_path,
-        form_values=form_values,
+    response_text = analyze_supplement(
+        image_bytes=image_bytes,
+        extension=extension,
+        conditions=conditions,
+        goals=goals,
     )
+    analysis_cache[cache_key] = response_text
+    return response_text
+
+
+def get_cached_infographic(analysis_text: str, conditions: str, goals: str) -> str:
+    cache_key = build_infographic_cache_key(analysis_text, conditions, goals)
+    cached_path = infographic_cache.get(cache_key)
+    if cached_path is not None:
+        return cached_path
+
+    infographic_path = generate_infographic(analysis_text, conditions, goals)
+    infographic_cache[cache_key] = infographic_path
+    return infographic_path
+
+
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    context = build_index_context()
+    context["request"] = request
+    return templates.TemplateResponse(request, "index.html", context)
+
+
+@app.post("/", response_class=HTMLResponse)
+async def analyze_index(
+    request: Request,
+    conditions: str = Form(DEFAULT_CONDITIONS),
+    goals: str = Form(DEFAULT_GOALS),
+    webcam_image: str = Form(""),
+    photo: UploadFile | None = File(default=None),
+):
+    context = build_index_context()
+    context["request"] = request
+    context["form_values"] = {
+        "conditions": conditions,
+        "goals": goals,
+    }
+
+    try:
+        ensure_api_key()
+
+        if webcam_image.strip():
+            image_bytes, extension = decode_webcam_capture(webcam_image.strip())
+        elif photo and photo.filename:
+            image_bytes, extension = await read_uploaded_file(photo)
+        else:
+            raise ValueError("Please upload an image or take one with the webcam.")
+
+        image_filename = store_image_bytes(image_bytes, extension)
+        context["image_path"] = f"uploads/{image_filename}"
+        response_text = get_cached_analysis(
+            image_bytes=image_bytes,
+            extension=extension,
+            conditions=conditions,
+            goals=goals,
+        )
+        context["response"] = response_text
+        context["response_html"] = render_analysis_html(response_text)
+        context["infographic_path"] = get_cached_infographic(
+            analysis_text=response_text,
+            conditions=conditions,
+            goals=goals,
+        )
+    except Exception as exc:
+        context["error"] = str(exc)
+
+    return templates.TemplateResponse(request, "index.html", context)
+
+
+@app.post("/chat")
+def chat(message: Message):
+    ensure_api_key()
+    cache_key = message.msg.strip()
+    cached_response = chat_cache.get(cache_key)
+    if cached_response is not None:
+        return {"response": cached_response}
+
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": TEXT_PROMPT.format(", ".join(CHAT_UNDERLYING_CONDITIONS), message.msg),
+                    }
+                ],
+            }
+        ],
+    )
+    chat_cache[cache_key] = response.output_text
+    return {"response": response.output_text}
+
+
+@app.post("/scan_meds")
+def scan_meds(image: Message):
+    ensure_api_key()
+    cache_key = image.msg.strip()
+    cached_response = scan_cache.get(cache_key)
+    if cached_response is not None:
+        return {"response": cached_response}
+
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": IMAGE_PROMPT.format(", ".join(CHAT_UNDERLYING_CONDITIONS)),
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:image/png;base64,{image.msg}",
+                    },
+                ],
+            }
+        ],
+    )
+    scan_cache[cache_key] = response.output_text
+    return {"response": response.output_text}
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
