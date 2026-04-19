@@ -60,5 +60,14 @@ def init_db() -> None:
                 expires_at TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS source_domains (
+                domain TEXT PRIMARY KEY,
+                latest_url TEXT NOT NULL,
+                source_bucket TEXT NOT NULL DEFAULT 'tier_1_blog',
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                seen_count INTEGER NOT NULL DEFAULT 1
+            );
             """
         )

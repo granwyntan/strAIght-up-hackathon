@@ -142,6 +142,8 @@ class SourceAssessment(BaseModel):
     stance: SourceStance
     sentiment: SourceSentiment = "neutral"
     relevanceSummary: str = ""
+    relevanceCheckSummary: str = ""
+    relevanceScore: int = Field(default=50, ge=0, le=100)
     sentimentSummary: str = ""
     methodologyInsights: list[str] = Field(default_factory=list)
     biasNotes: list[str] = Field(default_factory=list)
@@ -222,10 +224,14 @@ class InvestigationState(BaseModel):
     confidenceLevel: ConfidenceLevel | None = None
     llmAgreementScore: int | None = Field(default=None, ge=0, le=100)
     misinformationRisk: MisinformationRisk | None = None
+    progressPercent: int = Field(default=0, ge=0, le=100)
     resolvedMode: InvestigationMode | None = None
     cacheStatus: CacheStatus = "live"
+    truthClassification: str = ""
+    discoveredDomains: list[str] = Field(default_factory=list)
     orchestrationNotes: list[str] = Field(default_factory=list)
     expertInsight: str = ""
+    aiSummary: str = ""
     verdictSummary: str = ""
     finalNarrative: str = ""
     evidenceBreakdown: list[str] = Field(default_factory=list)
@@ -262,7 +268,11 @@ class InvestigationDetail(InvestigationSummary):
     confidenceLevel: ConfidenceLevel | None = None
     llmAgreementScore: int | None = Field(default=None, ge=0, le=100)
     misinformationRisk: MisinformationRisk | None = None
+    progressPercent: int = Field(default=0, ge=0, le=100)
+    truthClassification: str = ""
+    discoveredDomains: list[str] = Field(default_factory=list)
     expertInsight: str = ""
+    aiSummary: str = ""
     verdictSummary: str = ""
     finalNarrative: str = ""
     evidenceBreakdown: list[str] = Field(default_factory=list)

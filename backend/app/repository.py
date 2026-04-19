@@ -1,9 +1,10 @@
 import json
 from datetime import UTC, datetime
+import sqlite3
 from uuid import uuid4
 
 from .database import get_connection
-from .models import AgentRun, InvestigationDetail, InvestigationState, InvestigationSummary, ProgressEvent
+from .models import AgentRun, InvestigationDetail, InvestigationState, InvestigationSummary, ProgressEvent, SourceAssessment
 
 
 def utc_now_iso() -> str:
@@ -177,7 +178,11 @@ def get_investigation_detail(investigation_id: str) -> InvestigationDetail | Non
         confidenceLevel=state.confidenceLevel,
         llmAgreementScore=state.llmAgreementScore,
         misinformationRisk=state.misinformationRisk,
+        progressPercent=state.progressPercent,
+        truthClassification=state.truthClassification,
+        discoveredDomains=state.discoveredDomains,
         expertInsight=state.expertInsight,
+        aiSummary=state.aiSummary,
         verdictSummary=state.verdictSummary,
         finalNarrative=state.finalNarrative,
         evidenceBreakdown=state.evidenceBreakdown,
@@ -246,3 +251,81 @@ def add_progress_event(investigation_id: str, agent_key: str, level: str, messag
             """,
             (event_id, investigation_id, agent_key, level, message, utc_now_iso()),
         )
+
+
+def register_source_domains(sources: list[SourceAssessment]) -> None:
+    now = utc_now_iso()
+    bucket_rank = {
+        "tier_1_blog": 1,
+        "tier_2_scholarly": 2,
+        "tier_3_authority": 3,
+    }
+    with get_connection() as connection:
+        for source in sources:
+            domain = (source.domain or "").strip().lower()
+            url = (source.url or "").strip()
+            bucket = (source.sourceBucket or "tier_1_blog").strip() or "tier_1_blog"
+            if not domain or not url:
+                continue
+
+            row = connection.execute(
+                "SELECT seen_count, source_bucket FROM source_domains WHERE domain = ?",
+                (domain,),
+            ).fetchone()
+            if row is None:
+                connection.execute(
+                    """
+                    INSERT INTO source_domains (domain, latest_url, source_bucket, first_seen_at, last_seen_at, seen_count)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (domain, url, bucket, now, now, 1),
+                )
+                continue
+
+            previous_bucket = row["source_bucket"] or "tier_1_blog"
+            stronger_bucket = previous_bucket if bucket_rank.get(previous_bucket, 1) >= bucket_rank.get(bucket, 1) else bucket
+            connection.execute(
+                """
+                UPDATE source_domains
+                SET latest_url = ?, source_bucket = ?, last_seen_at = ?, seen_count = ?
+                WHERE domain = ?
+                """,
+                (url, stronger_bucket, now, int(row["seen_count"] or 0) + 1, domain),
+            )
+
+
+def lookup_source_bucket(domain: str) -> str | None:
+    cleaned = (domain or "").strip().lower()
+    if not cleaned:
+        return None
+
+    try:
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT source_bucket FROM source_domains WHERE domain = ?",
+                (cleaned,),
+            ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+
+    if row is None:
+        return None
+    return row["source_bucket"] or None
+
+
+def list_known_source_domains(limit: int = 24) -> list[str]:
+    try:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT domain
+                FROM source_domains
+                ORDER BY last_seen_at DESC, seen_count DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+
+    return [row["domain"] for row in rows if row["domain"]]

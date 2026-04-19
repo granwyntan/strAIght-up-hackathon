@@ -56,6 +56,34 @@ def _llm_quote_review(source: SourceAssessment, quote: str) -> QuoteVerification
     )
 
 
+def _llm_quote_check(source: SourceAssessment, quote: str, draft: QuoteVerificationOutput) -> QuoteVerificationOutput | None:
+    return generate_structured_output(
+        "audit",
+        (
+            "You are the checker for a quote-verification stage in a health-claim investigation. "
+            "Return JSON only with verified, quote, and note. "
+            "Confirm whether the draft decision is supported by the provided excerpt."
+        ),
+        {
+            "source": {
+                "title": source.title,
+                "url": source.url,
+                "snippet": source.snippet,
+            },
+            "candidate_quote": quote,
+            "draft_review": draft.model_dump(),
+            "source_text_excerpt": (source.extractedText or source.snippet)[:2800],
+            "instructions": [
+                "Only keep verified true if the quote appears directly in the excerpt after whitespace normalization.",
+                "Reject paraphrases and invented wording.",
+                "If the quote is not valid, return verified false with an empty quote.",
+            ],
+        },
+        QuoteVerificationOutput,
+        preferred_providers=["openai", "gemini", "xai"],
+    )
+
+
 async def _verify_one(payload: tuple[int, SourceAssessment]) -> SourceAssessment:
     index, source = payload
     candidate_quote = _candidate_quote(source)
@@ -69,9 +97,11 @@ async def _verify_one(payload: tuple[int, SourceAssessment]) -> SourceAssessment
     if candidate_quote and index < 12:
         llm_review = await asyncio.to_thread(_llm_quote_review, source, candidate_quote)
     if llm_review is not None:
-        verified = verified and llm_review.verified
-        quote = llm_review.quote if verified else ""
-        note = llm_review.note
+        checker_review = await asyncio.to_thread(_llm_quote_check, source, candidate_quote, llm_review)
+        effective_review = checker_review or llm_review
+        verified = verified and llm_review.verified and effective_review.verified
+        quote = effective_review.quote if verified else ""
+        note = effective_review.note
 
     notes = list(source.notes)
     notes.append(note)

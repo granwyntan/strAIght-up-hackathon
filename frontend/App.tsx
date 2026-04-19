@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Easing,
   Linking,
   Modal,
   NativeModules,
@@ -183,6 +184,48 @@ const displayFont = Platform.select({
 const androidStatusInset = Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0;
 const bottomBarOffset = Platform.OS === "android" ? 24 : 18;
 const contentBottomPadding = Platform.OS === "android" ? 164 : 144;
+
+const healthSnapshot = [
+  { label: "Heart rate", value: "68 bpm", note: "Resting average", tone: "red" as Tone, icon: "heart" as IconKind },
+  { label: "Sleep", value: "7h 42m", note: "Last night", tone: "blue" as Tone, icon: "sleep" as IconKind },
+  { label: "Steps", value: "8,420", note: "Daily activity", tone: "lime" as Tone, icon: "steps" as IconKind },
+  { label: "Hydration", value: "2.1 L", note: "Today", tone: "aqua" as Tone, icon: "water" as IconKind }
+];
+
+const mealLogs = [
+  { title: "Breakfast", subtitle: "Greek yogurt, berries, chia, coffee", time: "08:10", tone: "blue" as Tone, icon: "meal" as IconKind },
+  { title: "Lunch", subtitle: "Salmon bowl with rice, greens, avocado", time: "13:05", tone: "aqua" as Tone, icon: "meal" as IconKind },
+  { title: "Snack", subtitle: "Apple and mixed nuts", time: "16:20", tone: "lime" as Tone, icon: "meal" as IconKind }
+];
+
+const medicationLogs = [
+  { title: "Vitamin D3", subtitle: "1 capsule · with breakfast", time: "08:15", tone: "lime" as Tone, icon: "medicine" as IconKind },
+  { title: "Omega-3", subtitle: "2 softgels · with lunch", time: "13:10", tone: "aqua" as Tone, icon: "medicine" as IconKind },
+  { title: "Cetirizine", subtitle: "10 mg · evening as needed", time: "21:00", tone: "blue" as Tone, icon: "medicine" as IconKind }
+];
+
+const profileSections = [
+  { title: "Health profile", body: "Aly Tan, 29. Female. 168 cm, 61 kg. Light exercise 4 times weekly. Focused on sleep quality, skin health, and energy stability." },
+  { title: "Conditions and flags", body: "Mild seasonal allergies, occasional eczema flares, family history of hypertension. No diabetes, no known cardiovascular disease." },
+  { title: "Current routine", body: "Breakfast around 8 AM, lunch around 1 PM, 2 cups of coffee daily, 7 to 8 hours sleep target, 10,000-step weekly average goal." },
+  { title: "Medications and supplements", body: "Cetirizine as needed, Vitamin D3 daily, Omega-3 daily, magnesium glycinate occasionally for sleep." }
+];
+
+const pipelineStageMeta: Array<{ key: string; title: string; icon: IconKind }> = [
+  { key: "claim", title: "Claim analysis", icon: "fact" },
+  { key: "planner", title: "Query planning", icon: "search" },
+  { key: "search", title: "Source discovery", icon: "insights" },
+  { key: "validate", title: "Website validation", icon: "shield" },
+  { key: "relevance", title: "Relevance filter", icon: "filter" },
+  { key: "classify", title: "Evidence ranking", icon: "layers" },
+  { key: "citations", title: "Citation audit", icon: "quote" },
+  { key: "quotes", title: "Quote check", icon: "quote" },
+  { key: "sentiment", title: "Dual stance review", icon: "consultant" },
+  { key: "decision", title: "Decision engine", icon: "fact" },
+  { key: "review", title: "Verdict review", icon: "shield" },
+  { key: "consensus", title: "Consensus check", icon: "layers" },
+  { key: "report", title: "Gemini summary", icon: "summary" }
+];
 
 export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(resolveApiBaseUrl);
@@ -595,13 +638,13 @@ function HomeScreen({
     <View style={styles.pageStack}>
       <View style={styles.heroPanel}>
         <View style={styles.heroTopRow}>
-          <Chip label="SQLite persistence" tone="lime" />
-          <Chip label="FastAPI orchestration" tone="aqua" />
+          <Chip label="Daily health view" tone="lime" />
+          <Chip label="Claim investigator" tone="aqua" />
         </View>
 
-        <Text style={styles.heroTitle}>Investigate health claims like a real evidence pipeline</Text>
+        <Text style={styles.heroTitle}>Daily health signals with claim-checking when you need it</Text>
         <Text style={styles.heroSubtitle}>
-          Submit a claim, let specialized agents search, rank, classify, audit citations, and then combine everything into a credibility verdict you can actually explain.
+          GramWIN can track lightweight wellness context on the home screen, then switch into a stricter evidence-review flow whenever you want to investigate a new health claim.
         </Text>
 
         <View style={styles.heroActionRow}>
@@ -614,13 +657,37 @@ function HomeScreen({
         </View>
 
         <View style={styles.statsRow}>
-          <MetricTile label="Investigations" value={String(history.length)} tone="blue" />
-          <MetricTile label="Agents" value="7" tone="lime" />
-          <MetricTile label="Persistent" value="SQLite" tone="aqua" />
+          <MetricTile label="Saved Runs" value={String(history.length)} tone="blue" />
+          <MetricTile label="Meals Logged" value={String(mealLogs.length)} tone="lime" />
+          <MetricTile label="Medications" value={String(medicationLogs.length)} tone="aqua" />
         </View>
       </View>
 
-      <SectionHeader title="Claim ideas" body={loadingBootstrap ? "Loading starting prompts..." : "Tap one to seed the investigation form immediately."} />
+      <SectionHeader title="Today’s health snapshot" body="A simple daily view for common wellness metrics while the deeper evidence workflow lives in the consultant tab." />
+
+      <View style={styles.statsRow}>
+        {healthSnapshot.map((item) => (
+          <HealthMetricCard key={item.label} {...item} />
+        ))}
+      </View>
+
+      <SectionHeader title="Meals log" body="A clean placeholder meal history with enough detail to make the home screen feel like a real health app." />
+
+      <View style={styles.cardStack}>
+        {mealLogs.map((item) => (
+          <LogCard key={`${item.title}-${item.time}`} {...item} />
+        ))}
+      </View>
+
+      <SectionHeader title="Medication log" body="Today’s routine medications and supplements can live here without crowding the evidence experience." />
+
+      <View style={styles.cardStack}>
+        {medicationLogs.map((item) => (
+          <LogCard key={`${item.title}-${item.time}`} {...item} />
+        ))}
+      </View>
+
+      <SectionHeader title="Claim ideas" body={loadingBootstrap ? "Loading starting prompts..." : "Tap one to seed the investigator immediately."} />
 
       <View style={styles.quickPromptGrid}>
         {bootstrap.featuredClaims.map((item, index) => (
@@ -635,7 +702,7 @@ function HomeScreen({
         ))}
       </View>
 
-      <SectionHeader title="Agent team" body="Each specialist has a clear role, from medical claim analysis through auditing and plain-language explanation." />
+      <SectionHeader title="Agent team" body="Each specialist has a clear role, and major AI reasoning stages now include a second checker before the result settles." />
 
       <View style={styles.cardStack}>
         {bootstrap.architecture.map((block, index) => (
@@ -959,21 +1026,11 @@ function InvestigationResultView({ investigation }: { investigation: Investigati
   const resultLabel = investigation.verdict ? verdictLabel(investigation.verdict) : statusLabel(investigation.status);
   const resultTone = investigation.verdict ? verdictTone(investigation.verdict) : statusTone(investigation.status);
   const showProcessing = isRunning(investigation.status);
+  const truthSignal = safeText(investigation.truthClassification || truthSignalLabel(investigation.verdict));
 
   if (showProcessing) {
     return (
-      <>
-        <View style={styles.heroPanel}>
-          <View style={styles.heroTopRow}>
-            <Chip label={resultLabel} tone={resultTone} />
-            <Chip label="PIPELINE RUNNING" tone="aqua" />
-          </View>
-
-          <Text style={styles.heroTitle}>{investigation.claim}</Text>
-          <Text style={styles.heroSubtitle}>Claim analysis, search, validation, quote checks, stance review, and scoring are still running.</Text>
-        </View>
-        <LoadingCard text="Finishing the full investigation before rendering the evidence report..." />
-      </>
+      <ProcessingReport investigation={investigation} resultLabel={resultLabel} resultTone={resultTone} />
     );
   }
 
@@ -983,6 +1040,7 @@ function InvestigationResultView({ investigation }: { investigation: Investigati
         <View style={styles.heroTopRow}>
           <Chip label={resultLabel} tone={resultTone} />
           <Chip label={investigation.confidenceLevel ? `${safeUpper(investigation.confidenceLevel)} CONFIDENCE` : "ANALYZING"} tone={confidenceTone(investigation.confidenceLevel)} />
+          {truthSignal ? <Chip label={truthSignal} tone={truthSignalTone(investigation.verdict)} /> : null}
         </View>
 
         <Text style={styles.heroTitle}>{investigation.claim}</Text>
@@ -997,6 +1055,18 @@ function InvestigationResultView({ investigation }: { investigation: Investigati
           <MetricTile label="Verdict" value={resultLabel} tone={resultTone} />
         </View>
       </View>
+
+      <AccordionCard title="AI Summary" summary="Gemini-generated closing summary checked by a second model before it reaches the app.">
+        <Text style={styles.resultSummaryText}>{investigation.aiSummary || investigation.finalNarrative || investigation.expertInsight}</Text>
+      </AccordionCard>
+
+      <AccordionCard title="How It Checked This" summary="Major reasoning stages, filters, and verification steps that shaped the final result.">
+        <View style={styles.cardStack}>
+          {investigation.stepSummaries.map((step) => (
+            <StepAccordion key={step.key} step={step} />
+          ))}
+        </View>
+      </AccordionCard>
 
       <AccordionCard title="Evidence" summary={`${investigation.sources.length} visible sources grouped into strongest support, mixed context, and contradictions.`}>
         <View style={styles.groupStack}>
@@ -1021,7 +1091,133 @@ function InvestigationResultView({ investigation }: { investigation: Investigati
           ))}
         </View>
       </AccordionCard>
+
+      {investigation.discoveredDomains.length > 0 ? (
+        <AccordionCard title="Source Network" summary="New source domains are learned over time so the system is not artificially restricted to a fixed list.">
+          <View style={styles.domainChipRow}>
+            {investigation.discoveredDomains.map((domain) => (
+              <View key={domain} style={styles.domainChip}>
+                <AppIcon kind="link" color={palette.blue} size={14} />
+                <Text style={styles.domainChipText}>{domain}</Text>
+              </View>
+            ))}
+          </View>
+        </AccordionCard>
+      ) : null}
     </>
+  );
+}
+
+function ProcessingReport({
+  investigation,
+  resultLabel,
+  resultTone
+}: {
+  investigation: InvestigationDetail;
+  resultLabel: string;
+  resultTone: Tone;
+}) {
+  const steps = processingStages(investigation);
+  const progress = processingPercent(investigation, steps);
+  const recentEvents = investigation.progressEvents.slice(-4);
+
+  return (
+    <>
+      <View style={styles.heroPanel}>
+        <View style={styles.heroTopRow}>
+          <Chip label={resultLabel} tone={resultTone} />
+          <Chip label="PIPELINE RUNNING" tone="aqua" />
+        </View>
+
+        <Text style={styles.heroTitle}>{investigation.claim}</Text>
+        <Text style={styles.heroSubtitle}>GramWIN is still validating websites, filtering relevance, cross-checking evidence, and drafting the final claim judgment.</Text>
+      </View>
+
+      <View style={styles.processingCard}>
+        <View style={styles.processingHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.processingTitle}>Processing report</Text>
+            <Text style={styles.processingBody}>The report renders after the full pipeline completes, but you can still watch progress while the agents work.</Text>
+          </View>
+          <View style={styles.processingBadge}>
+            <Text style={styles.processingBadgeText}>{progress}%</Text>
+          </View>
+        </View>
+
+        <AnimatedProgressBar progress={progress} />
+
+        <View style={styles.cardStack}>
+          {steps.map((step) => (
+            <ProcessingStepRow key={step.key} step={step} />
+          ))}
+        </View>
+
+        {recentEvents.length > 0 ? (
+          <View style={styles.processingEventStack}>
+            <Text style={styles.processingSubheading}>Recent activity</Text>
+            {recentEvents.map((event) => (
+              <View key={event.id} style={styles.eventRow}>
+                <Text style={styles.eventText}>{event.message}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    </>
+  );
+}
+
+function AnimatedProgressBar({ progress }: { progress: number }) {
+  const progressValue = useState(() => new Animated.Value(Math.max(0, Math.min(100, progress))))[0];
+  const glowValue = useState(() => new Animated.Value(0.45))[0];
+
+  useEffect(() => {
+    Animated.timing(progressValue, {
+      toValue: Math.max(0, Math.min(100, progress)),
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false
+    }).start();
+  }, [progress, progressValue]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowValue, { toValue: 1, duration: 700, useNativeDriver: false }),
+        Animated.timing(glowValue, { toValue: 0.45, duration: 700, useNativeDriver: false })
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [glowValue]);
+
+  const width = progressValue.interpolate({
+    inputRange: [0, 100],
+    outputRange: ["0%", "100%"]
+  });
+
+  return (
+    <View style={styles.progressTrack}>
+      <Animated.View style={[styles.progressFill, { width, opacity: glowValue }]} />
+    </View>
+  );
+}
+
+function ProcessingStepRow({ step }: { step: ReturnType<typeof processingStages>[number] }) {
+  const active = step.status === "running" || step.status === "pending";
+  const tone = step.status === "failed" ? "red" : step.status === "completed" ? "lime" : "aqua";
+
+  return (
+    <View style={styles.processingStepCard}>
+      <View style={[styles.processingStepIconWrap, toneStyles[tone].soft]}>
+        {active ? <ActivityIndicator size="small" color={palette.blue} /> : <AppIcon kind={step.icon} color={tone === "red" ? palette.red : palette.blue} size={16} />}
+      </View>
+      <View style={styles.processingStepCopy}>
+        <Text style={styles.processingStepTitle}>{step.title}</Text>
+        <Text style={styles.processingStepBody}>{step.summary}</Text>
+      </View>
+      <Chip label={statusLabelFromAgent(step.status)} tone={tone} />
+    </View>
   );
 }
 
@@ -1162,13 +1358,22 @@ function ProfileScreen({ history }: { history: InvestigationSummary[] }) {
     <View style={styles.pageStack}>
       <View style={styles.heroPanel}>
         <Chip label="Profile" tone="blue" />
-        <Text style={styles.heroTitle}>Personal health space</Text>
-        <Text style={styles.heroSubtitle}>A clean placeholder for goals, personal context, and future wellness summaries without cluttering the evidence workflow.</Text>
+        <Text style={styles.heroTitle}>Personal health profile</Text>
+        <Text style={styles.heroSubtitle}>Dummy profile data for the premium app shell: useful context, everyday routines, and the kind of health details that could guide future personalization.</Text>
         <View style={styles.statsRow}>
           <MetricTile label="Saved Runs" value={String(history.length)} tone="blue" />
           <MetricTile label="Completed" value={String(completedCount)} tone="lime" />
           <MetricTile label="Latest Score" value={latestScore !== undefined && latestScore !== null ? String(latestScore) : "--"} tone="aqua" />
         </View>
+      </View>
+
+      <View style={styles.cardStack}>
+        {profileSections.map((section, index) => (
+          <View key={section.title} style={[styles.infoCard, index % 3 === 0 ? toneStyles.blue.soft : index % 3 === 1 ? toneStyles.aqua.soft : toneStyles.lime.soft]}>
+            <Text style={styles.infoCardTitle}>{section.title}</Text>
+            <Text style={styles.infoCardBody}>{section.body}</Text>
+          </View>
+        ))}
       </View>
     </View>
   );
@@ -1211,11 +1416,63 @@ function MetricTile({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
+function HealthMetricCard({
+  label,
+  value,
+  note,
+  tone,
+  icon
+}: {
+  label: string;
+  value: string;
+  note: string;
+  tone: Tone;
+  icon: IconKind;
+}) {
+  return (
+    <View style={[styles.healthMetricCard, toneStyles[tone].soft]}>
+      <View style={[styles.healthMetricIconWrap, toneStyles[tone].solid]}>
+        <AppIcon kind={icon} color="#fffdfa" size={18} />
+      </View>
+      <Text style={styles.healthMetricLabel}>{label}</Text>
+      <Text style={styles.healthMetricValue}>{value}</Text>
+      <Text style={styles.healthMetricNote}>{note}</Text>
+    </View>
+  );
+}
+
+function LogCard({
+  title,
+  subtitle,
+  time,
+  tone,
+  icon
+}: {
+  title: string;
+  subtitle: string;
+  time: string;
+  tone: Tone;
+  icon: IconKind;
+}) {
+  return (
+    <View style={styles.logCard}>
+      <View style={[styles.logIconWrap, toneStyles[tone].soft]}>
+        <AppIcon kind={icon} color={palette.blue} size={18} />
+      </View>
+      <View style={styles.logCopyWrap}>
+        <Text style={styles.logTitle}>{title}</Text>
+        <Text style={styles.logSubtitle}>{subtitle}</Text>
+      </View>
+      <Text style={styles.logTime}>{time}</Text>
+    </View>
+  );
+}
+
 function SourceCard({ source }: { source: InvestigationDetail["sources"][number] }) {
   const effectLabel = sentimentLabel(source.sentiment);
   const effectTone = sentimentTone(source.sentiment);
   const siteTitle = safeText(source.sourceName || source.domain || "Source");
-  const explanation = safeText(source.evidence?.expertAnalysis || source.sentimentSummary || source.relevanceSummary);
+  const explanation = safeText(source.evidence?.expertAnalysis || source.relevanceCheckSummary || source.sentimentSummary || source.relevanceSummary);
   const quotedText = safeText(source.evidence?.quoteVerified ? source.evidence?.quotedEvidence : "");
   const articleTitle = safeText(source.title);
 
@@ -1223,7 +1480,12 @@ function SourceCard({ source }: { source: InvestigationDetail["sources"][number]
     <View style={styles.sourceCard}>
       <View style={styles.agentCardTop}>
         <Pressable onPress={() => void Linking.openURL(source.url)} style={styles.sourceLinkWrap}>
-          <Text style={styles.sourceTitle}>{siteTitle}</Text>
+          <View style={styles.sourceHeadingRow}>
+            <View style={styles.sourceFaviconWrap}>
+              <AppIcon kind="link" color={palette.blue} size={16} />
+            </View>
+            <Text style={styles.sourceTitle}>{siteTitle}</Text>
+          </View>
         </Pressable>
         <Chip label={effectLabel} tone={effectTone} />
       </View>
@@ -1233,6 +1495,11 @@ function SourceCard({ source }: { source: InvestigationDetail["sources"][number]
       {articleTitle && articleTitle !== siteTitle ? <Text style={styles.sourceMeta}>{articleTitle}</Text> : null}
       {quotedText ? <Text style={styles.sourceQuote}>"{quotedText}"</Text> : <Text style={styles.sourceSnippet}>{safeText(source.snippet)}</Text>}
       {explanation ? <Text style={styles.sourceMethodology}>{explanation}</Text> : null}
+      <View style={styles.sourceEvidenceMeta}>
+        <Text style={styles.sourceEvidenceMetaText}>Relevance {source.relevanceScore}/100</Text>
+        <Text style={styles.sourceEvidenceMetaText}>{safeUpper(source.evidenceTier.replace(/_/g, " "))}</Text>
+        <Text style={styles.sourceEvidenceMetaText}>{safeUpper(source.sourceBucket.replace(/_/g, " "))}</Text>
+      </View>
     </View>
   );
 }
@@ -1447,7 +1714,31 @@ function TabIcon({ tab, selected }: { tab: AppTab; selected: boolean }) {
   return <AppIcon kind="home" color={color} size={20} />;
 }
 
-type IconKind = "home" | "play" | "consultant" | "history" | "nutrition" | "supplements" | "profile" | "insights" | "trash" | "drag";
+type IconKind =
+  | "home"
+  | "play"
+  | "consultant"
+  | "history"
+  | "nutrition"
+  | "supplements"
+  | "profile"
+  | "insights"
+  | "trash"
+  | "drag"
+  | "heart"
+  | "sleep"
+  | "steps"
+  | "water"
+  | "meal"
+  | "medicine"
+  | "shield"
+  | "summary"
+  | "fact"
+  | "filter"
+  | "layers"
+  | "quote"
+  | "search"
+  | "link";
 type Tone = "lime" | "aqua" | "blue" | "red";
 
 function AppIcon({ kind, color, size }: { kind: IconKind; color: string; size: number }) {
@@ -1461,7 +1752,21 @@ function AppIcon({ kind, color, size }: { kind: IconKind; color: string; size: n
     profile: "account-outline",
     insights: "chart-box-outline",
     trash: "trash-can-outline",
-    drag: "drag-vertical-variant"
+    drag: "drag-vertical-variant",
+    heart: "heart-pulse",
+    sleep: "sleep",
+    steps: "walk",
+    water: "cup-water",
+    meal: "silverware-fork-knife",
+    medicine: "pill-multiple",
+    shield: "shield-check-outline",
+    summary: "text-box-outline",
+    fact: "check-decagram-outline",
+    filter: "filter-variant",
+    layers: "layers-triple-outline",
+    quote: "format-quote-close",
+    search: "magnify",
+    link: "link-variant"
   };
 
   return <MaterialCommunityIcons name={iconName[kind]} color={color} size={size} />;
@@ -1565,6 +1870,83 @@ function sentimentLabel(sentiment: InvestigationDetail["sources"][number]["senti
   return "Uncertain";
 }
 
+function statusLabelFromAgent(status: InvestigationDetail["agentRuns"][number]["status"] | "pending") {
+  if (status === "completed") {
+    return "Done";
+  }
+  if (status === "failed") {
+    return "Issue";
+  }
+  if (status === "running") {
+    return "Working";
+  }
+  return "Queued";
+}
+
+function truthSignalLabel(verdict: InvestigationDetail["verdict"] | InvestigationSummary["verdict"]) {
+  if (verdict === "trustworthy") {
+    return "Likely fact pattern";
+  }
+  if (verdict === "untrustworthy") {
+    return "Likely falsehood or hoax";
+  }
+  if (verdict) {
+    return "Needs nuance";
+  }
+  return "";
+}
+
+function truthSignalTone(verdict: InvestigationDetail["verdict"]): Tone {
+  if (verdict === "trustworthy") {
+    return "lime";
+  }
+  if (verdict === "untrustworthy") {
+    return "red";
+  }
+  return "blue";
+}
+
+function processingStages(investigation: InvestigationDetail) {
+  const runMap = new Map(investigation.agentRuns.map((run) => [run.agentKey, run]));
+  return pipelineStageMeta.map((stage) => {
+    const run = runMap.get(stage.key);
+    return {
+      key: stage.key,
+      title: stage.title,
+      icon: stage.icon,
+      status: run?.status ?? "pending",
+      summary: run?.summary || fallbackProcessingSummary(stage.key, investigation)
+    };
+  });
+}
+
+function processingPercent(investigation: InvestigationDetail, steps: ReturnType<typeof processingStages>) {
+  if (investigation.progressPercent > 0) {
+    return investigation.progressPercent;
+  }
+  const completed = steps.filter((step) => step.status === "completed").length;
+  return Math.round((completed / Math.max(1, steps.length)) * 100);
+}
+
+function fallbackProcessingSummary(key: string, investigation: InvestigationDetail) {
+  const safeSummaries: Record<string, string> = {
+    claim: investigation.claimAnalysis?.summary || "Claim language and semantics are being parsed.",
+    planner: `${investigation.recommendedQueries.length || 1} semantic search routes are being prepared.`,
+    search: `${investigation.sources.length} sources have been gathered so far.`,
+    validate: "Website accessibility and readable text extraction are being checked.",
+    relevance: "Weakly related pages are being filtered out before scoring.",
+    classify: "Study strength and evidence quality are being ranked.",
+    citations: "Citation chains and linked sources are being audited.",
+    quotes: "Visible quotes are being checked against extracted source text.",
+    sentiment: "Primary and checker models are comparing evidence direction.",
+    decision: "Truth signal and hoax risk are being calibrated.",
+    review: "A secondary model is checking the draft verdict.",
+    consensus: "Cross-model disagreement is being used to adjust confidence.",
+    report: "Gemini is drafting the user-facing summary and a second model is checking it."
+  };
+  return safeSummaries[key] || "This stage is in progress.";
+}
+
 function fallbackStepSummaries(investigation: InvestigationDetail): InvestigationDetail["stepSummaries"] {
   const safeSummaries: Record<string, string> = {
     claim: investigation.claimAnalysis?.summary || "Claim structure and wording are being assessed.",
@@ -1572,6 +1954,7 @@ function fallbackStepSummaries(investigation: InvestigationDetail): Investigatio
     query_generation: `${investigation.recommendedQueries.length || 1} search paths prepared.`,
     search: `${investigation.sources.length} sources collected so far.`,
     validate: `${investigation.sources.length} accessible sources survived validation so far.`,
+    relevance: "Only claim-relevant sources are being kept for scoring.",
     classify: "Sources are being sorted by strength and evidence type.",
     citations: "Citation chains are being checked for strength and reliability.",
     quotes: "Only quotes that map directly to source text are kept.",
@@ -1734,7 +2117,8 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: "#fffdfa",
     fontSize: 15,
-    fontWeight: "800"
+    fontWeight: "800",
+    flexShrink: 1
   },
   secondaryButton: {
     minHeight: 54,
@@ -1750,14 +2134,18 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: palette.blue,
     fontSize: 15,
-    fontWeight: "800"
+    fontWeight: "800",
+    flexShrink: 1
   },
   statsRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10
   },
   metricTile: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: 140,
+    minWidth: 130,
     borderRadius: 22,
     padding: 14
   },
@@ -1891,7 +2279,76 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontSize: 15,
     lineHeight: 22,
-    marginTop: 8
+    marginTop: 8,
+    flexShrink: 1
+  },
+  healthMetricCard: {
+    flexGrow: 1,
+    flexBasis: 150,
+    minWidth: 145,
+    borderRadius: 24,
+    padding: 16,
+    gap: 8
+  },
+  healthMetricIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  healthMetricLabel: {
+    color: palette.muted,
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  healthMetricValue: {
+    color: palette.ink,
+    fontSize: 24,
+    fontWeight: "900"
+  },
+  healthMetricNote: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 18
+  },
+  logCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 22,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.border,
+    padding: 16,
+    ...shadow
+  },
+  logIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  logCopyWrap: {
+    flex: 1,
+    gap: 4
+  },
+  logTitle: {
+    color: palette.ink,
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  logSubtitle: {
+    color: palette.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    flexShrink: 1
+  },
+  logTime: {
+    color: palette.blue,
+    fontSize: 13,
+    fontWeight: "800"
   },
   primaryInput: {
     minHeight: 58,
@@ -2074,12 +2531,27 @@ const styles = StyleSheet.create({
   sourceLinkWrap: {
     flex: 1
   },
+  sourceHeadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1
+  },
+  sourceFaviconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: "#edf3ff",
+    alignItems: "center",
+    justifyContent: "center"
+  },
   sourceTitle: {
     flex: 1,
     color: palette.ink,
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "900"
+    fontWeight: "900",
+    flexShrink: 1
   },
   sourceMeta: {
     color: palette.blue,
@@ -2090,7 +2562,8 @@ const styles = StyleSheet.create({
     color: palette.blue,
     fontSize: 13,
     lineHeight: 18,
-    textDecorationLine: "underline"
+    textDecorationLine: "underline",
+    flexShrink: 1
   },
   sourceSnippet: {
     color: palette.muted,
@@ -2111,7 +2584,8 @@ const styles = StyleSheet.create({
   sourceMethodology: {
     color: palette.ink,
     fontSize: 14,
-    lineHeight: 20
+    lineHeight: 20,
+    flexShrink: 1
   },
   sourceEvidenceMeta: {
     flexDirection: "row",
@@ -2343,12 +2817,14 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "900"
+    fontWeight: "900",
+    flexShrink: 1
   },
   historySummary: {
     color: palette.muted,
     fontSize: 15,
-    lineHeight: 22
+    lineHeight: 22,
+    flexShrink: 1
   },
   historyMetaRow: {
     flexDirection: "row",
@@ -2431,6 +2907,101 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700"
   },
+  processingCard: {
+    borderRadius: 28,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.border,
+    padding: 18,
+    gap: 16,
+    ...shadow
+  },
+  processingHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12
+  },
+  processingTitle: {
+    color: palette.ink,
+    fontSize: 22,
+    fontWeight: "900"
+  },
+  processingBody: {
+    color: palette.muted,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 6
+  },
+  processingBadge: {
+    minWidth: 64,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#edf3ff",
+    alignItems: "center"
+  },
+  processingBadgeText: {
+    color: palette.blue,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  progressTrack: {
+    width: "100%",
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: "#ebe5da",
+    overflow: "hidden"
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: palette.blue
+  },
+  processingStepCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    borderRadius: 20,
+    backgroundColor: "#faf7f1",
+    borderWidth: 1,
+    borderColor: palette.border,
+    padding: 14
+  },
+  processingStepIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  processingStepCopy: {
+    flex: 1,
+    gap: 4
+  },
+  processingStepTitle: {
+    color: palette.ink,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  processingStepBody: {
+    color: palette.muted,
+    fontSize: 14,
+    lineHeight: 20,
+    flexShrink: 1
+  },
+  processingEventStack: {
+    gap: 10
+  },
+  processingSubheading: {
+    color: palette.ink,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  resultSummaryText: {
+    color: palette.ink,
+    fontSize: 15,
+    lineHeight: 24
+  },
   emptyState: {
     minHeight: 180,
     borderRadius: 28,
@@ -2464,6 +3035,27 @@ const styles = StyleSheet.create({
   chipText: {
     fontWeight: "800",
     fontSize: 12
+  },
+  domainChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  domainChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 999,
+    backgroundColor: "#edf3ff",
+    borderWidth: 1,
+    borderColor: "#dbe5f7",
+    paddingHorizontal: 12,
+    paddingVertical: 8
+  },
+  domainChipText: {
+    color: palette.blue,
+    fontSize: 12,
+    fontWeight: "800"
   },
   sheetBackdrop: {
     flex: 1,

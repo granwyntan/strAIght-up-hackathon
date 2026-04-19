@@ -100,6 +100,8 @@ export interface SourceAssessment {
   stance: string;
   sentiment: SourceSentiment;
   relevanceSummary: string;
+  relevanceCheckSummary: string;
+  relevanceScore: number;
   sentimentSummary: string;
   methodologyInsights: string[];
   biasNotes: string[];
@@ -223,10 +225,14 @@ export interface InvestigationDetail extends InvestigationSummary {
   confidenceLevel: ConfidenceLevel | null;
   llmAgreementScore: number | null;
   misinformationRisk: MisinformationRisk | null;
+  progressPercent: number;
+  truthClassification: string;
+  discoveredDomains: string[];
   resolvedMode: "auto" | "offline" | "live" | null;
   cacheStatus: "live" | "cached" | "fallback";
   orchestrationNotes: string[];
   expertInsight: string;
+  aiSummary: string;
   verdictSummary: string;
   finalNarrative: string;
   evidenceBreakdown: string[];
