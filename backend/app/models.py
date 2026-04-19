@@ -100,6 +100,7 @@ class ClaimSemantics(BaseModel):
     action: str = ""
     outcome: str = ""
     impliedCausation: bool = False
+    relationshipType: Literal["causal", "correlational", "opinion"] = "correlational"
     strength: int = Field(default=1, ge=1, le=5)
 
 

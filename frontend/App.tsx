@@ -111,6 +111,18 @@ function resolveApiBaseUrl() {
   return buildApiBaseUrls()[0] || "http://127.0.0.1:8000";
 }
 
+function padTimestamp(value: number) {
+  return value.toString().padStart(2, "0");
+}
+
+function formatTimestamp(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return `${padTimestamp(date.getDate())}/${padTimestamp(date.getMonth() + 1)}/${date.getFullYear()}, ${padTimestamp(date.getHours())}:${padTimestamp(date.getMinutes())}:${padTimestamp(date.getSeconds())}`;
+}
+
 async function readApiError(response: Response, fallback: string) {
   try {
     const contentType = response.headers.get("content-type") || "";
@@ -739,7 +751,7 @@ function HistoryScreen({
 }) {
   return (
     <View style={styles.pageStack}>
-      <SectionHeader title="History" body="Search past claims, reopen them in a bottom sheet, or delete entries you no longer need." />
+      <SectionHeader title="History" body="Search past claims, tap a card to reopen it, swipe left to delete, or drag vertically to reorder." />
       <TextInput
         style={styles.primaryInput}
         value={historyQuery}
@@ -790,45 +802,86 @@ function SwipeHistoryCard({
   onMoveDown: (id: string) => void;
 }) {
   const translateX = useState(() => new Animated.Value(0))[0];
+  const translateY = useState(() => new Animated.Value(0))[0];
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+        onMoveShouldSetPanResponder: (_, gesture) => Math.max(Math.abs(gesture.dx), Math.abs(gesture.dy)) > 12,
         onPanResponderMove: (_, gesture) => {
-          translateX.setValue(Math.min(0, gesture.dx));
-        },
-        onPanResponderRelease: (_, gesture) => {
-          if (gesture.dx < -90) {
-            Animated.timing(translateX, {
-              toValue: -140,
-              duration: 120,
-              useNativeDriver: true
-            }).start(() => onDelete(item.id));
+          if (Math.abs(gesture.dx) > Math.abs(gesture.dy)) {
+            translateY.setValue(0);
+            translateX.setValue(Math.min(0, gesture.dx));
             return;
           }
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true
-          }).start();
+          translateX.setValue(0);
+          translateY.setValue(Math.max(-30, Math.min(30, gesture.dy)));
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (Math.abs(gesture.dx) > Math.abs(gesture.dy)) {
+            if (gesture.dx < -90) {
+              Animated.timing(translateX, {
+                toValue: -140,
+                duration: 120,
+                useNativeDriver: true
+              }).start(() => onDelete(item.id));
+              return;
+            }
+            Animated.parallel([
+              Animated.spring(translateX, {
+                toValue: 0,
+                useNativeDriver: true
+              }),
+              Animated.spring(translateY, {
+                toValue: 0,
+                useNativeDriver: true
+              })
+            ]).start();
+            return;
+          }
+
+          if (gesture.dy < -70 && canMoveUp) {
+            onMoveUp(item.id);
+          } else if (gesture.dy > 70 && canMoveDown) {
+            onMoveDown(item.id);
+          }
+
+          Animated.parallel([
+            Animated.timing(translateX, {
+              toValue: 0,
+              duration: 140,
+              useNativeDriver: true
+            }),
+            Animated.spring(translateY, {
+              toValue: 0,
+              useNativeDriver: true
+            })
+          ]).start();
         }
       }),
-    [item.id, onDelete, translateX]
+    [canMoveDown, canMoveUp, item.id, onDelete, onMoveDown, onMoveUp, translateX, translateY]
   );
 
   return (
     <View style={styles.historySwipeShell}>
       <View style={styles.historyDeleteRail}>
-        <Text style={styles.historyDeleteRailText}>Swipe left to delete</Text>
+        <View style={styles.historyDeleteRailIcon}>
+          <AppIcon kind="trash" color={palette.red} size={18} />
+        </View>
       </View>
-      <Animated.View style={{ transform: [{ translateX }] }} {...panResponder.panHandlers}>
-        <View style={styles.historyCard}>
+      <Animated.View style={{ transform: [{ translateX }, { translateY }] }} {...panResponder.panHandlers}>
+        <Pressable style={styles.historyCard} onPress={() => onOpen(item.id)}>
           <View style={styles.agentCardTop}>
             <Text style={styles.historyClaim}>{item.claim}</Text>
-            <Chip label={item.verdict ? item.verdict.toUpperCase() : statusLabel(item.status)} tone={item.verdict ? verdictTone(item.verdict) : statusTone(item.status)} />
+            <View style={styles.historyCardHeaderSide}>
+              <Chip label={item.verdict ? item.verdict.toUpperCase() : statusLabel(item.status)} tone={item.verdict ? verdictTone(item.verdict) : statusTone(item.status)} />
+              <View style={styles.historyGrip}>
+                <AppIcon kind="drag" color={palette.muted} size={16} />
+              </View>
+            </View>
           </View>
           <Text style={styles.historySummary}>{item.summary}</Text>
           <View style={styles.historyMetaRow}>
-            <Text style={styles.historyMetaText}>{new Date(item.createdAt).toLocaleString()}</Text>
+            <Text style={styles.historyMetaText}>{formatTimestamp(item.createdAt)}</Text>
             <Text style={styles.historyMetaDot}>•</Text>
             <Text style={styles.historyMetaText}>{item.mode}</Text>
             <Text style={styles.historyMetaDot}>•</Text>
@@ -836,16 +889,7 @@ function SwipeHistoryCard({
             <Text style={styles.historyMetaDot}>•</Text>
             <Text style={styles.historyMetaText}>{item.overallScore !== null ? `${item.overallScore}/100` : "--"}</Text>
           </View>
-          <View style={styles.historyActions}>
-            <SecondaryButton label="View result" onPress={() => onOpen(item.id)} icon={<AppIcon kind="insights" color={palette.blue} size={18} />} />
-            <Pressable style={[styles.reorderButton, !canMoveUp && styles.reorderButtonDisabled]} disabled={!canMoveUp} onPress={() => onMoveUp(item.id)}>
-              <Text style={styles.reorderButtonText}>↑</Text>
-            </Pressable>
-            <Pressable style={[styles.reorderButton, !canMoveDown && styles.reorderButtonDisabled]} disabled={!canMoveDown} onPress={() => onMoveDown(item.id)}>
-              <Text style={styles.reorderButtonText}>↓</Text>
-            </Pressable>
-          </View>
-        </View>
+        </Pressable>
       </Animated.View>
     </View>
   );
@@ -990,22 +1034,62 @@ function HistorySheet({
   loading: boolean;
   onClose: () => void;
 }) {
+  const translateY = useState(() => new Animated.Value(0))[0];
+
+  useEffect(() => {
+    if (visible) {
+      translateY.setValue(0);
+    }
+  }, [translateY, visible]);
+
+  const dismissSheet = () => {
+    Animated.timing(translateY, {
+      toValue: 420,
+      duration: 180,
+      useNativeDriver: true
+    }).start(() => {
+      translateY.setValue(0);
+      onClose();
+    });
+  };
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+        onPanResponderMove: (_, gesture) => {
+          translateY.setValue(Math.max(0, gesture.dy));
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dy > 120 || gesture.vy > 1.1) {
+            dismissSheet();
+            return;
+          }
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true
+          }).start();
+        }
+      }),
+    [translateY]
+  );
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.sheetBackdrop}>
         <Pressable style={styles.sheetDismissArea} onPress={onClose} />
-        <View style={styles.sheetPanel}>
+        <Animated.View style={[styles.sheetPanel, { transform: [{ translateY }] }]} {...panResponder.panHandlers}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Saved Result</Text>
-            <Pressable onPress={onClose}>
+            <Pressable onPress={dismissSheet}>
               <Text style={styles.sheetClose}>Close</Text>
             </Pressable>
           </View>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetContent}>
             {loading ? <LoadingCard text="Opening saved result..." /> : investigation ? <InvestigationResultView investigation={investigation} /> : <EmptyState title="No result loaded" body="Select another saved investigation to continue." />}
           </ScrollView>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -1157,12 +1241,14 @@ function AccordionCard({
       <Pressable style={styles.accordionHeader} onPress={() => setOpen((value) => !value)}>
         <View style={styles.accordionTitleRow}>
           {leading}
-          <View style={{ flex: 1 }}>
-            <Text style={styles.accordionTitle}>{title}</Text>
+          <View style={styles.accordionHeadingWrap}>
+            <View style={styles.accordionHeadingLine}>
+              <Text style={styles.accordionTitle}>{title}</Text>
+              <Text style={styles.accordionToggle}>{open ? "▴" : "▾"}</Text>
+            </View>
             <Text style={styles.accordionSummary}>{summary}</Text>
           </View>
         </View>
-        <Text style={styles.accordionToggle}>{open ? "▴" : "▾"}</Text>
       </Pressable>
       {open ? <View style={styles.accordionBody}>{children}</View> : null}
     </View>
@@ -1291,7 +1377,7 @@ function TabIcon({ tab, selected }: { tab: AppTab; selected: boolean }) {
   return <AppIcon kind="stack" color={color} size={20} />;
 }
 
-type IconKind = "home" | "play" | "history" | "stack" | "insights";
+type IconKind = "home" | "play" | "history" | "stack" | "insights" | "trash" | "drag";
 type Tone = "lime" | "aqua" | "blue" | "red";
 
 function AppIcon({ kind, color, size }: { kind: IconKind; color: string; size: number }) {
@@ -1351,6 +1437,29 @@ function AppIcon({ kind, color, size }: { kind: IconKind; color: string; size: n
         <View style={{ width: size * 0.18, height: size * 0.34, backgroundColor: color, borderRadius: 999 }} />
         <View style={{ width: size * 0.18, height: size * 0.56, backgroundColor: color, borderRadius: 999 }} />
         <View style={{ width: size * 0.18, height: size * 0.78, backgroundColor: color, borderRadius: 999 }} />
+      </View>
+    );
+  }
+
+  if (kind === "trash") {
+    return (
+      <View style={{ width: size, height: size, alignItems: "center" }}>
+        <View style={{ width: size * 0.66, height: stroke, backgroundColor: color, borderRadius: 999, marginTop: size * 0.08 }} />
+        <View style={{ width: size * 0.52, height: size * 0.54, borderWidth: stroke, borderColor: color, borderTopWidth: 0, borderBottomLeftRadius: size * 0.12, borderBottomRightRadius: size * 0.12, marginTop: size * 0.06 }} />
+      </View>
+    );
+  }
+
+  if (kind === "drag") {
+    return (
+      <View style={{ width: size, height: size, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        {[0, 1].map((column) => (
+          <View key={column} style={{ justifyContent: "space-between", height: size * 0.7 }}>
+            {[0, 1, 2].map((dot) => (
+              <View key={`${column}-${dot}`} style={{ width: stroke + 1, height: stroke + 1, borderRadius: 999, backgroundColor: color }} />
+            ))}
+          </View>
+        ))}
       </View>
     );
   }
@@ -2053,6 +2162,16 @@ const styles = StyleSheet.create({
     gap: 12,
     alignItems: "center"
   },
+  accordionHeadingWrap: {
+    flex: 1,
+    gap: 4
+  },
+  accordionHeadingLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
   accordionTitle: {
     color: palette.ink,
     fontSize: 18,
@@ -2061,12 +2180,11 @@ const styles = StyleSheet.create({
   accordionSummary: {
     color: palette.muted,
     fontSize: 14,
-    lineHeight: 21,
-    marginTop: 4
+    lineHeight: 21
   },
   accordionToggle: {
     color: palette.blue,
-    fontSize: 13,
+    fontSize: 18,
     fontWeight: "800"
   },
   accordionBody: {
@@ -2199,14 +2317,34 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     paddingRight: 18
   },
-  historyDeleteRailText: {
-    color: palette.red,
-    fontSize: 13,
-    fontWeight: "800"
+  historyDeleteRailIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: "#fff7f7",
+    borderWidth: 1,
+    borderColor: "#f1c6c7",
+    justifyContent: "center",
+    alignItems: "center"
   },
   historyCardSelected: {
     borderColor: palette.blue,
     backgroundColor: "#f8fbff"
+  },
+  historyCardHeaderSide: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  historyGrip: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    backgroundColor: "#f7f3ec",
+    borderWidth: 1,
+    borderColor: palette.border,
+    justifyContent: "center",
+    alignItems: "center"
   },
   historyActions: {
     flexDirection: "row",
@@ -2229,7 +2367,8 @@ const styles = StyleSheet.create({
   historyMetaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8
+    gap: 8,
+    flexWrap: "wrap"
   },
   historyMetaText: {
     color: palette.muted,

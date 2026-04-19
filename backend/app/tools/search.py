@@ -208,7 +208,6 @@ def infer_evidence_tier(title: str, snippet: str) -> EvidenceTier:
 
 
 def infer_stance(claim: str, snippet: str) -> SourceStance:
-    claim_tokens = set(_normalize(claim))
     lowered = snippet.lower()
     negative_phrases = [
         "no evidence of",
@@ -239,42 +238,10 @@ def infer_stance(claim: str, snippet: str) -> SourceStance:
         return "contradictory"
     if any(phrase in lowered for phrase in neutral_phrases):
         return "mixed"
-    if any(
-        phrase in lowered
-        for phrase in [
-            "insufficient",
-            "limited evidence",
-            "not supported",
-            "modest",
-            "at best",
-            "does not cure",
-            "no significant effect",
-            "no effect",
-            "not effective",
-            "no benefit",
-            "fails to support",
-            "no correlation",
-            "not associated",
-        ]
-    ):
+    if any(phrase in lowered for phrase in ["no significant effect", "no effect", "not effective", "no benefit", "fails to support"]):
         return "contradictory"
-    if any(
-        phrase in lowered
-        for phrase in [
-            "mixed",
-            "inconsistent",
-            "varied",
-            "plausible",
-            "unclear",
-            "more research",
-            "inconclusive",
-            "under investigation",
-            "needs validation",
-        ]
-    ):
+    if any(phrase in lowered for phrase in ["mixed", "inconsistent", "unclear", "more research", "under investigation", "needs validation"]):
         return "mixed"
-    if claim_tokens and any(token in lowered for token in claim_tokens):
-        return "supportive"
     return "unclear"
 
 

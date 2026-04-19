@@ -24,6 +24,7 @@ def _batch_sentiment_review(
             f"You are {reviewer_name} for a health-claim investigation. "
             "Return JSON only as an array of objects with id, sentiment, and rationale. "
             "Use sentiment values positive, neutral, or negative. "
+            "Judge whether each source supports, contradicts, or fails to support the claim. "
             "Be negation-aware and conservative with causation claims."
         ),
         {
@@ -41,8 +42,11 @@ def _batch_sentiment_review(
                 for source in sources
             ],
             "instructions": [
-                "Return positive only for genuine support, negative for contradiction, and neutral for mixed or uncertain evidence.",
+                "Return positive only for genuine support, negative for contradiction or failure to support, and neutral for mixed or uncertain evidence.",
                 "Treat disagreement, unclear mechanism, or weak causal logic conservatively.",
+                'Hard rules: "no evidence of", "not associated", "fails to show", and "no significant effect" are not supportive.',
+                'Hard rules: "insufficient evidence", "inconclusive", and "further research is needed" should be neutral unless the source directly refutes the claim.',
+                'Examples: "X may help Y" = positive, "No association found between X and Y" = negative, "Results were inconsistent across studies" = neutral.',
             ],
         },
         SourceSentimentJudgment,

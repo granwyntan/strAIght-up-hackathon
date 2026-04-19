@@ -15,26 +15,6 @@ from .models import (
 )
 
 
-NEGATION_WORDS = {
-    "no",
-    "not",
-    "none",
-    "never",
-    "without",
-    "lacks",
-    "lack",
-    "fails",
-    "failed",
-    "unable",
-    "did",
-    "does",
-    "cannot",
-    "contrary",
-    "absence",
-    "insufficient",
-    "little",
-}
-
 NEGATIVE_PHRASES = [
     "no evidence of",
     "no association",
@@ -64,55 +44,12 @@ NEUTRAL_SIGNALS = [
     "needs validation",
 ]
 
-POSITIVE_SIGNALS = [
-    "effective",
-    "significant improvement",
-    "beneficial",
-    "associated with improvement",
-    "reduces symptoms",
-    "evidence supports",
-    "clinically proven",
-    "improves outcomes",
-    "positive correlation",
-    "therapeutic effect",
-    "statistically significant",
-    "favorable results",
-    "enhances",
-    "successful treatment",
-    "improves condition",
-    "linked to better",
-    "demonstrates efficacy",
-    "supports hypothesis",
-    "protective effect",
-    "improvement observed",
-]
-
 TOKEN_PATTERN = re.compile(r"[a-z0-9']+")
 
 
 def _source_name(domain: str) -> str:
     cleaned = domain.lower().replace("www.", "")
     return cleaned or "source"
-
-
-def _tokens(text: str) -> list[str]:
-    return TOKEN_PATTERN.findall(text.lower())
-
-
-def _has_negation_window(tokens: list[str], phrase: str) -> bool:
-    phrase_tokens = TOKEN_PATTERN.findall(phrase.lower())
-    if not phrase_tokens:
-        return False
-    phrase_len = len(phrase_tokens)
-
-    for index in range(0, len(tokens) - phrase_len + 1):
-        if tokens[index : index + phrase_len] != phrase_tokens:
-            continue
-        start = max(0, index - 5)
-        window = tokens[start:index]
-        if any(token in NEGATION_WORDS for token in window):
-            return True
-    return False
 
 
 def _quoted_evidence(text: str, fallback: str) -> str:
@@ -123,41 +60,30 @@ def _quoted_evidence(text: str, fallback: str) -> str:
 
 
 def classify_source_sentiment(source: SourceAssessment) -> tuple[SourceSentiment, str]:
-    text = " ".join([source.title, source.snippet, *source.notes]).lower()
-    tokens = _tokens(text)
+    text = " ".join(
+        [
+            source.title,
+            source.snippet,
+            source.extractedText[:1200],
+            *(source.notes or []),
+        ]
+    ).lower()
 
     for phrase in NEGATIVE_PHRASES:
         if phrase in text:
-            return "negative", f"Negative override phrase detected: {phrase}."
-
-    positive_hits: list[str] = []
-    neutral_hits: list[str] = []
-    negative_hits: list[str] = []
-
-    for signal in POSITIVE_SIGNALS:
-        if signal in text:
-            if _has_negation_window(tokens, signal):
-                negative_hits.append(f"negated {signal}")
-            else:
-                positive_hits.append(signal)
+            return "negative", f'The accessible source text explicitly says "{phrase}", so it contradicts or fails to support the claim.'
 
     for signal in NEUTRAL_SIGNALS:
         if signal in text:
-            neutral_hits.append(signal)
-
-    if source.stance == "contradictory" and not negative_hits:
-        negative_hits.append("contradictory stance")
-    if source.stance == "supportive" and not positive_hits:
-        positive_hits.append("supportive stance")
-    if source.stance in {"mixed", "unclear"} and not neutral_hits and not positive_hits and not negative_hits:
-        neutral_hits.append("mixed or unclear stance")
-
-    if len(negative_hits) > len(positive_hits) and negative_hits:
-        return "negative", f"Contradicting signals detected: {negative_hits[0]}."
-    if len(positive_hits) > len(negative_hits) and positive_hits:
-        return "positive", f"Supporting signals detected: {positive_hits[0]}."
-    if neutral_hits:
-        return "neutral", f"Uncertain or mixed language detected: {neutral_hits[0]}."
+            return "neutral", f'The source describes the evidence as "{signal}", so it remains inconclusive.'
+    if source.stance == "contradictory":
+        return "negative", "The source assessment indicates the evidence materially challenges or narrows the claim."
+    if source.stance in {"mixed", "unclear"}:
+        return "neutral", "The source adds context, but it does not cleanly support the claim."
+    if source.stance == "supportive":
+        if source.linkAlive and source.contentAccessible and (source.quoteVerified or source.evidenceScore >= 3 or source.citationIntegrity >= 45):
+            return "positive", "The accessible source content aligns with the claim and clears the minimum evidence-integrity bar."
+        return "neutral", "The source leans supportive, but the accessible evidence is too thin to treat as confirmed support."
     if source.sourceScore == 1 or source.evidenceScore <= 2:
         return "neutral", "Low-strength source, so the direction stays uncertain."
     return "neutral", "The source direction is not strong enough to classify beyond neutral."
@@ -324,11 +250,11 @@ def build_sentiment_distribution(sources: list[SourceAssessment]) -> SentimentDi
 
 def build_source_groups(sources: list[SourceAssessment]) -> tuple[list[EvidenceGroup], list[SourceAssessment]]:
     ranked = sorted(sources, key=_display_rank, reverse=True)
-    target_count = min(max(20, len(ranked)), 30) if ranked else 0
+    target_count = min(max(20, len(ranked)), 36) if ranked else 0
     selected: list[SourceAssessment] = []
     selected_ids: set[str] = set()
 
-    contradicting = [source for source in ranked if source.sentiment == "negative"][: max(3, min(6, len(ranked)))]
+    contradicting = [source for source in ranked if source.sentiment == "negative"][: max(4, min(8, len(ranked)))]
     for source in contradicting:
         if source.id not in selected_ids:
             selected.append(source)
@@ -338,7 +264,7 @@ def build_source_groups(sources: list[SourceAssessment]) -> tuple[list[EvidenceG
         source
         for source in ranked
         if source.id not in selected_ids and source.sourceScore >= 2 and source.evidenceScore >= 4 and source.citationIntegrity >= 45
-    ][:8]
+    ][:10]
     for source in high_quality:
         selected.append(source)
         selected_ids.add(source.id)
@@ -463,6 +389,7 @@ def build_step_summaries(
         f"Subject: {semantics.subject}" if semantics and semantics.subject else "",
         f"Action: {semantics.action}" if semantics and semantics.action else "",
         f"Outcome: {semantics.outcome}" if semantics and semantics.outcome else "",
+        f"Relationship: {semantics.relationshipType}" if semantics and semantics.relationshipType else "",
     ]
     semantic_lines = [line for line in semantic_lines if line]
     return [
@@ -477,7 +404,7 @@ def build_step_summaries(
             key="query_generation",
             title="Query Generation",
             status="completed",
-            summary=f"{len(claim_analysis.generatedQueries)} research queries prepared across academic, clinical, and mechanism angles.",
+            summary=f"{len(claim_analysis.generatedQueries)} semantic research queries prepared across synonyms, clinical evidence, and contradiction angles.",
             details=claim_analysis.generatedQueries[:6],
         ),
         PipelineStepSummary(

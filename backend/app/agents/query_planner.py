@@ -34,9 +34,11 @@ def refine_claim_analysis(claim: str, context: str, desired_depth: str, baseline
             "desired_depth": desired_depth,
             "baseline": baseline.model_dump(),
             "instructions": [
-                "Prefer review, guideline, randomized trial, meta-analysis, mechanism, and contradictory-evidence searches.",
+                "Preserve the full semantic meaning of the claim instead of fragmenting it into keywords.",
+                "Prefer review, guideline, randomized trial, meta-analysis, mechanism, contradictory-evidence, and safety-oriented searches.",
+                "Use synonyms, medical terminology, and alternative phrasing where helpful.",
                 "Do not change the baseline languageRiskScore or languageLabel.",
-                "Return 8 to 12 high-signal search queries.",
+                "Return 12 to 20 high-signal search queries.",
             ],
         },
         QueryPlannerOutput,
@@ -50,6 +52,6 @@ def refine_claim_analysis(claim: str, context: str, desired_depth: str, baseline
             "summary": result.summary.strip() or baseline.summary,
             "focusTerms": _dedupe(result.focusTerms or baseline.focusTerms, 8) or baseline.focusTerms,
             "redFlags": _dedupe([*baseline.redFlags, *result.redFlags], 8),
-            "generatedQueries": _dedupe(result.generatedQueries or baseline.generatedQueries, 12) or baseline.generatedQueries,
+            "generatedQueries": _dedupe(result.generatedQueries or baseline.generatedQueries, 20) or baseline.generatedQueries,
         }
     )

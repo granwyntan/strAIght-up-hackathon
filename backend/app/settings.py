@@ -60,14 +60,14 @@ class Settings(BaseSettings):
     research_stage_providers: str = "gemini,openai,claude,deepseek,xai"
     audit_stage_providers: str = "claude,openai,gemini,deepseek,xai"
     reasoning_stage_providers: str = "openai,xai,claude,deepseek,gemini"
-    synthesis_stage_providers: str = "xai,openai,claude,gemini,deepseek"
+    synthesis_stage_providers: str = "openai,claude,xai,gemini,deepseek"
     consensus_stage_providers: str = "deepseek,claude,openai,gemini,xai"
 
     tavily_api_key: str | None = None
-    tavily_max_results: int = 5
+    tavily_max_results: int = 8
     serpapi_api_key: str | None = None
     serpapi_engine: str = "google"
-    serpapi_num_results: int = 5
+    serpapi_num_results: int = 8
     search_timeout_seconds: float = 3.0
     verified_authorities: str = (
         "who.int,nih.gov,cdc.gov,fda.gov,ods.od.nih.gov,nccih.nih.gov,medlineplus.gov,"

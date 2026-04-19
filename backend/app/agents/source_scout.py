@@ -22,8 +22,8 @@ def scout_sources(claim: str, queries: list[str], source_urls: list[str], mode: 
     seen_urls: set[str] = set()
     discovered: list[SearchDocument] = []
     sources: list[SourceAssessment] = []
-    max_sources = 50 if desired_depth == "deep" else 30
-    query_budget = len(queries) if mode == "offline" else min(len(queries), 8 if desired_depth == "standard" else 12)
+    max_sources = 70 if desired_depth == "deep" else 50
+    query_budget = len(queries) if mode == "offline" else min(len(queries), 12 if desired_depth == "standard" else 16)
 
     for query in queries[:query_budget]:
         for result in search(query, mode=mode):
@@ -31,9 +31,9 @@ def scout_sources(claim: str, queries: list[str], source_urls: list[str], mode: 
                 continue
             seen_urls.add(result.url)
             discovered.append(result)
-            if mode != "offline" and len(discovered) >= max_sources * 3:
+            if mode != "offline" and len(discovered) >= max_sources * 4:
                 break
-        if mode != "offline" and len(discovered) >= max_sources * 3:
+        if mode != "offline" and len(discovered) >= max_sources * 4:
             break
 
     for result in sorted(discovered, key=lambda item: _rank_source(item, claim), reverse=True):

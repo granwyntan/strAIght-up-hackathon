@@ -10,8 +10,8 @@ SOURCE_BUCKET_TO_SCORE = {
 }
 
 SOURCE_BUCKET_TO_WEIGHT = {
-    "tier_1_blog": 0.3,
-    "tier_2_scholarly": 0.7,
+    "tier_1_blog": 0.1,
+    "tier_2_scholarly": 0.6,
     "tier_3_authority": 1.0,
 }
 

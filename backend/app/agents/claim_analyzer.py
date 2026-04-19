@@ -51,6 +51,36 @@ MAIN_VERB_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+PHRASE_SYNONYMS = {
+    "gut health": ["gut microbiome", "intestinal health", "digestive health"],
+    "gut microbiome": ["intestinal microbiota", "microbiota"],
+    "eczema": ["atopic dermatitis"],
+    "blood sugar": ["glycemic control", "glucose control"],
+    "heart disease": ["cardiovascular disease"],
+    "high blood pressure": ["hypertension"],
+    "weight loss": ["body weight reduction"],
+    "sleep": ["sleep quality", "sleep outcomes"],
+    "anxiety": ["anxiety symptoms"],
+    "depression": ["depressive symptoms"],
+    "inflammation": ["inflammatory markers"],
+}
+
+TOKEN_SYNONYMS = {
+    "supplements": ["supplementation", "dietary supplements"],
+    "supplement": ["supplementation", "dietary supplement"],
+    "probiotics": ["live biotherapeutics", "beneficial bacteria"],
+    "probiotic": ["live biotherapeutic", "beneficial bacteria"],
+    "cure": ["treatment", "therapeutic effect"],
+    "cures": ["treats", "has therapeutic effect on"],
+    "fix": ["improve", "treat"],
+    "fixes": ["improves", "treats"],
+    "good": ["beneficial", "health-promoting"],
+    "bad": ["harmful", "adverse"],
+    "linked": ["associated", "correlated"],
+    "help": ["improve", "support"],
+    "helps": ["improves", "supports"],
+}
+
 
 def _clean_phrase(text: str) -> str:
     return " ".join(text.strip(" .,!?:;").split())
@@ -112,6 +142,19 @@ def _semantic_strength(claim: str) -> int:
     return 1
 
 
+def _relationship_type(claim: str, implied_causation: bool) -> str:
+    lowered = claim.lower()
+    if any(token in lowered for token in ["i think", "i believe", "opinion", "good for", "bad for", "healthy", "unhealthy"]):
+        return "opinion"
+    if implied_causation or any(
+        token in lowered for token in ["cause", "causes", "cure", "cures", "prevent", "prevents", "reverse", "improve", "improves", "reduce", "reduces", "treat", "treats"]
+    ):
+        return "causal"
+    if any(token in lowered for token in ["linked", "associated", "correlated", "relationship", "connection"]):
+        return "correlational"
+    return "correlational"
+
+
 def _semantic_frame(claim: str) -> ClaimSemantics:
     cleaned = _clean_phrase(claim)
     match = MAIN_VERB_PATTERN.search(cleaned)
@@ -121,6 +164,7 @@ def _semantic_frame(claim: str) -> ClaimSemantics:
             action="asserts a health effect",
             outcome="unspecified outcome",
             impliedCausation=False,
+            relationshipType="correlational",
             strength=_semantic_strength(cleaned),
         )
 
@@ -137,41 +181,107 @@ def _semantic_frame(claim: str) -> ClaimSemantics:
         action=action,
         outcome=outcome,
         impliedCausation=implied_causation,
+        relationshipType=_relationship_type(cleaned, implied_causation),
         strength=_semantic_strength(cleaned),
     )
+
+
+def _text_variants(text: str) -> list[str]:
+    cleaned = _clean_phrase(text)
+    if not cleaned:
+        return []
+
+    variants = [cleaned]
+    lowered = cleaned.lower()
+
+    for phrase, replacements in PHRASE_SYNONYMS.items():
+        if phrase not in lowered:
+            continue
+        for replacement in replacements:
+            candidate = _clean_phrase(lowered.replace(phrase, replacement))
+            if candidate and candidate not in variants:
+                variants.append(candidate)
+
+    tokens = lowered.split()
+    for index, token in enumerate(tokens):
+        replacements = TOKEN_SYNONYMS.get(token)
+        if not replacements:
+            continue
+        for replacement in replacements:
+            candidate_tokens = [*tokens]
+            candidate_tokens[index] = replacement
+            candidate = _clean_phrase(" ".join(candidate_tokens))
+            if candidate and candidate not in variants:
+                variants.append(candidate)
+
+    return variants[:5]
 
 
 def _generate_queries(claim: str, context: str, semantics: ClaimSemantics, focus_terms: list[str], desired_depth: str) -> list[str]:
     claim_text = _clean_phrase(claim)
     subject = semantics.subject or " ".join(focus_terms[:3]) or claim_text
     outcome = semantics.outcome if semantics.outcome and semantics.outcome != "unspecified outcome" else claim_text
-    context_tail = f" {context}".strip()
-    queries = [
-        f"{claim_text} systematic review".strip(),
-        f"{subject} {outcome} clinical evidence".strip(),
-        f"{subject} {outcome} human study".strip(),
-        f"{subject} {outcome} guideline evidence".strip(),
-        f"{subject} {outcome} contradiction evidence".strip(),
-        f"{subject} {outcome} mechanism study".strip(),
-        f"{subject} {outcome} safety clinical evidence".strip(),
-        f"{claim_text} pubmed".strip(),
+    subject_variants = _text_variants(subject)
+    outcome_variants = _text_variants(outcome)
+    claim_variants = _text_variants(claim_text)
+    context_tail = _clean_phrase(context)
+    target_count = 20 if desired_depth == "deep" else 14
+
+    query_templates = [
+        "{claim_variant} systematic review",
+        "{claim_variant} clinical evidence",
+        "{subject_variant} {outcome_variant} human study",
+        "{subject_variant} {outcome_variant} guideline evidence",
+        "{subject_variant} {outcome_variant} contradiction evidence",
+        "{subject_variant} {outcome_variant} mechanism study",
+        "{subject_variant} {outcome_variant} safety clinical evidence",
+        "{subject_variant} {outcome_variant} randomized trial",
+        "{subject_variant} {outcome_variant} meta analysis",
+        "{subject_variant} {outcome_variant} observational study",
+        "{subject_variant} {outcome_variant} causation versus correlation",
+        "{subject_variant} {outcome_variant} dose response evidence",
+        "{subject_variant} {outcome_variant} clinician review",
+        "{claim_variant} pubmed",
     ]
-    if desired_depth == "deep":
-        queries.extend(
+    if context_tail:
+        query_templates.extend(
             [
-                f"{subject} {outcome} meta analysis".strip(),
-                f"{subject} {outcome} randomized trial".strip(),
-                f"{subject} {outcome} causation versus correlation".strip(),
-                f"{subject} {outcome} sample size limitation{context_tail}".strip(),
+                "{subject_variant} {outcome_variant} " + context_tail,
+                "{claim_variant} " + context_tail + " evidence",
+            ]
+        )
+    if desired_depth == "deep":
+        query_templates.extend(
+            [
+                "{subject_variant} {outcome_variant} sample size limitation",
+                "{subject_variant} {outcome_variant} subgroup analysis",
+                "{subject_variant} {outcome_variant} adverse events",
+                "{subject_variant} {outcome_variant} clinical consensus statement",
             ]
         )
 
-    deduped: list[str] = []
-    for query in queries:
-        normalized = _clean_phrase(query)
-        if normalized and normalized not in deduped:
-            deduped.append(normalized)
-    return deduped[:12]
+    queries: list[str] = []
+    subject_pool = subject_variants or [subject]
+    outcome_pool = outcome_variants or [outcome]
+    claim_pool = claim_variants or [claim_text]
+
+    for template in query_templates:
+        for claim_variant in claim_pool[:3]:
+            for subject_variant in subject_pool[:3]:
+                for outcome_variant in outcome_pool[:3]:
+                    query = _clean_phrase(
+                        template.format(
+                            claim_variant=claim_variant,
+                            subject_variant=subject_variant,
+                            outcome_variant=outcome_variant,
+                        )
+                    )
+                    if query and query not in queries:
+                        queries.append(query)
+                    if len(queries) >= target_count:
+                        return queries
+
+    return queries[:target_count]
 
 
 def analyze_claim(claim: str, context: str = "", desired_depth: str = "standard") -> ClaimAnalysis:
@@ -193,7 +303,7 @@ def analyze_claim(claim: str, context: str = "", desired_depth: str = "standard"
 
     summary = (
         f'The claim is treated as one semantic assertion about {semantics.subject or "the subject"}, '
-        f'its claimed action "{semantics.action}", and outcome "{semantics.outcome}". '
+        f'its claimed action "{semantics.action}", outcome "{semantics.outcome}", and {semantics.relationshipType} relationship. '
         f"It carries a {claim_strength}/5 claim-strength profile and a {_risk_label(language_risk).lower()} language profile."
     )
 
