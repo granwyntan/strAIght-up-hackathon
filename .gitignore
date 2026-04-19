@@ -1,0 +1,33 @@
+frontend/node_modules
+frontend/.expo
+frontend/dist
+backend/.venv
+backend/__pycache__
+backend/.pytest_cache
+backend/.mypy_cache
+*.pyc
+
+# Environment / secrets (keep examples)
+.env
+.env.local
+.env.*
+**/.env
+**/.env.local
+**/.env.*
+**/.env.example
+**/.env.sample
+
+# Local script outputs / private scripts
+scripts/local/
+scripts/private/
+scripts/tmp/
+scripts/**/.env*
+scripts/**/*.local.*
+scripts/**/*.secret.*
+
+# Key material
+*.pem
+*.key
+*.p12
+*.pfx
+backend/.env.example
