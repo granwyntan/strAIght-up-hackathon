@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GramVVIN Supplement Scanner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', path='styles.css') }}"
+    />
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero card">
+        <div class="hero-copy">
+          <p class="eyebrow">GramVVIN</p>
+          <h1>Supplement Scanner</h1>
+          <p class="intro">
+            Upload a supplement label or snap a webcam photo, then let GPT
+            Vision analyze ingredients, benefits, side effects, and suitability
+            for your health goals.
+          </p>
+        </div>
+        <div class="hero-badge">
+          <span>GPT Vision</span>
+          <strong>Photo -> Analysis</strong>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <form
+          class="card form-card"
+          method="post"
+          enctype="multipart/form-data"
+          id="analysis-form"
+        >
+          <div class="section-heading">
+            <p class="eyebrow">Step 1</p>
+            <h2>Patient profile</h2>
+          </div>
+
+          <label class="field">
+            <span>Medical history / underlying conditions</span>
+            <textarea
+              name="conditions"
+              rows="3"
+              placeholder="Example: ADHD, high blood pressure"
+            >
+{{ form_values.conditions }}</textarea
+            >
+          </label>
+
+          <label class="field">
+            <span>Health goals</span>
+            <textarea
+              name="goals"
+              rows="3"
+              placeholder="Example: Improve focus, reduce fatigue"
+            >
+{{ form_values.goals }}</textarea
+            >
+          </label>
+
+          <div class="section-heading">
+            <p class="eyebrow">Step 2</p>
+            <h2>Add a supplement photo</h2>
+          </div>
+
+          <label class="field upload-field">
+            <span>Upload an image</span>
+            <input
+              type="file"
+              id="photo-upload"
+              name="photo"
+              accept="image/png,image/jpeg,image/webp"
+            />
+          </label>
+
+          <div class="camera-panel">
+            <div>
+              <span class="camera-label">Or use your webcam</span>
+              <p class="camera-help">
+                Open the camera, frame the supplement bottle, then capture a
+                still photo.
+              </p>
+            </div>
+            <div class="camera-actions">
+              <button type="button" class="secondary-button" id="start-camera">
+                Open camera
+              </button>
+              <button
+                type="button"
+                class="secondary-button"
+                id="capture-photo"
+                disabled
+              >
+                Take photo
+              </button>
+            </div>
+            <video id="camera-feed" playsinline autoplay muted hidden></video>
+            <canvas id="camera-canvas" hidden></canvas>
+            <img id="camera-preview" alt="Captured webcam preview" hidden />
+            <input type="hidden" name="webcam_image" id="webcam-image" />
+          </div>
+
+          <button
+            type="submit"
+            class="primary-button"
+            id="analyze-button"
+            disabled
+            aria-disabled="true"
+          >
+            Upload or take a photo first
+          </button>
+
+          {% if error %}
+          <div class="message error">{{ error }}</div>
+          {% endif %}
+        </form>
+
+        <section class="card results-card">
+          <div class="section-heading">
+            <p class="eyebrow">Step 3</p>
+            <h2>Analysis result</h2>
+          </div>
+
+          {% if image_path %}
+          <img
+            class="result-image"
+            src="{{ url_for('static', path=image_path) }}"
+            alt="Submitted supplement image"
+          />
+          {% else %}
+          <div class="placeholder">
+            Your uploaded or captured supplement image will appear here.
+          </div>
+          {% endif %} {% if response %}
+          <article class="analysis-output">{{ response_html|safe }}</article>
+          {% else %}
+          <div class="placeholder">
+            The GPT Vision summary will appear here after you submit the form.
+          </div>
+          {% endif %}
+
+          <div class="section-heading infographic-heading">
+            <p class="eyebrow">Step 4</p>
+            <h2>Infographic</h2>
+          </div>
+
+          {% if infographic_path %}
+          <img
+            class="infographic-image"
+            src="{{ url_for('static', path=infographic_path) }}"
+            alt="Generated supplement infographic"
+          />
+          {% else %}
+          <div class="placeholder">
+            A visual infographic summary will appear here after the analysis
+            finishes.
+          </div>
+          {% endif %}
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const form = document.getElementById("analysis-form");
+      const fileInput = document.getElementById("photo-upload");
+      const startButton = document.getElementById("start-camera");
+      const captureButton = document.getElementById("capture-photo");
+      const analyzeButton = document.getElementById("analyze-button");
+      const video = document.getElementById("camera-feed");
+      const canvas = document.getElementById("camera-canvas");
+      const preview = document.getElementById("camera-preview");
+      const webcamInput = document.getElementById("webcam-image");
+      let stream;
+
+      function hasImageReady() {
+        return Boolean(
+          (fileInput.files && fileInput.files.length > 0) || webcamInput.value,
+        );
+      }
+
+      function syncAnalyzeButton() {
+        const enabled = hasImageReady();
+        analyzeButton.disabled = !enabled;
+        analyzeButton.setAttribute("aria-disabled", String(!enabled));
+        analyzeButton.textContent = enabled
+          ? "Analyze supplement"
+          : "Upload or take a photo first";
+      }
+
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files && fileInput.files.length > 0) {
+          webcamInput.value = "";
+          preview.hidden = true;
+        }
+        syncAnalyzeButton();
+      });
+
+      startButton.addEventListener("click", async () => {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+          video.srcObject = stream;
+          video.hidden = false;
+          captureButton.disabled = false;
+          startButton.textContent = "Camera ready";
+          startButton.disabled = true;
+        } catch (error) {
+          alert(
+            "Unable to access the webcam. Please allow camera permission or upload an image instead.",
+          );
+        }
+      });
+
+      captureButton.addEventListener("click", () => {
+        if (!stream) {
+          return;
+        }
+
+        canvas.width = video.videoWidth || 1280;
+        canvas.height = video.videoHeight || 720;
+        canvas
+          .getContext("2d")
+          .drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/png");
+
+        webcamInput.value = dataUrl;
+        preview.src = dataUrl;
+        preview.hidden = false;
+        captureButton.textContent = "Photo taken";
+        fileInput.value = "";
+        syncAnalyzeButton();
+
+        stream.getTracks().forEach((track) => track.stop());
+        video.hidden = true;
+      });
+
+      form.addEventListener("submit", (event) => {
+        if (!hasImageReady() || analyzeButton.disabled) {
+          event.preventDefault();
+          syncAnalyzeButton();
+          return;
+        }
+
+        analyzeButton.disabled = true;
+        analyzeButton.setAttribute("aria-disabled", "true");
+        analyzeButton.textContent = "Analyzing supplement...";
+        analyzeButton.classList.add("is-submitting");
+      });
+
+      syncAnalyzeButton();
+    </script>
+  </body>
+</html>

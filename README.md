@@ -2,435 +2,104 @@
 
 Health and Wellness at your fingertips.
 
-GramWIN is a health and wellness claim verification app with:
+A multi-agent health-claim credibility app with an Expo frontend and a FastAPI backend. The backend is designed to minimize hallucination by validating sources and quotes before they can appear in the UI, and by cross-checking sentiment across multiple LLM roles.
 
-- `backend/`: FastAPI API and multi-agent evidence pipeline
-- `frontend/`: Expo app for mobile and web
+## Product focus
 
-It is built to investigate claims, validate evidence, detect overstatement, and present a clean user-facing verdict without exposing the backend math in the UI.
-
-## What GramWIN does
-
-For users:
-
-- Check whether a health or wellness claim looks trustworthy, uncertain, or untrustworthy
-- Review supporting, mixed, and contradicting evidence in a clean mobile-friendly interface
-- Reopen saved claim investigations from history
-
-For developers:
-
-- Run a staged multi-agent health-claim verification pipeline
+- Investigate health and wellness claims with a staged multi-agent workflow
 - Validate source accessibility and quote integrity before rendering evidence
-- Score evidence with calibrated weights, contradiction penalties, and cross-model checks
-- Cache search, extraction, and final outputs to reduce cost and repeated work
-- Persist investigations, agent runs, and progress logs in SQLite
+- Score source quality, evidence depth, citation integrity, weighted consensus, and agreement penalties
+- Persist investigation history, agent runs, and progress logs in SQLite
+- Review results in a mobile-friendly Expo frontend
 
-## Result states
-
-The app only shows 3 end-user states:
-
-- `Trustworthy`
-- `Uncertain`
-- `Untrustworthy`
-
-This is intentional. Internally, the backend may track more nuance, but the UI stays simple.
-
-## Core stack
+## Stack
 
 - Frontend: Expo + React Native + TypeScript
 - Backend: FastAPI + Python
-- Search: SerpAPI for breadth, Tavily for deeper retrieval
-- LLM orchestration: OpenAI, Claude, Gemini, xAI, DeepSeek
-- Optional NLP refinement: NLP Cloud
-- Persistence: SQLite
+- Search: SerpAPI (breadth) + Tavily (depth)
+- Multi-LLM: OpenAI, Claude, Gemini, xAI, DeepSeek (optional; driven by env keys)
 
-## How the system works
+## Structure
 
-GramWIN does not just summarize claims. It runs an evidence audit pipeline:
+- `frontend/` Expo React Native client
+- `backend/` FastAPI API
 
-1. Claim analysis
-   The claim is interpreted semantically as one full health assertion, including subject, intervention, outcome, relationship type, and claim strength.
+## Pipeline (high level)
 
-2. Query planning
-   The system generates multiple evidence-seeking and contradiction-seeking search paths using synonyms, medical phrasing, and inverse queries.
+- Claim understanding: semantic subject/action/outcome + claim-strength score
+- Query generation: meaning-preserving search queries
+- Retrieval: SerpAPI breadth + Tavily depth (or offline seeded sources)
+- Source validation: discard dead/inaccessible pages, extract readable text
+- Quote verification: only show quotes that match extracted text
+- Dual sentiment: scientific + critical passes; disagreements downgrade to neutral and reduce weight
+- Weighted consensus: source weight × sentiment × agreement factor
+- Cross-agent validation: reviewer + challenger adjust and flag overclaiming
 
-3. Retrieval
-   SerpAPI and Tavily gather candidate sources. Search results are cached to reduce repeated calls.
+## Run locally
 
-4. Source validation
-   Dead links, inaccessible pages, and low-signal extractions are removed before scoring.
+### Quick scripts
 
-5. Quote verification
-   Quotes are only shown if they map back to accessible source text.
+From the repository root:
 
-6. Stance detection
-   Sources are judged as supportive, neutral, or contradicting using dual-model review and conservative rules around limited evidence.
+- `pwsh -ExecutionPolicy Bypass -File .\run-backend.ps1`
+- `pwsh -ExecutionPolicy Bypass -File .\run-frontend.ps1`
+- `pwsh -ExecutionPolicy Bypass -File .\run-dev.ps1`
 
-7. Consensus scoring
-   Evidence is weighted by source tier, evidence quality, and confidence factors, then calibrated to a 0-100 credibility score.
+### Configuration
 
-8. Final summary
-   A plain-language explanation is produced for users while technical logic stays in the backend and docs.
+1. Copy `backend/.env.example` to `backend/.env` (do not commit it)
+2. Update the deployment/runtime values first:
 
-## Multi-agent architecture
+- `BACKEND_HOST`
+- `BACKEND_PORT`
+- `BACKEND_PUBLIC_BASE_URL`
+- `CORS_ALLOWED_ORIGINS`
 
-Each stage has a professional role:
-
-- Claim Analyst: doctor-style clinical reasoning and claim parsing
-- Research Agent: scientist-style literature and evidence retrieval
-- NLP Agent: linguist-style semantic parsing and classification via NLP Cloud
-- Validation Agent: data engineer-style link and extraction integrity checks
-- Stance Agent: epidemiologist-style evidence interpretation
-- Consensus Agent: statistician-style weighting and calibration
-- Verifier Agent: auditor-style hallucination and inconsistency checks
-- Summary Agent: health communicator-style user-facing explanation
-
-## NLP Cloud in GramWIN
-
-NLP Cloud is optional, but supported as a refinement layer.
-
-It is used to improve:
-
-- semantic claim parsing
-- entity extraction
-- ambiguity handling in stance refinement
-
-Important:
-
-- NLP Cloud is not the single source of truth
-- it should refine ambiguous cases, not replace the main reasoning pipeline
-- the app still works without it if `NLPCLOUD_API_KEY` is not configured
-
-## Truth logic and interpretation rules
-
-These rules are important to how the system behaves:
-
-- Strong positive claim + lack of strong support should trend toward disagreement
-- Strong negative claim + lack of contradiction can trend toward agreement
-- Overstated wording like `cures`, `guaranteed`, or `definitely` is penalized
-- `No evidence`, `not associated`, and similar phrasing count as negative
-- `Inconclusive`, `limited evidence`, and similar phrasing count as neutral, not support
-- Semantic meaning matters more than keyword matching
-
-## Scoring model
-
-The backend combines:
-
-- source tier weight
-- stance direction
-- confidence factor
-
-Source tiers are configured in:
-
-- `backend/app/config/source_tiers.json`
-
-Default weights:
-
-- Verified authorities: `1.0`
-- Established scientific or clinical sources: `0.75`
-- General sources: `0.4`
-
-The pipeline then:
-
-1. sums weighted evidence
-2. normalizes the score
-3. calibrates it to `0-100`
-4. applies penalties for unsupported strong claims, overstated wording, and contradiction pressure
-
-The UI intentionally does not show formulas. The backend owns the scoring logic.
-
-## Source tiers
-
-Source tier configuration is no longer stored as long comma-separated env vars.
-
-Instead, GramWIN reads a JSON file:
-
-- `SOURCE_TIER_CONFIG_PATH=backend/app/config/source_tiers.json`
-
-This makes it easier to:
-
-- edit domain lists
-- tune weights
-- version-control source policy cleanly
-
-## Caching and performance
-
-The backend uses caching aggressively:
-
-- search result cache
-- extraction cache
-- final result cache
-
-The pipeline also uses async concurrency for:
-
-- search
-- validation
-- extraction
-- stance review
-
-This helps reduce latency and cost, especially when the same or similar claims are investigated repeatedly.
-
-## Repository structure
-
-- `backend/app/agents/`: claim analysis, search planning, validation, scoring, reporting
-- `backend/app/core/`: orchestration and scoring
-- `backend/app/tools/`: retrieval helpers and search logic
-- `backend/app/config/`: source tier configuration
-- `backend/app/knowledge/`: seeded fallback knowledge and bootstrap content
-- `frontend/`: Expo application
-
-## Requirements
-
-- Python `3.10+`
-- Node.js `18+`
-- npm
-
-Check your environment:
-
-```bash
-python3 --version
-node --version
-npm --version
-```
-
-On Windows, `python` often works instead of `python3`.
-
-## First-time setup
-
-1. Copy the env template:
-
-```bash
-cp backend/.env.example backend/.env
-```
-
-Windows Command Prompt:
-
-```cmd
-copy backend\.env.example backend\.env
-```
-
-2. Open `backend/.env`
-
-3. Fill in whichever providers you want to use:
+3. Then fill in the providers you want to use:
 
 - `OPENAI_API_KEY`
 - `CLAUDE_API_KEY`
 - `GEMINI_API_KEY`
 - `XAI_API_KEY`
 - `DEEPSEEK_API_KEY`
-- `NLPCLOUD_API_KEY`
 - `TAVILY_API_KEY`
 - `SERPAPI_API_KEY`
 
-4. Leave `BACKEND_PORT=8000` unless you explicitly want another port
+The backend loads configuration from:
 
-5. Review these useful config values:
+- `backend/.env`
+- `backend/.env.local`
+- `.env`
+- `.env.local`
 
-- `SOURCE_TIER_CONFIG_PATH`
-- `SEARCH_QUERY_BUDGET_STANDARD`
-- `SEARCH_QUERY_BUDGET_DEEP`
-- `SOURCE_TARGET_STANDARD`
-- `SOURCE_TARGET_DEEP`
-- `TAVILY_MAX_RESULTS`
-- `SERPAPI_NUM_RESULTS`
+The frontend launcher reads `backend/.env` and generates `frontend/.env.local` automatically. Users should not need to type API addresses into the app for normal local use.
 
-## Running the project
+Optional frontend API override:
 
-### Start backend and frontend together
+- `pwsh -ExecutionPolicy Bypass -File .\run-frontend.ps1 -ApiBaseUrl http://127.0.0.1:8000`
+- `pwsh -ExecutionPolicy Bypass -File .\run-dev.ps1 -ApiBaseUrl http://127.0.0.1:8000`
 
-Python:
+If `-ApiBaseUrl` is omitted, `run-frontend.ps1` uses `BACKEND_PUBLIC_BASE_URL` first and also generates fallback candidates from your machine's current LAN IPs.
 
-```bash
-python3 run_dev.py
-```
+### Phone / emulator notes
 
-Browser mode:
+- Android emulator: `http://10.0.2.2:8000`
+- Physical phone: set `BACKEND_PUBLIC_BASE_URL` to `http://YOUR_PC_LAN_IP:8000` and ensure your firewall allows inbound connections to port `8000`.
 
-```bash
-python3 run_dev.py --web
-```
+### Frontend
 
-Windows PowerShell still works too:
+1. `cd frontend`
+2. `npm install`
+3. `npm run start:lan`
 
-```powershell
-pwsh -ExecutionPolicy Bypass -File .\run-dev.ps1
-```
+For Android emulators, `http://10.0.2.2:8000` is still added automatically as a fallback candidate.
 
-### Run the backend only
+### Backend
 
-macOS/Linux:
+1. `cd backend`
+2. `python -m venv .venv`
+3. `.venv\\Scripts\\activate`
+4. `pip install -r requirements.txt`
+5. `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
 
-```bash
-python3 run_backend.py
-```
-
-Windows:
-
-```cmd
-python run_backend.py
-```
-
-### Run the frontend only
-
-macOS/Linux:
-
-```bash
-python3 run_frontend.py
-```
-
-Windows:
-
-```cmd
-python run_frontend.py
-```
-
-### Run the frontend in a browser
-
-macOS/Linux:
-
-```bash
-python3 run_frontend.py --web
-```
-
-Windows:
-
-```cmd
-python run_frontend.py --web
-```
-
-## What the helper scripts do
-
-`run_backend.py`
-
-- creates `backend/.venv` if needed
-- installs backend dependencies from `backend/requirements.txt`
-- starts FastAPI with uvicorn
-
-`run_frontend.py`
-
-- installs frontend dependencies in `frontend/`
-- generates `frontend/.env.local` from `backend/.env`
-- starts Expo
-
-`run_dev.py`
-
-- starts the backend in the background
-- starts the frontend in the foreground
-- stops the backend when you exit
-
-## Using the app on the web
-
-Run:
-
-```bash
-python3 run_dev.py --web
-```
-
-or:
-
-```bash
-python3 run_frontend.py --web
-```
-
-Expo will print a local URL, usually something like:
-
-- `http://localhost:8081`
-
-## Using the app on a phone
-
-Run:
-
-```bash
-python3 run_dev.py
-```
-
-Then:
-
-1. install Expo Go
-2. make sure your phone and computer are on the same Wi-Fi
-3. scan the QR code shown by Expo
-
-## Useful options
-
-Skip backend auto-reload:
-
-```bash
-python3 run_backend.py --no-reload
-```
-
-Update backend and frontend packages while starting:
-
-```bash
-python3 run_dev.py --update-deps
-```
-
-Override the frontend API URL manually:
-
-```bash
-python3 run_frontend.py --api-base-url http://127.0.0.1:8000
-```
-
-## Troubleshooting
-
-### `python3: command not found`
-
-Try:
-
-```bash
-python --version
-```
-
-If that works, use `python` instead of `python3`.
-
-### `npm: command not found`
-
-Install Node.js, then verify:
-
-```bash
-node --version
-npm --version
-```
-
-### The frontend opens but cannot reach the backend
-
-Check:
-
-- `backend/.env` exists
-- `BACKEND_PORT` is what you expect
-- the backend started successfully
-
-You can also force the frontend to use localhost:
-
-```bash
-python3 run_frontend.py --api-base-url http://127.0.0.1:8000
-```
-
-### I only want the backend API
-
-Run:
-
-```bash
-python3 run_backend.py
-```
-
-Then open:
-
-- `http://127.0.0.1:8000/docs`
-
-## Limitations
-
-- Live retrieval quality still depends on third-party APIs and network reliability
-- Seeded fallback knowledge is useful for demos, not a replacement for live retrieval
-- Some product tabs are still placeholders while the main claim-investigation workflow is the primary shipped experience
-- NLP Cloud is optional and should be treated as a helper, not the main reasoning engine
-- GramWIN evaluates claims; it does not provide diagnosis or personal medical advice
-
-## Legacy Windows scripts
-
-These still work on Windows:
-
-- `run-backend.ps1`
-- `run-frontend.ps1`
-- `run-dev.ps1`
-
-They are no longer required on macOS because the Python launchers provide the same local workflow.
+If you launch from VS Code, use the `Backend: FastAPI` launch configuration so the API is reachable from emulators and devices on your local network.
