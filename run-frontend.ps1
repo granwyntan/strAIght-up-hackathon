@@ -11,6 +11,9 @@ $frontendDir = Join-Path $repoRoot "frontend"
 $backendEnvFile = Join-Path $repoRoot "backend\.env"
 $frontendEnvLocalFile = Join-Path $frontendDir ".env.local"
 $frontendPackageLock = Join-Path $frontendDir "package-lock.json"
+$frontendPackageJson = Join-Path $frontendDir "package.json"
+$frontendNodeModules = Join-Path $frontendDir "node_modules"
+$frontendDepsStamp = Join-Path $frontendNodeModules ".gramwin-install-stamp"
 $apiCandidates = @()
 $backendPort = "8000"
 
@@ -98,7 +101,31 @@ function Ensure-FrontendDeps {
         return
     }
 
-    Write-Host "Ensuring frontend dependencies (UpdateDeps=$UpdateDeps)..." -ForegroundColor DarkCyan
+    $signatureFile = if (Test-Path $frontendPackageLock) { $frontendPackageLock } else { $frontendPackageJson }
+    $dependencySignature = if (Test-Path $signatureFile) { (Get-FileHash -Path $signatureFile -Algorithm SHA256).Hash } else { "" }
+
+    if (-not $UpdateDeps -and (Test-Path $frontendNodeModules)) {
+        if (-not (Test-Path $frontendDepsStamp) -and $dependencySignature) {
+            Set-Content -Path $frontendDepsStamp -Value $dependencySignature
+            Write-Host "Frontend dependencies detected. Skipping reinstall. Use -UpdateDeps to refresh." -ForegroundColor DarkCyan
+            return
+        }
+
+        if (Test-Path $frontendDepsStamp) {
+            $installedSignature = [string](Get-Content $frontendDepsStamp -ErrorAction SilentlyContinue | Select-Object -First 1)
+            $installedSignature = $installedSignature.Trim()
+            if ($installedSignature -and $installedSignature -eq $dependencySignature) {
+                Write-Host "Frontend dependencies already installed. Skipping reinstall. Use -UpdateDeps to refresh." -ForegroundColor DarkCyan
+                return
+            }
+        }
+    }
+
+    if ($UpdateDeps) {
+        Write-Host "Refreshing frontend dependencies..." -ForegroundColor DarkCyan
+    } else {
+        Write-Host "Installing frontend dependencies..." -ForegroundColor DarkCyan
+    }
     Push-Location $frontendDir
     try {
         if (Test-Path $frontendPackageLock) {
@@ -109,6 +136,10 @@ function Ensure-FrontendDeps {
 
         if ($UpdateDeps) {
             npm update
+        }
+
+        if ((Test-Path $frontendNodeModules) -and $dependencySignature) {
+            Set-Content -Path $frontendDepsStamp -Value $dependencySignature
         }
     } finally {
         Pop-Location

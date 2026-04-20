@@ -21,7 +21,12 @@ def _dedupe(items: list[str], limit: int) -> list[str]:
 
 
 def _target_query_count(desired_depth: str, baseline: ClaimAnalysis) -> int:
-    base = 18 if desired_depth == "standard" else 24
+    if desired_depth == "quick":
+        base = 10
+    elif desired_depth == "deep":
+        base = 24
+    else:
+        base = 18
     semantics = baseline.semantics
     if semantics is not None:
         if semantics.relationshipType == "causal":
@@ -33,8 +38,12 @@ def _target_query_count(desired_depth: str, baseline: ClaimAnalysis) -> int:
     if baseline.redFlags:
         base += 2
 
-    floor = 16 if desired_depth == "standard" else 22
-    ceiling = 28 if desired_depth == "standard" else 36
+    if desired_depth == "quick":
+        floor, ceiling = 8, 16
+    elif desired_depth == "deep":
+        floor, ceiling = 22, 36
+    else:
+        floor, ceiling = 16, 28
     return max(floor, min(ceiling, base))
 
 
@@ -49,7 +58,10 @@ def _checked_plan(
     return generate_structured_output(
         "audit",
         (
-            "You are the checker for a health-claim query plan. "
+            "You are the Research QA reviewer for a health-claim query plan. "
+            "Professional role: scientist checking whether the search plan is broad enough, skeptical enough, and still on-topic. "
+            "Goal: remove weak, repetitive, or irrelevant queries while preserving contradiction-finding and null-result searches. "
+            "Standpoint: high recall for meaningful evidence, low tolerance for keyword spam. "
             "Review the draft and return JSON only with summary, focusTerms, redFlags, and generatedQueries. "
             "Remove weak, repetitive, or irrelevant searches and preserve contradiction-finding searches."
         ),
@@ -76,7 +88,11 @@ def refine_claim_analysis(claim: str, context: str, desired_depth: str, baseline
     result = generate_structured_output(
         "research",
         (
-            "You are a health-claim query planner. Improve search planning for an evidence review without making up studies. "
+            "You are the Research Agent for a health-claim investigation. "
+            "Professional role: evidence scientist designing a high-signal literature and web search plan. "
+            "Goal: generate dynamic search paths that capture direct support, contradictions, null findings, safety signals, and medical phrasing. "
+            "Standpoint: semantic fidelity first, skepticism toward overclaiming, and no invented studies. "
+            "Improve search planning for an evidence review without making up studies. "
             "Return JSON only with concise summary, focusTerms, redFlags, and generatedQueries. "
             "Keep the tone cautious and investigative, not promotional."
         ),

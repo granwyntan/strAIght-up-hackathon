@@ -30,7 +30,11 @@ def _clean_text(raw_text: str) -> str:
     return WHITESPACE.sub(" ", no_tags).strip()
 
 
-async def _fetch_source_text(source: SourceAssessment, mode: str) -> tuple[bool, bool, str, str, str]:
+async def _fetch_source_text(
+    source: SourceAssessment,
+    mode: str,
+    client: httpx.AsyncClient | None = None,
+) -> tuple[bool, bool, str, str, str]:
     if mode == "offline":
         text = source.snippet or source.title
         return True, True, text, "Offline mode used the seeded source excerpt as accessible evidence text.", "fallback"
@@ -46,45 +50,51 @@ async def _fetch_source_text(source: SourceAssessment, mode: str) -> tuple[bool,
             "cached",
         )
 
+    owns_client = client is None
+    request_client = client
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True,
-            timeout=settings.search_timeout_seconds,
-            headers={"User-Agent": "GramWIN/2.0"},
-        ) as client:
-            response = await retry_async(lambda: client.get(source.url))
-            response.raise_for_status()
-            content_type = (response.headers.get("content-type") or "").lower()
-            if "text" not in content_type and "json" not in content_type and "html" not in content_type:
-                payload = {
-                    "linkAlive": True,
-                    "contentAccessible": False,
-                    "extractedText": "",
-                    "note": "The link responded, but the content could not be extracted as readable text.",
-                }
-                set_json("extract", key, payload, settings.extraction_cache_ttl_seconds)
-                return True, False, "", payload["note"], "live"
-            extracted = _clean_text(response.text)[:9000]
-            if not extracted:
-                payload = {
-                    "linkAlive": True,
-                    "contentAccessible": False,
-                    "extractedText": "",
-                    "note": "The link responded, but no readable text could be extracted.",
-                }
-                set_json("extract", key, payload, settings.extraction_cache_ttl_seconds)
-                return True, False, "", payload["note"], "live"
-
+        if request_client is None:
+            request_client = httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=settings.search_timeout_seconds,
+                headers={"User-Agent": "GramWIN/2.0"},
+            )
+        response = await retry_async(lambda: request_client.get(source.url))
+        response.raise_for_status()
+        content_type = (response.headers.get("content-type") or "").lower()
+        if "text" not in content_type and "json" not in content_type and "html" not in content_type:
             payload = {
                 "linkAlive": True,
-                "contentAccessible": True,
-                "extractedText": extracted,
-                "note": "The link responded and readable source text was extracted.",
+                "contentAccessible": False,
+                "extractedText": "",
+                "note": "The link responded, but the content could not be extracted as readable text.",
             }
             set_json("extract", key, payload, settings.extraction_cache_ttl_seconds)
-            return True, True, extracted, payload["note"], "live"
+            return True, False, "", payload["note"], "live"
+        extracted = _clean_text(response.text)[:9000]
+        if not extracted:
+            payload = {
+                "linkAlive": True,
+                "contentAccessible": False,
+                "extractedText": "",
+                "note": "The link responded, but no readable text could be extracted.",
+            }
+            set_json("extract", key, payload, settings.extraction_cache_ttl_seconds)
+            return True, False, "", payload["note"], "live"
+
+        payload = {
+            "linkAlive": True,
+            "contentAccessible": True,
+            "extractedText": extracted,
+            "note": "The link responded and readable source text was extracted.",
+        }
+        set_json("extract", key, payload, settings.extraction_cache_ttl_seconds)
+        return True, True, extracted, payload["note"], "live"
     except Exception as exc:
         return False, False, "", f"The source could not be reached reliably: {exc}.", "fallback"
+    finally:
+        if owns_client and request_client is not None:
+            await request_client.aclose()
 
 
 def _llm_source_validation(claim: str, source: SourceAssessment, extracted_text: str) -> SourceValidationOutput | None:
@@ -153,9 +163,14 @@ def _llm_source_validation_check(
     )
 
 
-async def _validate_one(payload: tuple[int, SourceAssessment], claim: str, mode: str) -> SourceAssessment | None:
+async def _validate_one(
+    payload: tuple[int, SourceAssessment],
+    claim: str,
+    mode: str,
+    client: httpx.AsyncClient | None = None,
+) -> SourceAssessment | None:
     index, source = payload
-    link_alive, content_accessible, extracted_text, note, cache_status = await _fetch_source_text(source, mode)
+    link_alive, content_accessible, extracted_text, note, cache_status = await _fetch_source_text(source, mode, client)
     keep = link_alive and content_accessible
 
     llm_review = None
@@ -187,9 +202,14 @@ async def _validate_one(payload: tuple[int, SourceAssessment], claim: str, mode:
 
 
 async def validate_sources(claim: str, sources: list[SourceAssessment], mode: str) -> list[SourceAssessment]:
-    validated = await gather_limited(
-        list(enumerate(sources)),
-        lambda item: _validate_one(item, claim, mode),
-        concurrency=settings.pipeline_max_concurrency,
-    )
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=settings.search_timeout_seconds,
+        headers={"User-Agent": "GramWIN/2.0"},
+    ) as client:
+        validated = await gather_limited(
+            list(enumerate(sources)),
+            lambda item: _validate_one(item, claim, mode, None if mode == "offline" else client),
+            concurrency=settings.pipeline_max_concurrency,
+        )
     return [source for source in validated if source is not None]

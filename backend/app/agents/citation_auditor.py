@@ -1,8 +1,12 @@
+import asyncio
+
 from pydantic import BaseModel, Field
 
 from ..ai import generate_structured_output
+from ..async_utils import gather_limited
 from ..core.scoring import EVIDENCE_TIER_TO_SCORE, SOURCE_BUCKET_TO_SCORE
 from ..models import CitationAssessment, SourceAssessment
+from ..settings import settings
 from ..tools.search import infer_evidence_tier, infer_source_bucket, infer_stance, resolve_citation, resolve_source_by_url
 
 
@@ -79,84 +83,85 @@ def _llm_citation_check(
     )
 
 
-def audit_citations(claim: str, sources: list[SourceAssessment]) -> list[SourceAssessment]:
-    audited: list[SourceAssessment] = []
+def _audit_one(claim: str, index: int, source: SourceAssessment) -> SourceAssessment:
+    resolved_citations: list[CitationAssessment] = []
+    broken_links = 0
+    supporting_strength = 0
 
-    for index, source in enumerate(sources):
-        resolved_citations: list[CitationAssessment] = []
-        broken_links = 0
-        supporting_strength = 0
+    knowledge_entry = resolve_source_by_url(source.url)
+    citation_refs = knowledge_entry.citations if knowledge_entry else []
 
-        knowledge_entry = resolve_source_by_url(source.url)
-        citation_refs = knowledge_entry.citations if knowledge_entry else []
-
-        for citation in citation_refs:
-            resolved = resolve_citation(citation.refId)
-            if resolved is None:
-                broken_links += 1
-                resolved_citations.append(
-                    CitationAssessment(
-                        title="Broken or unresolved citation",
-                        url="missing",
-                        sourceBucket="tier_1_blog",
-                        evidenceTier="blog",
-                        stance="unclear",
-                        broken=True,
-                    )
-                )
-                continue
-
-            source_bucket = resolved.sourceBucket if resolved.sourceBucket else infer_source_bucket(resolved.domain)
-            evidence_tier = resolved.evidenceTier if resolved.evidenceTier else infer_evidence_tier(resolved.title, resolved.snippet)
-            stance = resolved.stance if resolved.stance != "unclear" else infer_stance(claim, resolved.snippet)
-            supporting_strength += SOURCE_BUCKET_TO_SCORE[source_bucket] + EVIDENCE_TIER_TO_SCORE[evidence_tier]
+    for citation in citation_refs:
+        resolved = resolve_citation(citation.refId)
+        if resolved is None:
+            broken_links += 1
             resolved_citations.append(
                 CitationAssessment(
-                    title=resolved.title,
-                    url=resolved.url,
-                    sourceBucket=source_bucket,
-                    evidenceTier=evidence_tier,
-                    stance=stance,
-                    broken=False,
+                    title="Broken or unresolved citation",
+                    url="missing",
+                    sourceBucket="tier_1_blog",
+                    evidenceTier="blog",
+                    stance="unclear",
+                    broken=True,
                 )
             )
+            continue
 
-        if not resolved_citations:
-            citation_integrity = 35 if source.sourceScore == 1 else 55
-            note = "No resolvable citations were found, so citation integrity stays limited."
-        else:
-            base = 55 + min(supporting_strength * 3, 35)
-            penalty = broken_links * 22
-            citation_integrity = max(10, min(100, base - penalty))
-            note = f"Citation chain reviewed with {len(resolved_citations) - broken_links} resolved references and {broken_links} broken links."
-
-        llm_review = None
-        if index < 6 and (source.sourceScore >= 2 or source.evidenceScore >= 3):
-            llm_review = _llm_citation_review(claim, source, resolved_citations)
-        reviewed_stance = source.stance
-        if llm_review is not None:
-            checker_review = _llm_citation_check(claim, source, resolved_citations, llm_review)
-            effective_review = checker_review or llm_review
-            integrity_values = [citation_integrity, llm_review.citationIntegrity]
-            if checker_review is not None:
-                integrity_values.append(checker_review.citationIntegrity)
-            citation_integrity = round(sum(integrity_values) / len(integrity_values))
-            if effective_review.stance in {"supportive", "mixed", "contradictory", "unclear"}:
-                reviewed_stance = effective_review.stance
-            note = f"{note} {effective_review.note}"
-
-        notes = list(source.notes)
-        notes.append(note)
-
-        audited.append(
-            source.model_copy(
-                update={
-                    "citationIntegrity": citation_integrity,
-                    "citations": resolved_citations,
-                    "stance": reviewed_stance,
-                    "notes": notes,
-                }
+        source_bucket = resolved.sourceBucket if resolved.sourceBucket else infer_source_bucket(resolved.domain)
+        evidence_tier = resolved.evidenceTier if resolved.evidenceTier else infer_evidence_tier(resolved.title, resolved.snippet)
+        stance = resolved.stance if resolved.stance != "unclear" else infer_stance(claim, resolved.snippet)
+        supporting_strength += SOURCE_BUCKET_TO_SCORE[source_bucket] + EVIDENCE_TIER_TO_SCORE[evidence_tier]
+        resolved_citations.append(
+            CitationAssessment(
+                title=resolved.title,
+                url=resolved.url,
+                sourceBucket=source_bucket,
+                evidenceTier=evidence_tier,
+                stance=stance,
+                broken=False,
             )
         )
 
-    return audited
+    if not resolved_citations:
+        citation_integrity = 35 if source.sourceScore == 1 else 55
+        note = "No resolvable citations were found, so citation integrity stays limited."
+    else:
+        base = 55 + min(supporting_strength * 3, 35)
+        penalty = broken_links * 22
+        citation_integrity = max(10, min(100, base - penalty))
+        note = f"Citation chain reviewed with {len(resolved_citations) - broken_links} resolved references and {broken_links} broken links."
+
+    llm_review = None
+    if index < 6 and (source.sourceScore >= 2 or source.evidenceScore >= 3):
+        llm_review = _llm_citation_review(claim, source, resolved_citations)
+    reviewed_stance = source.stance
+    if llm_review is not None:
+        checker_review = _llm_citation_check(claim, source, resolved_citations, llm_review)
+        effective_review = checker_review or llm_review
+        integrity_values = [citation_integrity, llm_review.citationIntegrity]
+        if checker_review is not None:
+            integrity_values.append(checker_review.citationIntegrity)
+        citation_integrity = round(sum(integrity_values) / len(integrity_values))
+        if effective_review.stance in {"supportive", "mixed", "contradictory", "unclear"}:
+            reviewed_stance = effective_review.stance
+        note = f"{note} {effective_review.note}"
+
+    notes = list(source.notes)
+    notes.append(note)
+
+    return source.model_copy(
+        update={
+            "citationIntegrity": citation_integrity,
+            "citations": resolved_citations,
+            "stance": reviewed_stance,
+            "notes": notes,
+        }
+    )
+
+
+async def audit_citations(claim: str, sources: list[SourceAssessment]) -> list[SourceAssessment]:
+    return await gather_limited(
+        list(enumerate(sources)),
+        lambda item: asyncio.to_thread(_audit_one, claim, item[0], item[1]),
+        concurrency=max(2, min(settings.pipeline_max_concurrency, 6)),
+    )

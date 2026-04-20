@@ -86,6 +86,36 @@ TOKEN_SYNONYMS = {
     "healthy": ["healthful", "beneficial"],
 }
 
+POSITIVE_DIRECTION_TERMS = {
+    "healthy",
+    "healthful",
+    "beneficial",
+    "good for",
+    "supports",
+    "support",
+    "improves",
+    "improve",
+    "effective",
+    "safe",
+    "positive health outcomes",
+    "reduces risk",
+}
+
+NEGATIVE_DIRECTION_TERMS = {
+    "unhealthy",
+    "harmful",
+    "bad for",
+    "unsafe",
+    "toxic",
+    "causes",
+    "cause",
+    "raises risk",
+    "increases risk",
+    "damages",
+    "worsens",
+    "ineffective",
+}
+
 
 class ClaimAnalyzerOutput(BaseModel):
     claimType: str = Field(min_length=3, max_length=80)
@@ -243,6 +273,39 @@ def _text_variants(text: str) -> list[str]:
     return variants[:6]
 
 
+def _claim_direction(claim: str, semantics: ClaimSemantics) -> str:
+    lowered = claim.lower()
+    if any(token in lowered for token in NEGATIVE_DIRECTION_TERMS):
+        return "negative"
+    if any(token in lowered for token in POSITIVE_DIRECTION_TERMS):
+        return "positive"
+    if semantics.relationshipType == "opinion" and "healthy" in lowered:
+        return "positive"
+    return "neutral"
+
+
+def _outcome_expansions(claim: str, semantics: ClaimSemantics) -> list[str]:
+    lowered_claim = claim.lower()
+    lowered_outcome = (semantics.outcome or "").lower()
+    expansions: list[str] = []
+
+    if any(token in lowered_claim or token in lowered_outcome for token in {"healthy", "healthful", "beneficial", "good for"}):
+        expansions.extend(["positive health outcomes", "health benefits", "clinical outcomes"])
+    if any(token in lowered_claim or token in lowered_outcome for token in {"unhealthy", "harmful", "bad for", "toxic"}):
+        expansions.extend(["adverse health outcomes", "health risks", "harm"])
+    if "water" in lowered_claim or "hydration" in lowered_claim:
+        expansions.extend(["hydration outcomes", "fluid intake outcomes", "cardiometabolic health"])
+    if "sleep" in lowered_claim:
+        expansions.extend(["sleep quality", "sleep outcomes", "sleep duration"])
+
+    deduped: list[str] = []
+    for item in expansions:
+        cleaned = _clean_phrase(item)
+        if cleaned and cleaned not in deduped:
+            deduped.append(cleaned)
+    return deduped[:6]
+
+
 def _generate_queries(claim: str, context: str, semantics: ClaimSemantics, focus_terms: list[str], desired_depth: str) -> list[str]:
     claim_text = _clean_phrase(claim)
     subject = semantics.subject or " ".join(focus_terms[:3]) or claim_text
@@ -252,26 +315,59 @@ def _generate_queries(claim: str, context: str, semantics: ClaimSemantics, focus
     intervention_variants = _text_variants(intervention)
     outcome_variants = _text_variants(outcome)
     claim_variants = _text_variants(claim_text)
+    direction = _claim_direction(claim_text, semantics)
+    outcome_expansions = _outcome_expansions(claim_text, semantics)
     context_tail = _clean_phrase(context)
     target_count = _target_query_count(semantics, focus_terms, context, desired_depth)
 
     query_templates = [
         "{claim_variant} systematic review",
         "{claim_variant} meta analysis",
+        "{claim_variant} guideline",
         "{intervention_variant} {outcome_variant} clinical evidence",
         "{intervention_variant} {outcome_variant} randomized trial",
         "{intervention_variant} {outcome_variant} observational study",
         "{intervention_variant} {outcome_variant} guideline evidence",
-        "{intervention_variant} {outcome_variant} contradiction evidence",
-        "{intervention_variant} {outcome_variant} no evidence",
-        "{intervention_variant} {outcome_variant} not associated",
-        "{intervention_variant} {outcome_variant} limited evidence",
         "{intervention_variant} {outcome_variant} mechanism study",
         "{intervention_variant} {outcome_variant} safety clinical evidence",
         "{intervention_variant} {outcome_variant} causation versus correlation",
         "{subject_variant} {outcome_variant} evidence review",
         "{claim_variant} pubmed",
     ]
+    if direction == "positive":
+        query_templates.extend(
+            [
+                "{intervention_variant} {outcome_variant} positive health outcomes",
+                "{intervention_variant} {outcome_variant} health benefits",
+                "{intervention_variant} {outcome_variant} contradiction evidence",
+                "{intervention_variant} {outcome_variant} no evidence",
+                "{intervention_variant} {outcome_variant} not associated",
+                "{intervention_variant} {outcome_variant} no significant effect",
+                "{intervention_variant} {outcome_variant} limited evidence",
+                "{intervention_variant} {outcome_variant} ineffective",
+            ]
+        )
+    elif direction == "negative":
+        query_templates.extend(
+            [
+                "{intervention_variant} {outcome_variant} adverse effects",
+                "{intervention_variant} {outcome_variant} harmful effects",
+                "{intervention_variant} {outcome_variant} contradiction evidence",
+                "{intervention_variant} {outcome_variant} not associated with harm",
+                "{intervention_variant} {outcome_variant} safety review",
+                "{intervention_variant} {outcome_variant} protective effect",
+                "{intervention_variant} {outcome_variant} beneficial effect",
+            ]
+        )
+    else:
+        query_templates.extend(
+            [
+                "{intervention_variant} {outcome_variant} contradiction evidence",
+                "{intervention_variant} {outcome_variant} no evidence",
+                "{intervention_variant} {outcome_variant} not associated",
+                "{intervention_variant} {outcome_variant} limited evidence",
+            ]
+        )
     if context_tail:
         query_templates.extend(
             [
@@ -294,7 +390,7 @@ def _generate_queries(claim: str, context: str, semantics: ClaimSemantics, focus
     queries: list[str] = []
     subject_pool = subject_variants or [subject]
     intervention_pool = intervention_variants or [intervention]
-    outcome_pool = outcome_variants or [outcome]
+    outcome_pool = [*dict.fromkeys([*(outcome_variants or [outcome]), *outcome_expansions])]
     claim_pool = claim_variants or [claim_text]
 
     for template in query_templates:
@@ -319,7 +415,12 @@ def _generate_queries(claim: str, context: str, semantics: ClaimSemantics, focus
 
 
 def _target_query_count(semantics: ClaimSemantics, focus_terms: list[str], context: str, desired_depth: str) -> int:
-    base = 18 if desired_depth == "standard" else 24
+    if desired_depth == "quick":
+        base = 10
+    elif desired_depth == "deep":
+        base = 24
+    else:
+        base = 18
     if semantics.relationshipType == "causal":
         base += 3
     if semantics.strength >= 4:
@@ -331,8 +432,12 @@ def _target_query_count(semantics: ClaimSemantics, focus_terms: list[str], conte
     if _clean_phrase(context):
         base += 2
 
-    floor = 16 if desired_depth == "standard" else 22
-    ceiling = 28 if desired_depth == "standard" else 36
+    if desired_depth == "quick":
+        floor, ceiling = 8, 16
+    elif desired_depth == "deep":
+        floor, ceiling = 22, 36
+    else:
+        floor, ceiling = 16, 28
     return max(floor, min(ceiling, base))
 
 
@@ -340,8 +445,11 @@ def _llm_semantic_pass(claim: str, context: str, baseline: ClaimSemantics, claim
     return generate_structured_output(
         "reasoning",
         (
-            "You are the claim-analysis agent for a health-claim investigation. "
-            "Parse the claim semantically as one intact meaning-preserving assertion. "
+            "You are the Claim Analyst for a health-claim investigation. "
+            "Professional role: medical doctor with strong clinical reasoning discipline. "
+            "Goal: preserve the full meaning of the claim, identify what is actually being asserted, and flag wording that outruns the evidence. "
+            "Standpoint: clinically cautious, evidence-first, and strict about overclaiming. "
+            "Parse the claim as one intact meaning-preserving assertion. "
             "Return JSON only with claimType, summary, focusTerms, redFlags, subject, intervention, action, outcome, relationshipType, and strength."
         ),
         {
@@ -369,7 +477,10 @@ def _llm_semantic_check(claim: str, context: str, draft: ClaimAnalyzerOutput, ba
     return generate_structured_output(
         "audit",
         (
-            "You are the checker for a health-claim semantic analysis. "
+            "You are the verifier for a health-claim semantic analysis. "
+            "Professional role: senior clinical reviewer auditing the Claim Analyst. "
+            "Goal: correct semantic drift, over-fragmentation, and casual wording errors without rewriting for style alone. "
+            "Standpoint: preserve the real claim, be strict about causation, and keep unsupported certainty visible as risk. "
             "Review the draft claim parsing and return JSON only with claimType, summary, focusTerms, redFlags, subject, intervention, action, outcome, relationshipType, and strength."
         ),
         {
@@ -400,10 +511,12 @@ def analyze_claim(claim: str, context: str = "", desired_depth: str = "standard"
     if llm_analysis is not None:
         llm_analysis = _llm_semantic_check(cleaned_claim, context, llm_analysis, heuristics) or llm_analysis
     semantics = heuristics
+    direction = _claim_direction(cleaned_claim, heuristics)
     summary = (
         f'The claim is treated as one semantic assertion about {heuristics.subject or "the subject"}, '
         f'its claimed intervention "{heuristics.intervention}", action "{heuristics.action}", outcome "{heuristics.outcome}", '
-        f'and {heuristics.relationshipType} relationship. It carries a {heuristics.strength}/5 claim-strength profile and a '
+        f'and {heuristics.relationshipType} relationship. The current analysis treats it as a {direction} evidence-direction hypothesis. '
+        f'It carries a {heuristics.strength}/5 claim-strength profile and a '
         f'{_risk_label(language_risk).lower()} language profile.'
     )
 

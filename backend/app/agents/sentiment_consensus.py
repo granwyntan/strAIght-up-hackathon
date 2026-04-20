@@ -26,6 +26,9 @@ def _batch_sentiment_review(
         stage,
         (
             f"You are {reviewer_name} for a health-claim investigation. "
+            "Professional role: Stance Agent with an epidemiology perspective. "
+            "Goal: decide whether each source supports, contradicts, or fails to support the claim as worded. "
+            "Standpoint: semantic, negation-aware, conservative with causation, and strict about evidence gaps. "
             "Return JSON only as an array of objects with id, sentiment, and rationale. "
             "Use sentiment values positive, neutral, or negative. "
             "Judge whether each source supports, contradicts, or fails to support the claim. "
@@ -56,6 +59,56 @@ def _batch_sentiment_review(
         },
         SourceSentimentJudgment,
         preferred_providers=preferred_providers,
+    )
+    return {item.id: item for item in judgments}
+
+
+def _batch_disagreement_review(
+    claim: str,
+    sources: list[SourceAssessment],
+    scientific_map: dict[str, SourceSentimentJudgment],
+    critical_map: dict[str, SourceSentimentJudgment],
+) -> dict[str, SourceSentimentJudgment]:
+    if not sources:
+        return {}
+
+    judgments = generate_structured_list(
+        "reasoning",
+        (
+            "You are the disagreement resolver for a health-claim investigation. "
+            "Professional role: Consensus Agent mediating between two stance reviewers. "
+            "Goal: reconcile disagreements without inventing certainty and without discarding legitimate contradiction evidence. "
+            "Standpoint: if support is weak or wording is too strong, err toward neutral or negative rather than optimistic support. "
+            "Return JSON only as an array of objects with id, sentiment, and rationale. "
+            "Use sentiment values positive, neutral, or negative. "
+            "Choose the most evidence-faithful stance when the scientific and critical reviewers disagree."
+        ),
+        {
+            "claim": claim,
+            "sources": [
+                {
+                    "id": source.id,
+                    "title": source.title,
+                    "snippet": source.snippet,
+                    "extractedText": source.extractedText[:1600],
+                    "sourceBucket": source.sourceBucket,
+                    "evidenceTier": source.evidenceTier,
+                    "stance": source.stance,
+                    "scientificDraft": scientific_map.get(source.id).model_dump() if scientific_map.get(source.id) else None,
+                    "criticalDraft": critical_map.get(source.id).model_dump() if critical_map.get(source.id) else None,
+                }
+                for source in sources
+            ],
+            "instructions": [
+                "Pick positive only when the source genuinely supports the claim in the direction stated.",
+                "Pick negative for contradiction or failure to support a strong claim.",
+                "Pick neutral when the disagreement is best explained by mixed, limited, or inconclusive evidence.",
+                "Respect hard rules: 'no evidence', 'not associated', and 'no significant effect' are negative.",
+                "Respect hard rules: 'limited evidence', 'inconclusive', and 'more research is needed' are neutral.",
+            ],
+        },
+        SourceSentimentJudgment,
+        preferred_providers=["claude", "openai", "gemini"],
     )
     return {item.id: item for item in judgments}
 
@@ -124,12 +177,37 @@ async def apply_sentiment_consensus(claim: str, sources: list[SourceAssessment])
         "reasoning",
         "the contradiction-focused critical reviewer",
     )
-    ambiguous_sources = [source for source in sources if source.stance in {"mixed", "unclear"} or source.evidenceScore >= 3]
-    nlp_cloud_task = asyncio.to_thread(refine_source_sentiments_with_nlp_cloud, claim, ambiguous_sources) if settings.has_nlpcloud else None
-    if nlp_cloud_task is not None:
-        scientific_map, critical_map, nlp_cloud_map = await asyncio.gather(scientific_task, critical_task, nlp_cloud_task)
+    scientific_map, critical_map = await asyncio.gather(scientific_task, critical_task)
+
+    disagreement_sources = [
+        source
+        for source in sources
+        if scientific_map.get(source.id)
+        and critical_map.get(source.id)
+        and scientific_map[source.id].sentiment != critical_map[source.id].sentiment
+    ][: settings.sentiment_disagreement_review_limit]
+    disagreement_map = (
+        await asyncio.to_thread(_batch_disagreement_review, claim, disagreement_sources, scientific_map, critical_map)
+        if disagreement_sources
+        else {}
+    )
+
+    nlp_cloud_candidates: list[SourceAssessment] = []
+    if settings.has_nlpcloud:
+        candidate_ids: set[str] = set()
+        disagreement_ids = {item.id for item in disagreement_sources}
+        for source in sources:
+            should_include = (
+                source.stance in {"mixed", "unclear"}
+                or source.evidenceScore >= 3
+                or source.id in disagreement_ids
+                or source.sourceScore >= 2
+            )
+            if should_include and source.id not in candidate_ids:
+                candidate_ids.add(source.id)
+                nlp_cloud_candidates.append(source)
+        nlp_cloud_map = await asyncio.to_thread(refine_source_sentiments_with_nlp_cloud, claim, nlp_cloud_candidates)
     else:
-        scientific_map, critical_map = await asyncio.gather(scientific_task, critical_task)
         nlp_cloud_map = {}
 
     updated: list[SourceAssessment] = []
@@ -138,6 +216,7 @@ async def apply_sentiment_consensus(claim: str, sources: list[SourceAssessment])
         scientific = scientific_map.get(source.id)
         critical = critical_map.get(source.id)
         nlp_cloud_sentiment = nlp_cloud_map.get(source.id)
+        disagreement_review = disagreement_map.get(source.id)
 
         scientific_sentiment = scientific.sentiment if scientific else heuristic_sentiment
         critical_sentiment = critical.sentiment if critical else heuristic_sentiment
@@ -154,6 +233,10 @@ async def apply_sentiment_consensus(claim: str, sources: list[SourceAssessment])
             final_sentiment = scientific_sentiment
             agreement_factor = 1.0
             summary = scientific.rationale if scientific else heuristic_summary
+        elif disagreement_review is not None:
+            final_sentiment = disagreement_review.sentiment
+            agreement_factor = 0.74 if disagreement_review.sentiment in {scientific_sentiment, critical_sentiment} else 0.66
+            summary = disagreement_review.rationale
         else:
             final_sentiment = "neutral"
             agreement_factor = 0.5
@@ -168,6 +251,11 @@ async def apply_sentiment_consensus(claim: str, sources: list[SourceAssessment])
                     summary = summary
                 else:
                     summary = "NLP Cloud classification supported the evidence direction when the other signals were still ambiguous."
+            elif nlp_cloud_sentiment == "negative" and final_sentiment == "positive":
+                if "negative" in {scientific_sentiment, critical_sentiment} or source.citationIntegrity < 70 or source.evidenceScore < 4:
+                    final_sentiment = "negative" if "negative" in {scientific_sentiment, critical_sentiment} else "neutral"
+                    agreement_factor = min(agreement_factor, 0.66)
+                    summary = "NLP Cloud and cross-check signals flagged that the source fails to cleanly support the claim as stated."
             elif nlp_cloud_sentiment == final_sentiment:
                 agreement_factor = max(agreement_factor, 0.8)
 

@@ -25,12 +25,12 @@ BOOTSTRAP = BootstrapPayload(
     brand=BrandInfo(
         name="GramWIN",
         tagline="Health and Wellness at your fingertips",
-        accent=["#b9ec83", "#7fd5e6", "#164a93", "#cc3b3f"],
+        accent=["#2c6a5a", "#5e78a6", "#e0c36a", "#b15349"],
     ),
     featuredClaims=[
-        FeaturedClaim(id="c1", claim="Magnesium glycinate will cure insomnia", whyItIsInteresting="Strong language and a common supplement promise."),
-        FeaturedClaim(id="c2", claim="Gut health supplements can fix eczema", whyItIsInteresting="Cross-domain claim that often mixes mechanism and outcome."),
-        FeaturedClaim(id="c3", claim="Apple cider vinegar burns fat fast", whyItIsInteresting="Popular wellness claim with lots of low-quality content."),
+        FeaturedClaim(id="c1", claim="A short video says magnesium glycinate cures insomnia within a week for most adults.", whyItIsInteresting="It mixes a common supplement topic with very strong cure language."),
+        FeaturedClaim(id="c2", claim="A wellness post says gut health supplements can fix eczema flare-ups in adults.", whyItIsInteresting="It turns a plausible mechanism story into a much stronger clinical promise."),
+        FeaturedClaim(id="c3", claim="A reel says drinking more water is automatically healthy and better than other beverages.", whyItIsInteresting="It sounds reasonable, but still needs wording checks and real evidence context."),
     ],
     architecture=[
         ArchitectureBlock(id="a1", title="Claim Analyst · Medical Doctor", summary="Reads the claim semantically as a whole, separates intervention from outcome, and checks whether the wording overreaches clinically."),
@@ -49,7 +49,7 @@ BOOTSTRAP = BootstrapPayload(
         StackLibrary(id="l5", name="react-native-reanimated", category="Motion", whyItHelps="Supports smooth card transitions, swipes, and bottom-sheet interactions.", adoptionNote="Recommended for premium motion work."),
         StackLibrary(id="l6", name="AsyncStorage", category="Offline cache", whyItHelps="Helps preserve lightweight app state and cached results when connectivity is unstable.", adoptionNote="Good for mobile resilience."),
     ],
-    storageNote="Investigations, agent runs, and progress events are persisted in SQLite so history survives app restarts.",
+    storageNote="Saved investigations and progress updates are stored locally so history survives app restarts.",
 )
 
 

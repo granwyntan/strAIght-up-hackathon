@@ -9,6 +9,9 @@ def get_connection() -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path, check_same_thread=False)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA journal_mode=WAL;")
+    connection.execute("PRAGMA synchronous=NORMAL;")
+    connection.execute("PRAGMA foreign_keys=ON;")
     return connection
 
 
@@ -27,6 +30,12 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL,
                 overall_score INTEGER,
                 verdict TEXT,
+                confidence_level TEXT,
+                truth_classification TEXT NOT NULL DEFAULT '',
+                source_count INTEGER NOT NULL DEFAULT 0,
+                positive_count INTEGER NOT NULL DEFAULT 0,
+                neutral_count INTEGER NOT NULL DEFAULT 0,
+                negative_count INTEGER NOT NULL DEFAULT 0,
                 summary TEXT NOT NULL DEFAULT '',
                 state_json TEXT NOT NULL DEFAULT '{}'
             );
@@ -69,5 +78,27 @@ def init_db() -> None:
                 last_seen_at TEXT NOT NULL,
                 seen_count INTEGER NOT NULL DEFAULT 1
             );
+
+            CREATE INDEX IF NOT EXISTS idx_investigations_created_at ON investigations (created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_investigations_updated_at ON investigations (updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_investigations_verdict ON investigations (verdict);
+            CREATE INDEX IF NOT EXISTS idx_investigations_score ON investigations (overall_score DESC);
             """
         )
+
+        existing_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(investigations)").fetchall()
+        }
+        column_definitions = {
+            "confidence_level": "TEXT",
+            "truth_classification": "TEXT NOT NULL DEFAULT ''",
+            "source_count": "INTEGER NOT NULL DEFAULT 0",
+            "positive_count": "INTEGER NOT NULL DEFAULT 0",
+            "neutral_count": "INTEGER NOT NULL DEFAULT 0",
+            "negative_count": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for column_name, definition in column_definitions.items():
+            if column_name in existing_columns:
+                continue
+            connection.execute(f"ALTER TABLE investigations ADD COLUMN {column_name} {definition}")

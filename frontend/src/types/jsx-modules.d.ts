@@ -3,3 +3,5 @@ declare module "*.jsx" {
   export default component;
 }
 
+declare module "*.css";
+

@@ -67,6 +67,7 @@ def health() -> dict[str, object]:
         },
         "pipeline": {
             "maxConcurrency": settings.pipeline_max_concurrency,
+            "quickSourceTarget": settings.source_target_quick,
             "standardSourceTarget": settings.source_target_standard,
             "deepSourceTarget": settings.source_target_deep,
         },

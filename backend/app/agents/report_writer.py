@@ -7,6 +7,7 @@ from ..models import ClaimAnalysis, ClaimVerdict, SourceAssessment
 class ReportWriterOutput(BaseModel):
     narrative: str = Field(min_length=40, max_length=900)
     userSummary: str = Field(min_length=30, max_length=420)
+    expertInsight: str = Field(min_length=40, max_length=700)
     strengths: list[str] = Field(default_factory=list)
     concerns: list[str] = Field(default_factory=list)
 
@@ -47,7 +48,10 @@ def draft_report(
     draft = generate_structured_output(
         "writer",
         (
-            "You are the final synthesis agent for a health-claim investigation using Gemini. "
+            "You are the Summary Agent for a health-claim investigation using Gemini. "
+            "Professional role: health communicator translating an evidence review into user-facing language. "
+            "Goal: explain what the evidence means, how strong it is, and what the main caveats are without leaking technical internals. "
+            "Standpoint: plain-language, evidence-grounded, and calm about uncertainty. "
             "Write a tight evidence-focused expert synthesis in JSON only. "
             "Match the provided verdict and score. Avoid medical advice and avoid certainty beyond the evidence."
         ),
@@ -63,7 +67,10 @@ def draft_report(
             "instructions": [
                 "Keep the narrative to 2 or 3 sentences with expert interpretation and real-world implications.",
                 "Add a userSummary in 1 or 2 plain-language sentences for the app UI.",
+                "Add expertInsight with deeper interpretation, mechanism plausibility, and what most matters in practice.",
                 "List 2 to 4 strengths and 2 to 4 concerns.",
+                "Be explicit when a claim behaves more like a falsehood, hoax, or overstatement than a supported fact pattern.",
+                "Do not upgrade limited, mixed, or inconclusive evidence into support.",
                 "Ground the answer in source quality, evidence depth, citation quality, and claim language discipline.",
             ],
         },
@@ -76,8 +83,11 @@ def draft_report(
     checked = generate_structured_output(
         "audit",
         (
-            "You are the checker for a final health-claim summary. "
-            "Review the draft and return JSON only with narrative, userSummary, strengths, and concerns. "
+            "You are the verifier for a final health-claim summary. "
+            "Professional role: clinical communications auditor. "
+            "Goal: keep the summary readable, verdict-aligned, and free of hallucinated confidence or unsupported detail. "
+            "Standpoint: preserve nuance, especially when evidence is mixed, limited, or contradiction-heavy. "
+            "Review the draft and return JSON only with narrative, userSummary, expertInsight, strengths, and concerns. "
             "Keep the meaning aligned with the verdict and remove overclaiming or hallucinated certainty."
         ),
         {
@@ -90,6 +100,7 @@ def draft_report(
             "instructions": [
                 "Preserve caution where evidence is mixed or limited.",
                 "Keep the userSummary concise and plain-language.",
+                "Keep expertInsight deeper than userSummary, but still evidence-grounded and readable.",
                 "Do not introduce claims that are not grounded in the supplied draft and source set.",
             ],
         },

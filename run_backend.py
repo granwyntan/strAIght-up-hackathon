@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
@@ -12,6 +13,7 @@ BACKEND_DIR = REPO_ROOT / "backend"
 VENV_DIR = BACKEND_DIR / ".venv"
 REQUIREMENTS_FILE = BACKEND_DIR / "requirements.txt"
 ENV_FILE = BACKEND_DIR / ".env"
+BACKEND_DEPS_STAMP = VENV_DIR / ".requirements-installed"
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -47,16 +49,41 @@ def ensure_venv() -> Path:
     return python_in_venv
 
 
+def backend_dependency_signature() -> str:
+    if not REQUIREMENTS_FILE.exists():
+        return ""
+    return hashlib.sha256(REQUIREMENTS_FILE.read_bytes()).hexdigest()
+
+
 def ensure_backend_deps(python_bin: Path, update_deps: bool) -> None:
     if not REQUIREMENTS_FILE.exists():
         return
+
+    signature = backend_dependency_signature()
+    if not update_deps and VENV_DIR.exists():
+        if not BACKEND_DEPS_STAMP.exists() and signature:
+            BACKEND_DEPS_STAMP.write_text(signature + "\n", encoding="utf-8")
+            print("Backend dependencies detected. Skipping reinstall. Use --update-deps to refresh.")
+            return
+
+        if BACKEND_DEPS_STAMP.exists():
+            installed_signature = BACKEND_DEPS_STAMP.read_text(encoding="utf-8").strip()
+            if installed_signature and installed_signature == signature:
+                print("Backend dependencies already installed. Skipping reinstall. Use --update-deps to refresh.")
+                return
 
     install_cmd = [str(python_bin), "-m", "pip", "install", "-r", str(REQUIREMENTS_FILE)]
     if update_deps:
         install_cmd.append("--upgrade")
 
-    print(f"Ensuring backend dependencies (update={update_deps})...")
+    if update_deps:
+        print("Refreshing backend dependencies...")
+    else:
+        print("Installing backend dependencies...")
     subprocess.run(install_cmd, cwd=BACKEND_DIR, check=True)
+
+    if signature:
+        BACKEND_DEPS_STAMP.write_text(signature + "\n", encoding="utf-8")
 
 
 def main() -> int:

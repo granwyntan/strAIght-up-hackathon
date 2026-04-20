@@ -1,30 +1,36 @@
 from collections import Counter
 
-from ..core.scoring import build_matrix, calibrated_credibility_score
+from ..core.scoring import build_matrix, calibrated_credibility_score, weighted_consensus_breakdown
 from ..models import ClaimAnalysis, ClaimVerdict, ConsensusBreakdown, DecisionMatrixFactor, MisinformationRisk, SourceAssessment
 
 
 def user_facing_verdict_label(verdict: ClaimVerdict) -> str:
     if verdict == "trustworthy":
-        return "Trustworthy"
+        return "Agree"
     if verdict == "untrustworthy":
-        return "Untrustworthy"
+        return "Disagree"
     return "Uncertain"
 
 
+def _weighted_signal(sources: list[SourceAssessment], sentiment: str) -> float:
+    return sum(
+        (source.sourceWeight or 0.4) * (source.confidenceFactor or 0.5)
+        for source in sources
+        if source.sentiment == sentiment and source.sourceScore >= 2 and source.evidenceScore >= 3
+    )
+
+
 def _verdict(score: int, claim_analysis: ClaimAnalysis, sources: list[SourceAssessment]) -> ClaimVerdict:
-    credible = [source for source in sources if source.sourceScore >= 2 and source.evidenceScore >= 3]
-    sentiments = Counter(source.sentiment for source in credible)
-    positive = sentiments.get("positive", 0)
-    neutral = sentiments.get("neutral", 0)
-    negative = sentiments.get("negative", 0)
+    consensus = weighted_consensus_breakdown(sources)
+    support_weight = _weighted_signal(sources, "positive")
+    contradiction_weight = _weighted_signal(sources, "negative")
     strongest_claim = max((item.strength for item in claim_analysis.atomicClaims), default=1)
 
-    if score >= 72 and positive > negative and negative <= max(1, positive // 2):
+    if score >= 70:
         return "trustworthy"
-    if score < 35 or negative >= max(3, positive + neutral):
+    if score < 30:
         return "untrustworthy"
-    if strongest_claim >= 4 and score < 72:
+    if strongest_claim >= 4 and (contradiction_weight >= support_weight or claim_analysis.languageRiskScore >= 45 or consensus.contradictionShare >= 0.28):
         return "overstated"
     return "mixed"
 
@@ -98,22 +104,22 @@ def summarize_decision(
 
     if verdict == "trustworthy":
         narrative = (
-            f'The investigation leans trustworthy for "{claim}" because better-quality sources generally point in the same direction, '
+            f'The investigation lands in the agree range for "{claim}" because the stronger evidence generally points in the same direction, '
             "although the claim should still be phrased with clinical caution."
         )
     elif verdict == "overstated":
         narrative = (
-            f'The investigation returns an uncertain result for "{claim}". There may be some supportive signal underneath, '
+            f'The investigation stays in the uncertain range for "{claim}". There may be some supportive signal underneath, '
             "but the wording overshoots what the current evidence base can safely support."
         )
     elif verdict == "mixed":
         narrative = (
-            f'The investigation returns an uncertain result for "{claim}". Some evidence is directionally supportive, '
+            f'The investigation stays in the uncertain range for "{claim}". Some evidence is directionally supportive, '
             "but source quality, study depth, or consistency across sources is not strong enough for a clean yes."
         )
     else:
         narrative = (
-            f'The investigation does not find "{claim}" trustworthy. The stronger sources either contradict it, '
+            f'The investigation lands in the disagree range for "{claim}". The stronger sources either contradict it, '
             "narrow it heavily, or fail to support the certainty of the wording."
         )
 

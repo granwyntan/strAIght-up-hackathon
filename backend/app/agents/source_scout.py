@@ -29,27 +29,39 @@ def _rank_source(document: SearchDocument, claim: str) -> tuple[int, int, int, i
 
 
 def _query_budget(desired_depth: str) -> int:
-    return settings.search_query_budget_deep if desired_depth == "deep" else settings.search_query_budget_standard
+    if desired_depth == "quick":
+        return settings.search_query_budget_quick
+    if desired_depth == "deep":
+        return settings.search_query_budget_deep
+    return settings.search_query_budget_standard
 
 
 def _source_target(desired_depth: str) -> int:
-    return settings.source_target_deep if desired_depth == "deep" else settings.source_target_standard
+    if desired_depth == "quick":
+        return settings.source_target_quick
+    if desired_depth == "deep":
+        return settings.source_target_deep
+    return settings.source_target_standard
 
 
 def _dynamic_query_budget(queries: list[str], desired_depth: str) -> int:
     if not queries:
         return 0
     configured = _query_budget(desired_depth)
-    scaled = round(len(queries) * (0.82 if desired_depth == "deep" else 0.75))
-    floor = 14 if desired_depth == "deep" else 10
+    scale_map = {"quick": 0.68, "standard": 0.75, "deep": 0.82}
+    floor_map = {"quick": 8, "standard": 10, "deep": 14}
+    scaled = round(len(queries) * scale_map.get(desired_depth, 0.75))
+    floor = floor_map.get(desired_depth, 10)
     return min(len(queries), max(floor, configured, scaled))
 
 
 def _dynamic_source_target(queries: list[str], source_urls: list[str], desired_depth: str) -> int:
     configured = _source_target(desired_depth)
-    per_query_target = round(len(queries) * (2.7 if desired_depth == "deep" else 2.1))
+    per_query_factor = {"quick": 1.9, "standard": 2.4, "deep": 3.1}
+    ceiling_map = {"quick": 30, "standard": 72, "deep": 128}
+    per_query_target = round(len(queries) * per_query_factor.get(desired_depth, 2.4))
     manual_bonus = min(8, len(source_urls) * 2)
-    ceiling = 96 if desired_depth == "deep" else 64
+    ceiling = ceiling_map.get(desired_depth, 72)
     return max(configured, min(ceiling, per_query_target + manual_bonus))
 
 

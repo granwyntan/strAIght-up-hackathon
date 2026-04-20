@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
+import shutil
 import socket
 import subprocess
 from pathlib import Path
@@ -12,6 +14,9 @@ FRONTEND_DIR = REPO_ROOT / "frontend"
 BACKEND_ENV_FILE = REPO_ROOT / "backend" / ".env"
 FRONTEND_ENV_LOCAL_FILE = FRONTEND_DIR / ".env.local"
 PACKAGE_LOCK = FRONTEND_DIR / "package-lock.json"
+PACKAGE_JSON = FRONTEND_DIR / "package.json"
+NODE_MODULES_DIR = FRONTEND_DIR / "node_modules"
+FRONTEND_DEPS_STAMP = NODE_MODULES_DIR / ".gramwin-install-stamp"
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -62,18 +67,58 @@ def detect_local_ips() -> list[str]:
     return ips
 
 
+def resolve_node_binary(name: str) -> str:
+    candidates = [name]
+    if os.name == "nt":
+        candidates = [f"{name}.cmd", f"{name}.exe", name]
+
+    for candidate in candidates:
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+
+    raise FileNotFoundError(f"{name} is not available on PATH. Please install Node.js and ensure npm/npx are available.")
+
+
+def frontend_dependency_signature() -> str:
+    source = PACKAGE_LOCK if PACKAGE_LOCK.exists() else PACKAGE_JSON
+    if not source.exists():
+        return ""
+    return hashlib.sha256(source.read_bytes()).hexdigest()
+
+
 def ensure_frontend_deps(update_deps: bool) -> None:
     if not (FRONTEND_DIR / "package.json").exists():
         return
 
-    print(f"Ensuring frontend dependencies (update={update_deps})...")
-    if PACKAGE_LOCK.exists():
-        subprocess.run(["npm", "ci"], cwd=FRONTEND_DIR, check=True)
-    else:
-        subprocess.run(["npm", "install"], cwd=FRONTEND_DIR, check=True)
+    signature = frontend_dependency_signature()
+    if not update_deps and NODE_MODULES_DIR.exists():
+        if not FRONTEND_DEPS_STAMP.exists() and signature:
+            FRONTEND_DEPS_STAMP.write_text(signature + "\n", encoding="utf-8")
+            print("Frontend dependencies detected. Skipping reinstall. Use --update-deps to refresh.")
+            return
+
+        if FRONTEND_DEPS_STAMP.exists():
+            installed_signature = FRONTEND_DEPS_STAMP.read_text(encoding="utf-8").strip()
+            if installed_signature and installed_signature == signature:
+                print("Frontend dependencies already installed. Skipping reinstall. Use --update-deps to refresh.")
+                return
 
     if update_deps:
-        subprocess.run(["npm", "update"], cwd=FRONTEND_DIR, check=True)
+        print("Refreshing frontend dependencies...")
+    else:
+        print("Installing frontend dependencies...")
+    npm_bin = resolve_node_binary("npm")
+    if PACKAGE_LOCK.exists():
+        subprocess.run([npm_bin, "ci"], cwd=FRONTEND_DIR, check=True)
+    else:
+        subprocess.run([npm_bin, "install"], cwd=FRONTEND_DIR, check=True)
+
+    if update_deps:
+        subprocess.run([npm_bin, "update"], cwd=FRONTEND_DIR, check=True)
+
+    if NODE_MODULES_DIR.exists() and signature:
+        FRONTEND_DEPS_STAMP.write_text(signature + "\n", encoding="utf-8")
 
 
 def main() -> int:
@@ -125,9 +170,9 @@ def main() -> int:
         return 0
 
     if args.web:
-        command = ["npm", "run", "web"]
+        command = [resolve_node_binary("npm"), "run", "web"]
     else:
-        command = ["npx", "expo", "start", "--clear", "--lan"]
+        command = [resolve_node_binary("npx"), "expo", "start", "--clear", "--lan"]
 
     print(f"Starting frontend from {FRONTEND_DIR}")
     completed = subprocess.run(command, cwd=FRONTEND_DIR)

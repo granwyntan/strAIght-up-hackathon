@@ -11,6 +11,7 @@ $venvPython = Join-Path $backendDir ".venv\Scripts\python.exe"
 $venvDir = Join-Path $backendDir ".venv"
 $backendEnvFile = Join-Path $backendDir ".env"
 $requirementsFile = Join-Path $backendDir "requirements.txt"
+$backendDepsStamp = Join-Path $venvDir ".requirements-installed"
 $backendHost = "0.0.0.0"
 $backendPort = "8000"
 
@@ -57,15 +58,38 @@ function Ensure-BackendDeps {
         return
     }
 
+    $dependencySignature = (Get-FileHash -Path $requirementsFile -Algorithm SHA256).Hash
+    if (-not $UpdateDeps -and (Test-Path $venvDir)) {
+        if (-not (Test-Path $backendDepsStamp) -and $dependencySignature) {
+            Set-Content -Path $backendDepsStamp -Value $dependencySignature
+            Write-Host "Backend dependencies detected. Skipping reinstall. Use -UpdateDeps to refresh." -ForegroundColor DarkCyan
+            return
+        }
+
+        if (Test-Path $backendDepsStamp) {
+            $installedSignature = [string](Get-Content $backendDepsStamp -ErrorAction SilentlyContinue | Select-Object -First 1)
+            $installedSignature = $installedSignature.Trim()
+            if ($installedSignature -and $installedSignature -eq $dependencySignature) {
+                Write-Host "Backend dependencies already installed. Skipping reinstall. Use -UpdateDeps to refresh." -ForegroundColor DarkCyan
+                return
+            }
+        }
+    }
+
     $installArgs = @("-m", "pip", "install", "-r", $requirementsFile)
     if ($UpdateDeps) {
         $installArgs += "--upgrade"
     }
 
-    Write-Host "Ensuring backend dependencies (UpdateDeps=$UpdateDeps)..." -ForegroundColor DarkCyan
+    if ($UpdateDeps) {
+        Write-Host "Refreshing backend dependencies..." -ForegroundColor DarkCyan
+    } else {
+        Write-Host "Installing backend dependencies..." -ForegroundColor DarkCyan
+    }
     Push-Location $backendDir
     try {
         & $pythonCommand @installArgs
+        Set-Content -Path $backendDepsStamp -Value $dependencySignature
     } finally {
         Pop-Location
     }

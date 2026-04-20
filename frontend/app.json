@@ -6,9 +6,18 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "backgroundColor": "#F5F1EA",
     "assetBundlePatterns": [
       "**/*"
     ],
+    "androidStatusBar": {
+      "backgroundColor": "#F5F1EA",
+      "barStyle": "dark-content"
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#F5F1EA",
+      "barStyle": "dark-content"
+    },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {

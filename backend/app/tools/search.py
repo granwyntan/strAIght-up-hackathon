@@ -1,3 +1,4 @@
+import asyncio
 from urllib.parse import urlparse
 
 import httpx
@@ -277,17 +278,24 @@ async def search(query: str, mode: str = "auto") -> list[SearchDocument]:
     if cached_payload is not None:
         return [SearchDocument.model_validate({**item, "cacheStatus": "cached"}) for item in cached_payload]
 
-    live_documents: list[SearchDocument] = []
-    if settings.has_tavily:
+    async def load_tavily() -> list[SearchDocument]:
+        if not settings.has_tavily:
+            return []
         try:
-            live_documents.extend(await _search_tavily(query))
+            return await _search_tavily(query)
         except Exception:
-            pass
-    if settings.has_serpapi:
+            return []
+
+    async def load_serpapi() -> list[SearchDocument]:
+        if not settings.has_serpapi:
+            return []
         try:
-            live_documents.extend(await _search_serpapi(query))
+            return await _search_serpapi(query)
         except Exception:
-            pass
+            return []
+
+    tavily_results, serpapi_results = await asyncio.gather(load_tavily(), load_serpapi())
+    live_documents = [*tavily_results, *serpapi_results]
 
     merged = _merge_documents(live_documents)
     if merged:

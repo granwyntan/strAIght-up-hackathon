@@ -1,5 +1,5 @@
 {
-  "name": "nourishlens-mobile",
+  "name": "gramwin-mobile",
   "version": "1.0.0",
   "private": true,
   "main": "expo/AppEntry",
@@ -12,12 +12,19 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo-google-fonts/poppins": "^0.4.1",
     "expo": "~54.0.0",
+    "expo-font": "~14.0.9",
     "expo-image-picker": "~17.0.10",
+    "expo-linear-gradient": "~15.0.8",
+    "nativewind": "^4.2.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
-    "react-native-web": "^0.21.0"
+    "react-native-paper": "^5.14.5",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-web": "^0.21.0",
+    "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",

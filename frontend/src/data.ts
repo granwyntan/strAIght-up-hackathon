@@ -44,7 +44,7 @@ export interface InvestigationCreateRequest {
   context: string;
   sourceUrls: string[];
   mode: "auto" | "offline" | "live";
-  desiredDepth: "standard" | "deep";
+  desiredDepth: "quick" | "standard" | "deep";
 }
 
 export interface ClaimAnalysis {
@@ -205,11 +205,17 @@ export interface InvestigationSummary {
   context: string;
   status: InvestigationStatus;
   mode: "auto" | "offline" | "live";
-  desiredDepth: "standard" | "deep";
+  desiredDepth: "quick" | "standard" | "deep";
   createdAt: string;
   updatedAt: string;
   overallScore: number | null;
   verdict: ClaimVerdict | null;
+  confidenceLevel: ConfidenceLevel | null;
+  truthClassification: string;
+  sourceCount: number;
+  positiveCount: number;
+  neutralCount: number;
+  negativeCount: number;
   summary: string;
 }
 
@@ -250,47 +256,60 @@ export interface InvestigationCollection {
 }
 
 export const palette = {
-  lime: "#b9ec83",
-  aqua: "#7fd5e6",
-  blue: "#164a93",
-  red: "#cc3b3f",
-  green: "#5f895a",
-  background: "#f5f1ea",
-  surface: "#fffdfa",
-  surfaceSoft: "#f1ebe1",
-  border: "#e6dfd3",
-  ink: "#172a57",
-  muted: "#6d736d"
+  lime: "#E8F1EC",
+  aqua: "#DDEBE3",
+  blue: "#477DB3",
+  red: "#B34C43",
+  green: "#3D695C",
+  background: "#F7FAF8",
+  surface: "#ffffff",
+  surfaceSoft: "#F1F6F3",
+  surfaceMuted: "#E8EFEA",
+  border: "#D8E2DC",
+  ink: "#18231d",
+  muted: "#617068",
+  primary: "#3D695C",
+  primarySoft: "#E6F0EB",
+  secondary: "#6D877C",
+  text: "#18231d",
+  success: "#2F7D5C",
+  successSoft: "#E8F4EE",
+  warning: "#477DB3",
+  warningSoft: "#EAF2FB",
+  danger: "#B34C43",
+  dangerSoft: "#F8E9E7",
+  pin: "#C8A92D",
+  pinSoft: "#FFF6D8"
 };
 
 export const defaultBootstrap: BootstrapPayload = {
   brand: {
     name: "GramWIN",
     tagline: "Health and Wellness at your fingertips",
-    accent: ["#b9ec83", "#7fd5e6", "#164a93", "#cc3b3f"]
+    accent: ["#3D695C", "#D3E9A4", "#BED6C8", "#A35A4F"]
   },
   featuredClaims: [
     {
       id: "c1",
-      claim: "Magnesium glycinate will cure insomnia",
-      whyItIsInteresting: "Strong certainty language over a nuanced supplement topic."
+      claim: "A short video says magnesium glycinate cures insomnia within a week for most adults.",
+      whyItIsInteresting: "It mixes a common supplement topic with very strong cure language."
     },
     {
       id: "c2",
-      claim: "Gut health supplements can fix eczema",
-      whyItIsInteresting: "Crosses from mechanism to condition outcome very quickly."
+      claim: "A wellness post says gut health supplements can fix eczema flare-ups in adults.",
+      whyItIsInteresting: "It turns a plausible mechanism story into a much stronger clinical promise."
     },
     {
       id: "c3",
-      claim: "Apple cider vinegar burns fat fast",
-      whyItIsInteresting: "Classic viral claim with weak evidence and strong marketing."
+      claim: "A reel says drinking more water is automatically healthy and better than other beverages.",
+      whyItIsInteresting: "It sounds reasonable, but still needs wording checks and real evidence context."
     }
   ],
   architecture: [
     {
       id: "a1",
       title: "Claim Analyst · Medical Doctor",
-      summary: "Understands the claim semantically as one meaning-preserving health assertion and checks whether the clinical wording overreaches."
+      summary: "Reads the full claim as one meaning-preserving health statement and checks whether the wording clinically overreaches."
     },
     {
       id: "a2",
@@ -320,7 +339,7 @@ export const defaultBootstrap: BootstrapPayload = {
     {
       id: "a7",
       title: "Summary Agent · Health Communicator",
-      summary: "Turns the technical review into plain-language evidence guidance without medical jargon."
+      summary: "Turns the technical review into plain-language guidance without burying the user in jargon."
     }
   ],
   suggestedLibraries: [
@@ -367,7 +386,7 @@ export const defaultBootstrap: BootstrapPayload = {
       adoptionNote: "Helpful for mobile resilience."
     }
   ],
-  storageNote: "SQLite persists investigations, stage runs, and progress logs so work survives restarts."
+  storageNote: "Saved investigations and progress updates are stored locally so history survives app restarts."
 };
 
 export const defaultHistory: InvestigationSummary[] = [];

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 InvestigationStatus = Literal["queued", "running", "completed", "failed"]
 AgentStatus = Literal["pending", "running", "completed", "failed"]
 InvestigationMode = Literal["auto", "offline", "live"]
-DesiredDepth = Literal["standard", "deep"]
+DesiredDepth = Literal["quick", "standard", "deep"]
 ClaimVerdict = Literal["trustworthy", "mixed", "overstated", "untrustworthy"]
 SourceStance = Literal["supportive", "mixed", "contradictory", "unclear"]
 SourceBucket = Literal["tier_1_blog", "tier_2_scholarly", "tier_3_authority"]
@@ -253,6 +253,12 @@ class InvestigationSummary(BaseModel):
     updatedAt: str
     overallScore: int | None = None
     verdict: ClaimVerdict | None = None
+    confidenceLevel: ConfidenceLevel | None = None
+    truthClassification: str = ""
+    sourceCount: int = 0
+    positiveCount: int = 0
+    neutralCount: int = 0
+    negativeCount: int = 0
     summary: str = ""
 
 
@@ -269,8 +275,11 @@ class InvestigationDetail(InvestigationSummary):
     llmAgreementScore: int | None = Field(default=None, ge=0, le=100)
     misinformationRisk: MisinformationRisk | None = None
     progressPercent: int = Field(default=0, ge=0, le=100)
+    resolvedMode: InvestigationMode | None = None
+    cacheStatus: CacheStatus = "live"
     truthClassification: str = ""
     discoveredDomains: list[str] = Field(default_factory=list)
+    orchestrationNotes: list[str] = Field(default_factory=list)
     expertInsight: str = ""
     aiSummary: str = ""
     verdictSummary: str = ""

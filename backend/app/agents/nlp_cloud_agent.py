@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Literal
 
 import httpx
@@ -117,21 +118,28 @@ def refine_claim_with_nlp_cloud(claim: str, context: str = "") -> NlpCloudClaimS
         return None
 
     try:
-        entities_payload = _post(
-            settings.nlpcloud_entity_model,
-            "entities",
-            {
-                "text": claim,
-            },
-        )
-        relationship_scores = _classify(
-            f"Claim: {claim}\nContext: {context}".strip(),
-            list(RELATIONSHIP_LABELS),
-        )
-        strength_scores = _classify(
-            claim,
-            list(STRENGTH_LABELS),
-        )
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            entities_future = executor.submit(
+                _post,
+                settings.nlpcloud_entity_model,
+                "entities",
+                {
+                    "text": claim,
+                },
+            )
+            relationship_future = executor.submit(
+                _classify,
+                f"Claim: {claim}\nContext: {context}".strip(),
+                list(RELATIONSHIP_LABELS),
+            )
+            strength_future = executor.submit(
+                _classify,
+                claim,
+                list(STRENGTH_LABELS),
+            )
+            entities_payload = entities_future.result()
+            relationship_scores = relationship_future.result()
+            strength_scores = strength_future.result()
     except Exception:
         return None
 
@@ -145,30 +153,50 @@ def refine_claim_with_nlp_cloud(claim: str, context: str = "") -> NlpCloudClaimS
     )
 
 
+def _classify_source_sentiment(claim: str, source: SourceAssessment) -> tuple[str, SourceSentiment] | None:
+    source_excerpt = (source.extractedText or source.snippet or source.title).strip()
+    if not source_excerpt:
+        return None
+
+    try:
+        scores = _classify(
+            f"Claim: {claim}\nSource evidence: {source_excerpt[:1200]}",
+            list(STANCE_LABELS),
+        )
+    except Exception:
+        return None
+
+    label = _best_label(scores)
+    if not label:
+        return None
+
+    sentiment = STANCE_LABELS.get(label)
+    if not sentiment:
+        return None
+    return source.id, sentiment
+
+
 def refine_source_sentiments_with_nlp_cloud(claim: str, sources: list[SourceAssessment]) -> dict[str, SourceSentiment]:
     if not settings.has_nlpcloud:
         return {}
 
     results: dict[str, SourceSentiment] = {}
     limit = max(0, settings.nlpcloud_max_stance_refinements)
+    candidates = [source for source in sources[:limit] if (source.extractedText or source.snippet or source.title).strip()]
+    if not candidates:
+        return results
 
-    for source in sources[:limit]:
-        source_excerpt = (source.extractedText or source.snippet or source.title).strip()
-        if not source_excerpt:
-            continue
-        try:
-            scores = _classify(
-                f"Claim: {claim}\nSource evidence: {source_excerpt[:1200]}",
-                list(STANCE_LABELS),
-            )
-        except Exception:
-            continue
-
-        label = _best_label(scores)
-        if not label:
-            continue
-        sentiment = STANCE_LABELS.get(label)
-        if sentiment:
-            results[source.id] = sentiment
+    max_workers = max(2, min(6, len(candidates)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_classify_source_sentiment, claim, source) for source in candidates]
+        for future in as_completed(futures):
+            try:
+                outcome = future.result()
+            except Exception:
+                continue
+            if outcome is None:
+                continue
+            source_id, sentiment = outcome
+            results[source_id] = sentiment
 
     return results

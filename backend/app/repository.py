@@ -26,10 +26,11 @@ def create_investigation(claim: str, context: str, mode: str, desired_depth: str
         connection.execute(
             """
             INSERT INTO investigations (
-                id, claim, context, status, mode, desired_depth, created_at, updated_at, summary, state_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                id, claim, context, status, mode, desired_depth, created_at, updated_at, confidence_level,
+                truth_classification, source_count, positive_count, neutral_count, negative_count, summary, state_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (investigation_id, claim, context, "queued", mode, desired_depth, now, now, "", state.model_dump_json()),
+            (investigation_id, claim, context, "queued", mode, desired_depth, now, now, None, "", 0, 0, 0, 0, "", state.model_dump_json()),
         )
 
     return InvestigationSummary(
@@ -43,6 +44,12 @@ def create_investigation(claim: str, context: str, mode: str, desired_depth: str
         updatedAt=now,
         overallScore=None,
         verdict=None,
+        confidenceLevel=None,
+        truthClassification="",
+        sourceCount=0,
+        positiveCount=0,
+        neutralCount=0,
+        negativeCount=0,
         summary="Queued for investigation.",
     )
 
@@ -86,7 +93,24 @@ def list_investigations() -> list[InvestigationSummary]:
     with get_connection() as connection:
         rows = connection.execute(
             """
-            SELECT id, claim, context, status, mode, desired_depth, created_at, updated_at, overall_score, verdict, summary
+            SELECT
+                id,
+                claim,
+                context,
+                status,
+                mode,
+                desired_depth,
+                created_at,
+                updated_at,
+                overall_score,
+                verdict,
+                confidence_level,
+                truth_classification,
+                source_count,
+                positive_count,
+                neutral_count,
+                negative_count,
+                summary
             FROM investigations
             ORDER BY created_at DESC
             """
@@ -104,6 +128,12 @@ def list_investigations() -> list[InvestigationSummary]:
             updatedAt=row["updated_at"],
             overallScore=row["overall_score"],
             verdict=row["verdict"],
+            confidenceLevel=row["confidence_level"],
+            truthClassification=row["truth_classification"] or "",
+            sourceCount=int(row["source_count"] or 0),
+            positiveCount=int(row["positive_count"] or 0),
+            neutralCount=int(row["neutral_count"] or 0),
+            negativeCount=int(row["negative_count"] or 0),
             summary=row["summary"],
         )
         for row in rows
@@ -125,7 +155,25 @@ def get_investigation_detail(investigation_id: str) -> InvestigationDetail | Non
     with get_connection() as connection:
         investigation = connection.execute(
             """
-            SELECT id, claim, context, status, mode, desired_depth, created_at, updated_at, overall_score, verdict, summary, state_json
+            SELECT
+                id,
+                claim,
+                context,
+                status,
+                mode,
+                desired_depth,
+                created_at,
+                updated_at,
+                overall_score,
+                verdict,
+                confidence_level,
+                truth_classification,
+                source_count,
+                positive_count,
+                neutral_count,
+                negative_count,
+                summary,
+                state_json
             FROM investigations
             WHERE id = ?
             """,
@@ -166,6 +214,12 @@ def get_investigation_detail(investigation_id: str) -> InvestigationDetail | Non
         updatedAt=investigation["updated_at"],
         overallScore=investigation["overall_score"],
         verdict=investigation["verdict"],
+        confidenceLevel=state.confidenceLevel or investigation["confidence_level"],
+        truthClassification=state.truthClassification or investigation["truth_classification"] or "",
+        sourceCount=int(investigation["source_count"] or len(state.sources)),
+        positiveCount=int(investigation["positive_count"] or 0),
+        neutralCount=int(investigation["neutral_count"] or 0),
+        negativeCount=int(investigation["negative_count"] or 0),
         summary=investigation["summary"],
         claimAnalysis=state.claimAnalysis,
         recommendedQueries=state.recommendedQueries,
@@ -175,12 +229,13 @@ def get_investigation_detail(investigation_id: str) -> InvestigationDetail | Non
         sentiment=state.sentiment,
         consensus=state.consensus,
         matrix=state.matrix,
-        confidenceLevel=state.confidenceLevel,
         llmAgreementScore=state.llmAgreementScore,
         misinformationRisk=state.misinformationRisk,
         progressPercent=state.progressPercent,
-        truthClassification=state.truthClassification,
+        resolvedMode=state.resolvedMode,
+        cacheStatus=state.cacheStatus,
         discoveredDomains=state.discoveredDomains,
+        orchestrationNotes=state.orchestrationNotes,
         expertInsight=state.expertInsight,
         aiSummary=state.aiSummary,
         verdictSummary=state.verdictSummary,
@@ -214,6 +269,42 @@ def get_investigation_detail(investigation_id: str) -> InvestigationDetail | Non
             for row in event_rows
         ],
     )
+
+
+def persist_investigation_snapshot(
+    investigation_id: str,
+    *,
+    confidence_level: str | None,
+    truth_classification: str,
+    source_count: int,
+    positive_count: int,
+    neutral_count: int,
+    negative_count: int,
+) -> None:
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE investigations
+            SET confidence_level = ?,
+                truth_classification = ?,
+                source_count = ?,
+                positive_count = ?,
+                neutral_count = ?,
+                negative_count = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                confidence_level,
+                truth_classification,
+                source_count,
+                positive_count,
+                neutral_count,
+                negative_count,
+                utc_now_iso(),
+                investigation_id,
+            ),
+        )
 
 
 def start_agent_run(investigation_id: str, agent_key: str, title: str) -> str:

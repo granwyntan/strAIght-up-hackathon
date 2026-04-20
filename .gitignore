@@ -30,6 +30,7 @@ scripts/**/*.secret.*
 *.log
 *.sqlite3
 *.db
+.DS_Store
 backend/data/
 
 # Key material

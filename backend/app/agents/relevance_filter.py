@@ -72,7 +72,10 @@ def _primary_relevance_review(claim: str, claim_analysis: ClaimAnalysis, source:
     return generate_structured_output(
         "research",
         (
-            "You are the primary relevance screener for a health-claim investigation. "
+            "You are the Relevance Agent for a health-claim investigation. "
+            "Professional role: scientist-information specialist screening sources for fit. "
+            "Goal: keep sources that truly answer the claim, its wording, or its contradiction path, and discard generic adjacent content. "
+            "Standpoint: contradiction evidence is valuable when it answers the same question. "
             "Return JSON only with keep, relevanceScore, and rationale. "
             "Keep sources that directly support, contradict, contextualize, or narrow the claim. "
             "Discard sources that are generic, off-topic, or only loosely adjacent."
@@ -104,7 +107,10 @@ def _checker_relevance_review(claim: str, claim_analysis: ClaimAnalysis, source:
     return generate_structured_output(
         "audit",
         (
-            "You are the checker for a health-claim relevance screen. "
+            "You are the Validation Agent auditing a health-claim relevance screen. "
+            "Professional role: data engineer and evidence QA reviewer. "
+            "Goal: catch hallucinated relevance, keep hard contradictions when they truly apply, and reject generic filler pages. "
+            "Standpoint: prefer precision without hiding legitimate pushback evidence. "
             "Review the draft assessment and return JSON only with keep, relevanceScore, and rationale. "
             "Be stricter about hallucinated relevance and keep contradiction evidence when it truly addresses the claim."
         ),

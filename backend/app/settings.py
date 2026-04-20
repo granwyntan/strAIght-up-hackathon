@@ -32,17 +32,18 @@ class Settings(BaseSettings):
     agentic_workflow_enabled: bool = True
     llm_max_output_tokens: int = 1200
     llm_timeout_seconds: float = 14.0
-    pipeline_max_concurrency: int = 8
-    search_query_budget_standard: int = 20
-    search_query_budget_deep: int = 32
-    source_target_standard: int = 48
-    source_target_deep: int = 84
+    pipeline_max_concurrency: int = 10
+    search_query_budget_quick: int = 10
+    search_query_budget_standard: int = 24
+    search_query_budget_deep: int = 36
+    source_target_quick: int = 28
+    source_target_standard: int = 56
+    source_target_deep: int = 120
     search_cache_ttl_trending_seconds: int = 1800
     search_cache_ttl_stable_seconds: int = 86400
     extraction_cache_ttl_seconds: int = 43200
     final_cache_ttl_seconds: int = 21600
     cache_cleanup_probability: float = 0.08
-
     openai_api_key: str | None = None
     openai_api_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-5.4"
@@ -88,7 +89,8 @@ class Settings(BaseSettings):
     nlpcloud_entity_model: str = "en_core_web_lg"
     nlpcloud_classification_model: str = "bart-large-mnli-yahoo-answers"
     nlpcloud_timeout_seconds: float = 8.0
-    nlpcloud_max_stance_refinements: int = 10
+    nlpcloud_max_stance_refinements: int = 16
+    sentiment_disagreement_review_limit: int = 14
 
     research_stage_providers: str = "gemini,openai,claude,deepseek,xai"
     audit_stage_providers: str = "claude,openai,gemini,deepseek,xai"
@@ -97,10 +99,10 @@ class Settings(BaseSettings):
     consensus_stage_providers: str = "deepseek,claude,openai,gemini,xai"
 
     tavily_api_key: str | None = None
-    tavily_max_results: int = 12
+    tavily_max_results: int = 16
     serpapi_api_key: str | None = None
     serpapi_engine: str = "google"
-    serpapi_num_results: int = 12
+    serpapi_num_results: int = 16
     search_timeout_seconds: float = 4.5
     source_tier_config_path: str = str(DEFAULT_SOURCE_TIER_PATH)
     database_path: str = str(DEFAULT_DB_PATH)

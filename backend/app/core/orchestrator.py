@@ -8,6 +8,7 @@ from ..agents.citation_auditor import audit_citations
 from ..agents.decision_agent import summarize_decision, user_facing_verdict_label
 from ..agents.query_planner import refine_claim_analysis
 from ..agents.relevance_filter import filter_relevant_sources
+from ..agents.reasoning_panel import reconcile_reasoning_panel
 from ..agents.quote_verifier import verify_quotes
 from ..agents.report_writer import draft_report
 from ..agents.sentiment_consensus import apply_sentiment_consensus
@@ -15,7 +16,7 @@ from ..agents.source_scout import scout_sources
 from ..agents.source_validator import validate_sources
 from ..agents.study_classifier import classify_sources
 from ..agents.verdict_reviewer import review_verdict
-from ..ai import reset_stage_rotation, stage_target_label
+from ..ai import reset_stage_rotation
 from ..cache import cache_key, get_json, set_json
 from ..context.builder import build_context
 from ..models import InvestigationCreateRequest, InvestigationState
@@ -124,23 +125,26 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                 overall_score=cached_result["overallScore"],
                 verdict=cached_result["verdict"],
             )
+            repository.persist_investigation_snapshot(
+                investigation_id,
+                confidence_level=cached_state.confidenceLevel,
+                truth_classification=cached_state.truthClassification,
+                source_count=len(cached_state.sources),
+                positive_count=cached_state.sentiment.positive if cached_state.sentiment else 0,
+                neutral_count=cached_state.sentiment.neutral if cached_state.sentiment else 0,
+                negative_count=cached_state.sentiment.negative if cached_state.sentiment else 0,
+            )
             tracker.info("orchestrator", "Returned a cached final result without rerunning the full pipeline.")
             return
 
         context = build_context(request)
         tracker.info("orchestrator", "Context assembled for the investigation run.")
         if request.mode == "live" and resolved_mode == "offline":
-            tracker.warning("orchestrator", "Live mode was requested but no live search API key is configured, so the system fell back to offline retrieval.")
+            tracker.warning("orchestrator", "Live search was requested, but the app had to fall back to saved or seeded evidence.")
         elif resolved_mode == "live":
-            providers: list[str] = []
-            if settings.has_tavily:
-                providers.append("Tavily")
-            if settings.has_serpapi:
-                providers.append("SerpAPI")
-            if providers:
-                tracker.info("orchestrator", f"Live search providers enabled: {', '.join(providers)}.")
+            tracker.info("orchestrator", "Live web evidence search is active for this review.")
         else:
-            tracker.info("orchestrator", "Offline retrieval mode is active, so cached or seeded evidence will be used.")
+            tracker.info("orchestrator", "Saved or seeded evidence is being used for this review.")
 
         claim_analysis = await _run_stage(
             investigation_id,
@@ -156,7 +160,6 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
         tracker.info("claim", "Claim analyzer finished semantic parsing and language-risk scoring.")
 
         if settings.llm_agents_enabled:
-            research_target = stage_target_label("research")
             claim_analysis = await _run_stage(
                 investigation_id,
                 "planner",
@@ -164,13 +167,13 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                 lambda: asyncio.to_thread(
                     lambda: (
                         refine_claim_analysis(request.claim, request.context, request.desiredDepth, claim_analysis),
-                        f"Expanded the semantic query plan with {research_target}.",
+                        "Expanded the search plan with support and contradiction paths.",
                     )
                 ),
             )
-            tracker.info("planner", f"Query planner expanded the search plan with {research_target}.")
+            tracker.info("planner", "Search paths were expanded with support and contradiction angles.")
         else:
-            tracker.info("planner", "Query planner skipped because no LLM providers are configured.")
+            tracker.info("planner", "The baseline search plan is being used for this review.")
 
         repository.update_state(
             investigation_id,
@@ -275,11 +278,9 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             investigation_id,
             "citations",
             "Citation auditor",
-            lambda: asyncio.to_thread(
-                lambda: (
-                    audit_citations(request.claim, classified_sources),
-                    "Audited citation chains for broken links and weak supporting references.",
-                )
+            lambda: _with_summary(
+                audit_citations(request.claim, classified_sources),
+                "Audited citation chains for broken links and weak supporting references.",
             ),
         )
         tracker.info("citations", "Citation auditor completed subsource checks.")
@@ -347,8 +348,6 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
         llm_score_adjustments: list[int] = []
 
         if settings.llm_agents_enabled:
-            reasoning_target = stage_target_label("reasoning")
-            consensus_target = stage_target_label("consensus")
             review_result, consensus_result = await asyncio.gather(
                 _run_stage(
                     investigation_id,
@@ -357,7 +356,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                     lambda: asyncio.to_thread(
                         lambda: (
                             review_verdict(request.claim, claim_analysis, sentiment_sources, matrix, score, verdict),
-                            f"Reviewed the heuristic verdict with {reasoning_target}.",
+                            "Reviewed the heuristic verdict against the evidence snapshot.",
                         )
                     ),
                 ),
@@ -368,7 +367,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                     lambda: asyncio.to_thread(
                         lambda: (
                             review_consensus(request.claim, claim_analysis, sentiment_sources, score, verdict),
-                            f"Challenged the verdict with {consensus_target}.",
+                            "Pressure-tested the verdict against contradictory and cautionary evidence.",
                         )
                     ),
                 ),
@@ -394,6 +393,36 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                 tracker.info("consensus", "Consensus challenger pressure-tested the verdict and surfaced contradictions.")
             else:
                 tracker.info("consensus", "Consensus challenger returned no changes, so the reviewed verdict was kept.")
+
+            panel_result = await _run_stage(
+                investigation_id,
+                "panel",
+                "Reasoning panel",
+                lambda: asyncio.to_thread(
+                    lambda: (
+                        reconcile_reasoning_panel(
+                            request.claim,
+                            claim_analysis,
+                            sentiment_sources,
+                            score,
+                            verdict,
+                            review_result,
+                            consensus_result,
+                        ),
+                        "Reconciled reviewer and challenger notes into one final adjustment.",
+                    )
+                ),
+            )
+            if panel_result is not None:
+                score = max(0, min(100, score + panel_result.scoreAdjustment))
+                verdict = panel_result.verdict
+                llm_verdicts.append(panel_result.verdict)
+                llm_score_adjustments.append(abs(panel_result.scoreAdjustment))
+                strengths = list(dict.fromkeys([*strengths, *panel_result.strengths]))
+                concerns = list(dict.fromkeys([*concerns, *panel_result.concerns, panel_result.rationale]))
+                tracker.info("panel", "Reasoning panel reconciled the cross-check outputs into the final adjustment.")
+            else:
+                tracker.info("panel", "Reasoning panel kept the reviewed verdict without extra changes.")
         else:
             tracker.info("review", "Cross-validation reviewers skipped because no LLM providers are configured.")
         repository.update_state(
@@ -401,8 +430,8 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             lambda state: state.model_copy(update={"progressPercent": 96, "truthClassification": _truth_classification(verdict)}),
         )
 
+        expert_insight = narrative
         if settings.llm_agents_enabled:
-            writer_target = stage_target_label("writer")
             report_draft = await _run_stage(
                 investigation_id,
                 "report",
@@ -419,13 +448,14 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                             strengths,
                             concerns,
                         ),
-                        f"Drafted the final evidence synthesis with {writer_target}.",
+                        "Drafted the final evidence synthesis and public-facing summary.",
                     )
                 ),
             )
             if report_draft is not None:
                 narrative = report_draft.narrative
                 ai_summary = report_draft.userSummary
+                expert_insight = report_draft.expertInsight
                 strengths = report_draft.strengths or strengths
                 concerns = report_draft.concerns or concerns
                 tracker.info("report", "Report writer polished the final narrative and key takeaways.")
@@ -497,7 +527,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                 f"Final result assembled from {len(display_sources)} visible sources.",
                 f"Cache state: {cache_status}.",
             ],
-            expertInsight=verdict_summary or narrative,
+            expertInsight=expert_insight,
             aiSummary=ai_summary,
             verdictSummary=verdict_summary or narrative,
             finalNarrative=narrative,
@@ -517,6 +547,15 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             summary=final_summary,
             overall_score=score,
             verdict=verdict,
+        )
+        repository.persist_investigation_snapshot(
+            investigation_id,
+            confidence_level=confidence_level,
+            truth_classification=final_state.truthClassification,
+            source_count=len(display_sources),
+            positive_count=sentiment.positive if sentiment else 0,
+            neutral_count=sentiment.neutral if sentiment else 0,
+            negative_count=sentiment.negative if sentiment else 0,
         )
         set_json(
             "final",

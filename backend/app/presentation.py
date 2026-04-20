@@ -359,7 +359,10 @@ def build_sections(
             [
                 f"Calibrated evidence score before penalties: {consensus.credibilityScore}/100.",
                 f"{len(selected_sources)} filtered sources were retained for the visible evidence set.",
+                f"Weighted support share: {round(consensus.supportShare * 100)}%.",
+                f"Weighted contradiction share: {round(consensus.contradictionShare * 100)}%.",
                 groups[0].summary,
+                groups[1].summary,
                 groups[2].summary,
                 *matrix_lines,
                 consensus.summary,
@@ -372,20 +375,22 @@ def build_sections(
             [
                 *strengths,
                 *(source.evidence.expertAnalysis for source in groups[0].sources[:4] if source.evidence),
-                *(source.relevanceSummary for source in groups[0].sources[:3]),
+                *(source.relevanceSummary for source in groups[0].sources[:5]),
+                *(source.evidence.conclusion for source in groups[0].sources[:3] if source.evidence),
             ]
         )
-    )[:6]
+    )[:8]
 
     contradictions = list(
         dict.fromkeys(
             [
                 *concerns,
                 *(source.evidence.expertAnalysis for source in groups[2].sources[:4] if source.evidence),
-                *(source.relevanceSummary for source in groups[2].sources[:4]),
+                *(source.relevanceSummary for source in groups[2].sources[:5]),
+                *(source.evidence.conclusion for source in groups[2].sources[:3] if source.evidence),
             ]
         )
-    )[:6]
+    )[:8]
 
     methodology = list(
         dict.fromkeys(
@@ -396,7 +401,7 @@ def build_sections(
                 "Aggressive claim wording should be downgraded when the evidence base is narrow, short, or inconsistent.",
             ]
         )
-    )[:8]
+    )[:10]
 
     if not contradictions:
         contradictions = [f"No major direct contradiction surfaced for '{claim}', but uncertainty still remains where the evidence is thin."]
@@ -430,44 +435,44 @@ def build_step_summaries(
     return [
         PipelineStepSummary(
             key="claim_breakdown",
-            title="Claim Breakdown",
+            title="Understand the claim",
             status="completed",
-            summary=f"{max((item.strength for item in claim_analysis.atomicClaims), default=1)}/5 claim strength identified from the full semantic claim.",
+            summary=f"The wording was parsed as a {max((item.strength for item in claim_analysis.atomicClaims), default=1)}/5 strength claim before evidence was gathered.",
             details=semantic_lines,
         ),
         PipelineStepSummary(
             key="query_generation",
-            title="Query Generation",
+            title="Plan the evidence search",
             status="completed",
-            summary=f"{len(claim_analysis.generatedQueries)} semantic research queries prepared across synonyms, medical phrasing, and contradiction angles.",
+            summary=f"{len(claim_analysis.generatedQueries)} search paths were prepared across support, contradiction, and medical phrasing angles.",
             details=claim_analysis.generatedQueries[:6],
         ),
         PipelineStepSummary(
             key="source_validation",
-            title="Source Validation",
+            title="Check source quality",
             status="completed",
-            summary=f"{total_sources} accessible sources survived filtering and integrity checks.",
+            summary=f"{total_sources} readable sources stayed in the review after link and accessibility checks.",
             details=[
-                "Broken or inaccessible links were discarded before analysis.",
+                "Broken or inaccessible links were removed before analysis.",
                 groups[0].summary,
                 groups[2].summary,
             ],
         ),
         PipelineStepSummary(
             key="relevance_filter",
-            title="Relevance Filter",
+            title="Keep only relevant evidence",
             status="completed",
-            summary=f"{total_sources} sources remained materially relevant after semantic relevance screening.",
+            summary=f"{total_sources} sources remained after off-topic or weakly related pages were filtered out.",
             details=[
                 "Generic or weakly related pages were discarded before scoring.",
-                "Contradiction evidence was retained when it answered the same claim in the opposite direction.",
+                "Contradiction evidence stayed visible when it addressed the same claim from the opposite direction.",
             ],
         ),
         PipelineStepSummary(
             key="quote_verification",
-            title="Quote Verification",
+            title="Verify quotes",
             status="completed",
-            summary="Displayed quotes were checked against accessible source text before rendering.",
+            summary="Only quotes that matched accessible source text were allowed into the final evidence cards.",
             details=[
                 "Quotes that could not be matched directly to source text were removed.",
                 "Links shown in the UI map to the same source used for the quote block.",
@@ -475,7 +480,7 @@ def build_step_summaries(
         ),
         PipelineStepSummary(
             key="consensus_check",
-            title="Sentiment Consensus",
+            title="Compare support and pushback",
             status="completed",
             summary=sentiment.summary,
             details=[
@@ -486,7 +491,7 @@ def build_step_summaries(
         ),
         PipelineStepSummary(
             key="final_verdict",
-            title="Final Verdict",
+            title="Write the final verdict",
             status="completed",
             summary=f"{confidence_level.title()} confidence. {verdict_summary}",
             details=matrix_lines[:4],
