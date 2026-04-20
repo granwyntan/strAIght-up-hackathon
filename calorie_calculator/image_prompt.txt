@@ -1,0 +1,1 @@
+Analyze this meal photo. For each visible food item or ingredient, estimate the mass in grams and the calories, then show a clear total estimated calorie count at the end.

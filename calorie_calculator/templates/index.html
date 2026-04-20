@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GramVVIN Calorie Calculator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', path='styles.css') }}"
+    />
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero card">
+        <div class="hero-copy">
+          <p class="eyebrow">GramVVIN</p>
+          <h1>Calorie Calculator</h1>
+          <p class="intro">
+            Upload a meal photo or snap one with your webcam, then let GPT
+            Vision identify the food, estimate the mass of each item, and
+            calculate the calories in a clean itemized breakdown.
+          </p>
+        </div>
+        <div class="hero-badge">
+          <span>Meal Scan</span>
+          <strong>Photo -> Calories</strong>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <form
+          class="card form-card"
+          method="post"
+          enctype="multipart/form-data"
+          id="analysis-form"
+        >
+          <div class="section-heading">
+            <p class="eyebrow">Step 1</p>
+            <h2>Calorie intake calculator</h2>
+          </div>
+
+          <div class="metrics-grid">
+            <label class="field">
+              <span>Age</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                name="age"
+                value="{{ form_values.age }}"
+                placeholder="25"
+              />
+            </label>
+
+            <label class="field">
+              <span>BMI</span>
+              <input
+                type="number"
+                min="1"
+                step="0.1"
+                name="bmi"
+                value="{{ form_values.bmi }}"
+                placeholder="22.0"
+              />
+            </label>
+          </div>
+
+          <div class="section-heading">
+            <p class="eyebrow">Step 2</p>
+            <h2>Add a meal photo</h2>
+          </div>
+
+          <label class="field upload-field">
+            <span>Upload an image</span>
+            <input
+              type="file"
+              id="photo-upload"
+              name="photo"
+              accept="image/png,image/jpeg,image/webp"
+            />
+          </label>
+
+          <div class="camera-panel">
+            <div>
+              <span class="camera-label">Or use your webcam</span>
+              <p class="camera-help">
+                Open the camera, frame the meal clearly, then capture a still
+                image for calorie analysis.
+              </p>
+            </div>
+            <div class="camera-actions">
+              <button type="button" class="secondary-button" id="start-camera">
+                Open camera
+              </button>
+              <button
+                type="button"
+                class="secondary-button"
+                id="capture-photo"
+                disabled
+              >
+                Take photo
+              </button>
+            </div>
+            <video id="camera-feed" playsinline autoplay muted hidden></video>
+            <canvas id="camera-canvas" hidden></canvas>
+            <img id="camera-preview" alt="Captured webcam preview" hidden />
+            <input type="hidden" name="webcam_image" id="webcam-image" />
+          </div>
+
+          <button
+            type="submit"
+            class="primary-button"
+            id="analyze-button"
+            disabled
+            aria-disabled="true"
+          >
+            Upload or take a photo first
+          </button>
+
+          {% if error %}
+          <div class="message error">{{ error }}</div>
+          {% endif %}
+        </form>
+
+        <section class="card results-card">
+          <div class="section-heading">
+            <p class="eyebrow">Step 3</p>
+            <h2>Calorie result</h2>
+          </div>
+
+          {% if image_path %}
+          <img
+            class="result-image"
+            src="{{ url_for('static', path=image_path) }}"
+            alt="Submitted meal image"
+          />
+          {% else %}
+          <div class="placeholder">
+            Your uploaded or captured meal image will appear here.
+          </div>
+          {% endif %}
+
+          {% if calorie_context %}
+          <section class="summary-card">
+            <div class="summary-pill">
+              <span>Age</span>
+              <strong>{{ calorie_context.age }}</strong>
+            </div>
+            <div class="summary-pill">
+              <span>BMI</span>
+              <strong>{{ calorie_context.bmi }}</strong>
+            </div>
+            <div class="summary-pill">
+              <span>Daily target</span>
+              <strong>{{ calorie_context.daily_target }} kcal</strong>
+            </div>
+            <p class="summary-note">{{ calorie_context.note }}</p>
+          </section>
+          {% endif %}
+
+          {% if response_html %}
+          <article class="analysis-output">{{ response_html|safe }}</article>
+          {% else %}
+          <div class="placeholder">
+            The itemized calorie breakdown will appear here after you submit the
+            food image.
+          </div>
+          {% endif %}
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const form = document.getElementById("analysis-form");
+      const fileInput = document.getElementById("photo-upload");
+      const startButton = document.getElementById("start-camera");
+      const captureButton = document.getElementById("capture-photo");
+      const analyzeButton = document.getElementById("analyze-button");
+      const video = document.getElementById("camera-feed");
+      const canvas = document.getElementById("camera-canvas");
+      const preview = document.getElementById("camera-preview");
+      const webcamInput = document.getElementById("webcam-image");
+      let stream;
+
+      function hasImageReady() {
+        return Boolean(
+          (fileInput.files && fileInput.files.length > 0) || webcamInput.value,
+        );
+      }
+
+      function syncAnalyzeButton() {
+        const enabled = hasImageReady();
+        analyzeButton.disabled = !enabled;
+        analyzeButton.setAttribute("aria-disabled", String(!enabled));
+        analyzeButton.textContent = enabled
+          ? "Calculate calories"
+          : "Upload or take a photo first";
+      }
+
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files && fileInput.files.length > 0) {
+          webcamInput.value = "";
+          preview.hidden = true;
+        }
+        syncAnalyzeButton();
+      });
+
+      startButton.addEventListener("click", async () => {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+          video.srcObject = stream;
+          video.hidden = false;
+          captureButton.disabled = false;
+          startButton.textContent = "Camera ready";
+          startButton.disabled = true;
+        } catch (error) {
+          alert(
+            "Unable to access the webcam. Please allow camera permission or upload an image instead.",
+          );
+        }
+      });
+
+      captureButton.addEventListener("click", () => {
+        if (!stream) {
+          return;
+        }
+
+        canvas.width = video.videoWidth || 1280;
+        canvas.height = video.videoHeight || 720;
+        canvas
+          .getContext("2d")
+          .drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/png");
+
+        webcamInput.value = dataUrl;
+        preview.src = dataUrl;
+        preview.hidden = false;
+        captureButton.textContent = "Photo taken";
+        fileInput.value = "";
+        syncAnalyzeButton();
+
+        stream.getTracks().forEach((track) => track.stop());
+        video.hidden = true;
+      });
+
+      form.addEventListener("submit", (event) => {
+        if (!hasImageReady() || analyzeButton.disabled) {
+          event.preventDefault();
+          syncAnalyzeButton();
+          return;
+        }
+
+        analyzeButton.disabled = true;
+        analyzeButton.setAttribute("aria-disabled", "true");
+        analyzeButton.textContent = "Calculating calories...";
+        analyzeButton.classList.add("is-submitting");
+      });
+
+      syncAnalyzeButton();
+    </script>
+  </body>
+</html>

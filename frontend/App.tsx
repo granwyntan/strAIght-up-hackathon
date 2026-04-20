@@ -19,6 +19,7 @@ import {
   View
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import CaloriesPage from "./src/pages/CaloriesPage";
 import SupplementsPage from "./src/pages/SupplementsPage";
 
 import {
@@ -572,10 +573,8 @@ export default function App() {
               onMoveHistoryDown={(id) => moveHistoryItem(id, 1)}
             />
           ) : activeTab === "nutrition" ? (
-            <PlaceholderTab
-              title="Diet / Nutrition Analyzer"
-              subtitle="A clean placeholder for meal-quality scoring, nutrition pattern review, and food log insights."
-              tone="lime"
+            <CaloriesPage
+              requestApi={(path, init) => requestApi(path, init, 120000)}
             />
           ) : activeTab === "supplements" ? (
             <SupplementsPage

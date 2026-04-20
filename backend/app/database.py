@@ -69,5 +69,14 @@ def init_db() -> None:
                 last_seen_at TEXT NOT NULL,
                 seen_count INTEGER NOT NULL DEFAULT 1
             );
+
+            CREATE TABLE IF NOT EXISTS calorie_entries (
+                id TEXT PRIMARY KEY,
+                entry_date TEXT NOT NULL,
+                calories INTEGER NOT NULL,
+                meal_name TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_calorie_entries_entry_date ON calorie_entries(entry_date);
             """
         )
