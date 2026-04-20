@@ -19,6 +19,7 @@ import {
   View
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import SupplementsPage from "./src/pages/SupplementsPage";
 
 import {
   defaultBootstrap,
@@ -295,10 +296,10 @@ export default function App() {
     return ordered.filter((item) => safeLower(`${safeText(item.claim)} ${safeText(item.summary)}`).includes(query));
   }, [history, historyOrder, historyQuery]);
 
-  async function requestApi(path: string, init?: RequestInit) {
+  async function requestApi(path: string, init?: RequestInit, timeoutMsOverride?: number) {
     const candidates = buildApiBaseUrls(apiBaseUrl);
     let lastError: Error | null = null;
-    const timeoutMs = path === "/health" ? 1200 : 3500;
+    const timeoutMs = timeoutMsOverride ?? (path === "/health" ? 1200 : 3500);
 
     for (const candidate of candidates) {
       try {
@@ -577,10 +578,8 @@ export default function App() {
               tone="lime"
             />
           ) : activeTab === "supplements" ? (
-            <PlaceholderTab
-              title="Medicine / Supplement Analyzer"
-              subtitle="A focused placeholder for medication checks, supplement safety, and interaction-aware evidence reviews."
-              tone="aqua"
+            <SupplementsPage
+              requestApi={(path, init) => requestApi(path, init, 180000)}
             />
           ) : (
             <ProfileScreen history={history} />

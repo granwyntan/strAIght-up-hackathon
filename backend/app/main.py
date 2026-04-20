@@ -7,6 +7,7 @@ from .core.orchestrator import queue_investigation
 from .database import init_db
 from .knowledge.base import BOOTSTRAP
 from .models import BootstrapPayload, InvestigationCollection, InvestigationCreateRequest, InvestigationDetail
+from .routes.supplements import router as supplements_router
 from .settings import settings
 
 
@@ -25,6 +26,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(supplements_router)
 
 
 @app.on_event("startup")
