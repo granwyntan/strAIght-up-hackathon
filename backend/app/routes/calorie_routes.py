@@ -22,6 +22,7 @@ EXTENSION_TO_CONTENT_TYPE = {
 }
 
 router = APIRouter(prefix="/api/calories", tags=["calories"])
+legacy_router = APIRouter(prefix="/api/calorie", tags=["calories"])
 
 
 class CalorieSectionResponse(BaseModel):
@@ -128,8 +129,7 @@ def _to_week_payload(week) -> CalorieTrackerWeekResponse:
     )
 
 
-@router.post("/calculate", response_model=CalorieCalculationResponse)
-async def calculate_calories_endpoint(
+async def _calculate_calories_response(
     photo: UploadFile = File(...),
     age: str | None = Form(default=None),
     bmi: str | None = Form(default=None),
@@ -172,6 +172,33 @@ async def calculate_calories_endpoint(
         sections=[_to_section_payload(item) for item in result.sections],
         calorieContext=_to_context_payload(result.calorie_context),
     )
+
+
+@router.post("/calculate", response_model=CalorieCalculationResponse)
+async def calculate_calories_endpoint(
+    photo: UploadFile = File(...),
+    age: str | None = Form(default=None),
+    bmi: str | None = Form(default=None),
+    weightKg: str | None = Form(default=None),
+    heightCm: str | None = Form(default=None),
+    activityLevel: str | None = Form(default=None),
+    sex: str | None = Form(default=None),
+) -> CalorieCalculationResponse:
+    return await _calculate_calories_response(photo, age, bmi, weightKg, heightCm, activityLevel, sex)
+
+
+@legacy_router.post("/calculate", response_model=CalorieCalculationResponse)
+async def calculate_calories_endpoint_legacy(
+    photo: UploadFile = File(...),
+    age: str | None = Form(default=None),
+    bmi: str | None = Form(default=None),
+    weightKg: str | None = Form(default=None),
+    heightCm: str | None = Form(default=None),
+    activityLevel: str | None = Form(default=None),
+    sex: str | None = Form(default=None),
+) -> CalorieCalculationResponse:
+    # Backward-compatible alias for clients calling /api/calorie/calculate
+    return await _calculate_calories_response(photo, age, bmi, weightKg, heightCm, activityLevel, sex)
 
 
 @router.get("/tracker", response_model=CalorieTrackerWeekResponse)

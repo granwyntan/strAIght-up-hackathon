@@ -330,18 +330,21 @@ def calculate_calories(
 
     client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_api_base_url)
     image_data = base64.b64encode(image_bytes).decode("utf-8")
-    response = client.responses.create(
-        model=CALORIE_ANALYSIS_MODEL,
-        input=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": _build_prompt(context)},
-                    {"type": "input_image", "image_url": f"data:{content_type};base64,{image_data}"},
-                ],
-            }
-        ],
-    )
+    try:
+        response = client.responses.create(
+            model=CALORIE_ANALYSIS_MODEL,
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": _build_prompt(context)},
+                        {"type": "input_image", "image_url": f"data:{content_type};base64,{image_data}"},
+                    ],
+                }
+            ],
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Calorie analysis provider call failed: {exc}") from exc
     analysis_text = response.output_text.strip()
     if not analysis_text:
         raise RuntimeError("The model returned an empty calorie analysis.")

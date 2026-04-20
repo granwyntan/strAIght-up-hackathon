@@ -7,6 +7,7 @@ from .core.orchestrator import queue_investigation
 from .database import init_db
 from .knowledge.base import BOOTSTRAP
 from .models import BootstrapPayload, InvestigationCollection, InvestigationCreateRequest, InvestigationDetail
+from .routes.calorie_routes import legacy_router as calorie_legacy_router
 from .routes.calorie_routes import router as calorie_router
 from .routes.supplements import router as supplements_router
 from .settings import settings
@@ -28,6 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(calorie_router)
+app.include_router(calorie_legacy_router)
 app.include_router(supplements_router)
 
 

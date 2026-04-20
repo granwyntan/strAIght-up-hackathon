@@ -117,13 +117,17 @@ def _build_infographic_prompt(analysis_text: str, conditions: str, goals: str) -
 
 
 def _generate_infographic_data_url(client: OpenAI, analysis_text: str, conditions: str, goals: str) -> str:
-    result = client.images.generate(
-        model=SUPPLEMENT_INFOGRAPHIC_MODEL,
-        prompt=_build_infographic_prompt(analysis_text, conditions, goals),
-        size="1024x1024",
-    )
-    image_base64 = result.data[0].b64_json
-    return f"data:image/png;base64,{image_base64}"
+    try:
+        result = client.images.generate(
+            model=SUPPLEMENT_INFOGRAPHIC_MODEL,
+            prompt=_build_infographic_prompt(analysis_text, conditions, goals),
+            size="1024x1024",
+        )
+        image_base64 = result.data[0].b64_json
+        return f"data:image/png;base64,{image_base64}"
+    except Exception:
+        # Keep supplement analysis successful even if image generation fails.
+        return ""
 
 
 def analyze_supplement(image_bytes: bytes, content_type: str, conditions: str, goals: str) -> SupplementAnalysisResult:
@@ -146,18 +150,21 @@ def analyze_supplement(image_bytes: bytes, content_type: str, conditions: str, g
     client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_api_base_url)
     image_data = base64.b64encode(image_bytes).decode("utf-8")
 
-    response = client.responses.create(
-        model=SUPPLEMENT_ANALYSIS_MODEL,
-        input=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": _build_analysis_prompt(normalized_conditions, normalized_goals)},
-                    {"type": "input_image", "image_url": f"data:{content_type};base64,{image_data}"},
-                ],
-            }
-        ],
-    )
+    try:
+        response = client.responses.create(
+            model=SUPPLEMENT_ANALYSIS_MODEL,
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": _build_analysis_prompt(normalized_conditions, normalized_goals)},
+                        {"type": "input_image", "image_url": f"data:{content_type};base64,{image_data}"},
+                    ],
+                }
+            ],
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Supplement analysis provider call failed: {exc}") from exc
 
     analysis_text = response.output_text.strip()
     if not analysis_text:
