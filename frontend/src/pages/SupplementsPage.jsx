@@ -30,6 +30,10 @@ function composeConditionsFromProfile(profile) {
   return lines.join("\n");
 }
 
+function buildClientActionId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 async function readApiError(response, fallback) {
   try {
     const contentType = response.headers.get("content-type") || "";
@@ -59,6 +63,9 @@ export default function SupplementsPage({ requestApi }) {
   const [searchHistory, setSearchHistory] = useState([]);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [apiCallStartedAt, setApiCallStartedAt] = useState(null);
+  const [apiCallElapsedMs, setApiCallElapsedMs] = useState(0);
+  const [apiCallInFlight, setApiCallInFlight] = useState(false);
   const [error, setError] = useState("");
   const [webcamActive, setWebcamActive] = useState(false);
   const [webcamError, setWebcamError] = useState("");
@@ -73,6 +80,34 @@ export default function SupplementsPage({ requestApi }) {
   const selectedMode = hasSearchInput ? "search" : hasImageInput ? "image" : "none";
   const imageOptionsDisabled = selectedMode === "search";
   const searchOptionsDisabled = selectedMode === "image";
+
+  useEffect(() => {
+    if (!apiCallInFlight || !apiCallStartedAt) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setApiCallElapsedMs(Date.now() - apiCallStartedAt);
+    }, 120);
+    return () => clearInterval(timer);
+  }, [apiCallInFlight, apiCallStartedAt]);
+
+  const beginApiCallTimer = () => {
+    const started = Date.now();
+    setApiCallStartedAt(started);
+    setApiCallElapsedMs(0);
+    setApiCallInFlight(true);
+  };
+
+  const finishApiCallTimer = () => {
+    if (!apiCallStartedAt) {
+      setApiCallInFlight(false);
+      return;
+    }
+    setApiCallElapsedMs(Date.now() - apiCallStartedAt);
+    setApiCallInFlight(false);
+  };
+
+  const formatElapsed = (elapsedMs) => `${(elapsedMs / 1000).toFixed(2)}s`;
 
   const hydrateHistory = async () => {
     try {
@@ -277,9 +312,11 @@ export default function SupplementsPage({ requestApi }) {
     }
 
     setLoading(true);
+    beginApiCallTimer();
     setError("");
 
     try {
+      const clientActionId = buildClientActionId("supplement-image");
       const formData = new FormData();
       if (Platform.OS === "web" && selectedAsset.file) {
         formData.append("photo", selectedAsset.file);
@@ -296,6 +333,7 @@ export default function SupplementsPage({ requestApi }) {
 
       const response = await requestApi("/api/supplements/analyze", {
         method: "POST",
+        headers: { "X-Client-Action-Id": clientActionId },
         body: formData
       });
       if (!response.ok) {
@@ -317,6 +355,7 @@ export default function SupplementsPage({ requestApi }) {
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to analyze the supplement right now.");
     } finally {
+      finishApiCallTimer();
       setLoading(false);
     }
   };
@@ -336,14 +375,19 @@ export default function SupplementsPage({ requestApi }) {
     }
 
     setLoading(true);
+    beginApiCallTimer();
     setError("");
     setSelectedAsset(null);
     setWebcamActive(false);
 
     try {
+      const clientActionId = buildClientActionId("supplement-search");
       const response = await requestApi("/api/supplements/search", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Client-Action-Id": clientActionId
+        },
         body: JSON.stringify({
           supplementName: trimmedQuery,
           conditions: conditions || DEFAULT_CONDITIONS,
@@ -368,6 +412,7 @@ export default function SupplementsPage({ requestApi }) {
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to search supplement right now.");
     } finally {
+      finishApiCallTimer();
       setLoading(false);
     }
   };
@@ -482,6 +527,15 @@ export default function SupplementsPage({ requestApi }) {
               {loading ? "Analyzing..." : selectedMode === "search" ? "Search and analyze supplement" : "Analyze supplement"}
             </Text>
           </Pressable>
+          {apiCallStartedAt ? (
+            <View style={styles.callMetaCard}>
+              <Text style={styles.callMetaText}>Call started: {new Date(apiCallStartedAt).toLocaleTimeString()}</Text>
+              <Text style={styles.callMetaText}>
+                {apiCallInFlight ? "Elapsed (live): " : "Elapsed: "}
+                {formatElapsed(apiCallElapsedMs)}
+              </Text>
+            </View>
+          ) : null}
 
           <AnalysisResult result={result} selectedImageUri={selectedAsset?.uri || ""} selectedImageAspectRatio={selectedImageAspectRatio} />
         </>
@@ -606,6 +660,20 @@ const styles = StyleSheet.create({
   searchButtonText: {
     color: "#ffffff",
     fontWeight: "700"
+  },
+  callMetaCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#f7f3ec",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 2
+  },
+  callMetaText: {
+    color: palette.ink,
+    fontSize: 12,
+    fontWeight: "600"
   },
   clearMiniButton: {
     alignSelf: "flex-start",

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,6 +14,7 @@ from .routes.calorie_routes import router as calorie_router
 from .routes.supplements import router as supplements_router
 from .settings import settings
 
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="GramWIN API",
@@ -36,6 +39,7 @@ app.include_router(supplements_router)
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    logger.info("OpenAI runtime diagnostics: %s", settings.openai_runtime_diagnostics)
 
 
 @app.get("/health")

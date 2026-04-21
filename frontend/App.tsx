@@ -291,8 +291,10 @@ export default function App() {
     return ordered.filter((item) => safeLower(`${safeText(item.claim)} ${safeText(item.summary)}`).includes(query));
   }, [history, historyOrder, historyQuery]);
 
-  async function requestApi(path: string, init?: RequestInit, timeoutMsOverride?: number) {
-    const candidates = buildApiBaseUrls(apiBaseUrl);
+  async function requestApi(path: string, init?: RequestInit, timeoutMsOverride?: number, strictSingleAttempt = false) {
+    const candidates = strictSingleAttempt
+      ? [normalizeApiBaseUrl(apiBaseUrl) || resolveApiBaseUrl()]
+      : buildApiBaseUrls(apiBaseUrl);
     let lastError: Error | null = null;
     const timeoutMs = timeoutMsOverride ?? (path === "/health" ? 1200 : 3500);
 
@@ -577,7 +579,7 @@ export default function App() {
             />
           ) : activeTab === "supplements" ? (
             <SupplementsPage
-              requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000)}
+              requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000, true)}
             />
           ) : (
             <ProfilePage history={history} />

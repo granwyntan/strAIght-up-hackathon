@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
-from openai import OpenAI, RateLimitError
+from openai import APIConnectionError, APIError, APITimeoutError, OpenAI, RateLimitError
 
 from ..database import get_connection
 from ..settings import settings
@@ -24,7 +24,7 @@ DEFAULT_BMI = 22.0
 DEFAULT_ACTIVITY_LEVEL = "moderate"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 CALORIE_ANALYSIS_MODEL = "gpt-5.4-mini"
-OPENAI_RETRY_ATTEMPTS = 4
+OPENAI_RETRY_ATTEMPTS = 3
 OPENAI_RETRY_BASE_SECONDS = 0.8
 ACTIVITY_MULTIPLIER = {
     "sedentary": 1.2,
@@ -38,15 +38,33 @@ _analysis_cache: dict[str, "CalorieCalculationResult"] = {}
 logger = logging.getLogger(__name__)
 
 
-def _response_with_rate_limit_retry(client: OpenAI, *, model: str, input_payload: list[dict]) -> object:
+def _response_with_rate_limit_retry(
+    client: OpenAI,
+    *,
+    model: str,
+    input_payload: list[dict],
+    request_id: str,
+    trigger_source: str,
+) -> object:
     for attempt in range(OPENAI_RETRY_ATTEMPTS):
         try:
-            print("OPENAI CALL ID:", uuid.uuid4())
+            print("OPENAI CALL ID:", request_id)
             print("CALL START", time.time())
-            print(f"[OpenAI API] responses.create model={model} feature=calorie attempt={attempt + 1}")
-            logger.info("OpenAI API call: responses.create model=%s feature=calorie attempt=%s", model, attempt + 1)
-            return client.responses.create(model=model, input=input_payload)
-        except RateLimitError:
+            print(
+                f"[OpenAI API] responses.create model={model} trigger={trigger_source} request_id={request_id} attempt={attempt + 1}"
+            )
+            logger.info(
+                "OpenAI API call: responses.create model=%s trigger=%s request_id=%s attempt=%s",
+                model,
+                trigger_source,
+                request_id,
+                attempt + 1,
+            )
+            response = client.responses.create(model=model, input=input_payload)
+            print(f"SUCCESS RECEIVED request_id={request_id} attempt={attempt + 1}")
+            logger.info("OpenAI API call success: request_id=%s trigger=%s attempt=%s", request_id, trigger_source, attempt + 1)
+            return response
+        except (RateLimitError, APIConnectionError, APITimeoutError, APIError):
             if attempt == OPENAI_RETRY_ATTEMPTS - 1:
                 raise
             delay = OPENAI_RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0.0, 0.35)
@@ -377,7 +395,13 @@ def calculate_calories(
         jpeg_quality=settings.openai_vision_jpeg_quality,
     )
 
-    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_api_base_url)
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_api_base_url,
+        timeout=settings.llm_timeout_seconds,
+        max_retries=0,
+    )
+    request_id = str(uuid.uuid4())
     image_data = base64.b64encode(optimized_bytes).decode("utf-8")
     content_payload: list[dict[str, str]] = [{"type": "input_text", "text": _build_prompt(context)}]
     warning_instructions = _build_medical_warning_instructions(medical_history)
@@ -394,6 +418,8 @@ def calculate_calories(
         response = _response_with_rate_limit_retry(
             client,
             model=CALORIE_ANALYSIS_MODEL,
+            request_id=request_id,
+            trigger_source="calorie_calculate",
             input_payload=[
                 {
                     "role": "user",

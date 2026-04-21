@@ -1,4 +1,6 @@
 import json
+import os
+from hashlib import sha256
 from functools import cached_property
 from pathlib import Path
 
@@ -217,6 +219,33 @@ class Settings(BaseSettings):
 
     def source_weight_for_bucket(self, bucket: str) -> float:
         return self.source_bucket_weights.get(bucket, self.source_tier_config.generalSources.weight)
+
+    @staticmethod
+    def _fingerprint_secret(value: str | None) -> str:
+        if not value:
+            return "missing"
+        return sha256(value.encode("utf-8")).hexdigest()[:12]
+
+    @property
+    def openai_api_key_fingerprint(self) -> str:
+        return self._fingerprint_secret(self.openai_api_key)
+
+    @property
+    def openai_runtime_diagnostics(self) -> dict[str, object]:
+        env_files = [
+            BASE_DIR / ".env",
+            BASE_DIR / ".env.local",
+            BASE_DIR / "backend" / ".env",
+            BASE_DIR / "backend" / ".env.local",
+        ]
+        env_file_presence = {str(path): path.exists() for path in env_files}
+        return {
+            "has_openai_key": bool(self.openai_api_key),
+            "openai_key_fingerprint": self.openai_api_key_fingerprint,
+            "openai_base_url": self.openai_api_base_url,
+            "os_env_has_openai_api_key": bool(os.environ.get("OPENAI_API_KEY")),
+            "env_file_presence": env_file_presence,
+        }
 
 
 settings = Settings()

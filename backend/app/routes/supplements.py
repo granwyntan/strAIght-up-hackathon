@@ -1,8 +1,10 @@
 import logging
 import math
 import re
+import time
+import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile, status
 from openai import RateLimitError
 from pydantic import BaseModel
 
@@ -88,7 +90,19 @@ async def analyze_supplement_endpoint(
     photo: UploadFile = File(...),
     conditions: str = Form(DEFAULT_CONDITIONS),
     goals: str = Form(DEFAULT_GOALS),
+    x_client_action_id: str | None = Header(default=None, alias="X-Client-Action-Id"),
 ) -> SupplementAnalysisResponse:
+    endpoint_request_id = str(uuid.uuid4())
+    print(
+        f"ENDPOINT HIT path=/api/supplements/analyze request_id={endpoint_request_id} client_action_id={x_client_action_id or '-'} ts={time.time()}"
+    )
+    logger.info(
+        "ENDPOINT HIT path=%s request_id=%s client_action_id=%s ts=%s",
+        "/api/supplements/analyze",
+        endpoint_request_id,
+        x_client_action_id or "-",
+        time.time(),
+    )
     image_bytes = await photo.read()
     content_type = (photo.content_type or "").strip().lower()
     if content_type == "image/jpg":
@@ -106,6 +120,7 @@ async def analyze_supplement_endpoint(
             content_type=content_type,
             conditions=conditions,
             goals=goals,
+            request_id=endpoint_request_id,
         )
     except RateLimitError as exc:
         logger.warning("OpenAI rate limit during supplement image analysis: %s", exc)
@@ -134,12 +149,27 @@ async def analyze_supplement_endpoint(
 
 
 @router.post("/search", response_model=SupplementAnalysisResponse)
-def search_supplement_endpoint(payload: SupplementSearchRequest) -> SupplementAnalysisResponse:
+def search_supplement_endpoint(
+    payload: SupplementSearchRequest,
+    x_client_action_id: str | None = Header(default=None, alias="X-Client-Action-Id"),
+) -> SupplementAnalysisResponse:
+    endpoint_request_id = str(uuid.uuid4())
+    print(
+        f"ENDPOINT HIT path=/api/supplements/search request_id={endpoint_request_id} client_action_id={x_client_action_id or '-'} ts={time.time()}"
+    )
+    logger.info(
+        "ENDPOINT HIT path=%s request_id=%s client_action_id=%s ts=%s",
+        "/api/supplements/search",
+        endpoint_request_id,
+        x_client_action_id or "-",
+        time.time(),
+    )
     try:
         result = analyze_supplement_by_name(
             supplement_name=payload.supplementName,
             conditions=payload.conditions,
             goals=payload.goals,
+            request_id=endpoint_request_id,
         )
     except RateLimitError as exc:
         logger.warning("OpenAI rate limit during supplement text search: %s", exc)

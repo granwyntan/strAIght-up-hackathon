@@ -7,9 +7,11 @@ import random
 import re
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
+from threading import Lock
 
-from openai import OpenAI, RateLimitError
+from openai import APIConnectionError, APIError, APITimeoutError, OpenAI, RateLimitError
 
 from ..settings import settings
 from .image_preprocess import optimize_image_for_openai
@@ -21,23 +23,165 @@ DEFAULT_GOALS = "Reduce belly fat, Improve cognitive power"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 SUPPLEMENT_ANALYSIS_MODEL = "gpt-5.4-mini"
 SUPPLEMENT_INFOGRAPHIC_MODEL = "gpt-image-1"
-OPENAI_RETRY_ATTEMPTS = 4
+OPENAI_RETRY_ATTEMPTS = 3
 OPENAI_RETRY_BASE_SECONDS = 0.8
 
 _analysis_cache: dict[str, "SupplementAnalysisResult"] = {}
 _infographic_cache: dict[str, str] = {}
 logger = logging.getLogger(__name__)
+_RECENT_ENTRY_LIMIT = 4096
+_recent_retry_wrapper_entries: deque[str] = deque()
+_recent_retry_wrapper_entry_set: set[str] = set()
+_recent_service_entries: deque[str] = deque()
+_recent_service_entry_set: set[str] = set()
+_entry_lock = Lock()
 
 
-def _response_with_rate_limit_retry(client: OpenAI, *, model: str, input_payload: list[dict]) -> object:
+def _track_recent_entry(entry_key: str, *, entry_type: str) -> bool:
+    with _entry_lock:
+        if entry_type == "retry_wrapper":
+            entries = _recent_retry_wrapper_entries
+            entry_set = _recent_retry_wrapper_entry_set
+        else:
+            entries = _recent_service_entries
+            entry_set = _recent_service_entry_set
+
+        duplicate = entry_key in entry_set
+        if not duplicate:
+            entries.append(entry_key)
+            entry_set.add(entry_key)
+            if len(entries) > _RECENT_ENTRY_LIMIT:
+                oldest = entries.popleft()
+                entry_set.discard(oldest)
+        return duplicate
+
+
+def _extract_openai_error_code(exc: Exception) -> str:
+    direct_code = getattr(exc, "code", None)
+    if isinstance(direct_code, str) and direct_code.strip():
+        return direct_code.strip().lower()
+
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        nested = body.get("error")
+        if isinstance(nested, dict):
+            nested_code = nested.get("code")
+            if isinstance(nested_code, str) and nested_code.strip():
+                return nested_code.strip().lower()
+        body_code = body.get("code")
+        if isinstance(body_code, str) and body_code.strip():
+            return body_code.strip().lower()
+
+    message = str(exc).lower()
+    if "insufficient_quota" in message:
+        return "insufficient_quota"
+    return ""
+
+
+def _is_insufficient_quota_error(exc: Exception) -> bool:
+    return _extract_openai_error_code(exc) == "insufficient_quota"
+
+
+def _is_retryable_api_status_error(exc: APIError) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    return isinstance(status_code, int) and status_code >= 500
+
+
+def _response_with_rate_limit_retry(
+    client: OpenAI,
+    *,
+    model: str,
+    input_payload: list[dict],
+    request_id: str,
+    trigger_source: str,
+) -> object:
+    wrapper_entry_key = f"{request_id}|{trigger_source}"
+    duplicate_wrapper_entry = _track_recent_entry(wrapper_entry_key, entry_type="retry_wrapper")
+    print(
+        f"OPENAI RETRY WRAPPER ENTERED request_id={request_id} trigger={trigger_source} duplicate_entry={duplicate_wrapper_entry} ts={time.time()}"
+    )
+    logger.info(
+        "OPENAI RETRY WRAPPER ENTERED request_id=%s trigger=%s duplicate_entry=%s ts=%s",
+        request_id,
+        trigger_source,
+        duplicate_wrapper_entry,
+        time.time(),
+    )
+    if duplicate_wrapper_entry:
+        logger.error(
+            "Duplicate retry wrapper entry detected for request_id=%s trigger=%s; upstream re-invocation suspected.",
+            request_id,
+            trigger_source,
+        )
+        raise RuntimeError(
+            f"Duplicate retry wrapper entry blocked for request_id={request_id} trigger={trigger_source}."
+        )
+
     for attempt in range(OPENAI_RETRY_ATTEMPTS):
         try:
-            print("OPENAI CALL ID:", uuid.uuid4())
+            print("OPENAI CALL ID:", request_id)
             print("CALL START", time.time())
-            print(f"[OpenAI API] responses.create model={model} feature=supplements attempt={attempt + 1}")
-            logger.info("OpenAI API call: responses.create model=%s feature=supplements attempt=%s", model, attempt + 1)
-            return client.responses.create(model=model, input=input_payload)
-        except RateLimitError:
+            print(
+                f"[OpenAI API] responses.create model={model} trigger={trigger_source} request_id={request_id} attempt={attempt + 1}"
+            )
+            logger.info(
+                "OpenAI API call: responses.create model=%s trigger=%s request_id=%s attempt=%s",
+                model,
+                trigger_source,
+                request_id,
+                attempt + 1,
+            )
+            response = client.responses.create(model=model, input=input_payload)
+            print(f"SUCCESS RECEIVED request_id={request_id} attempt={attempt + 1}")
+            logger.info("OpenAI API call success: request_id=%s trigger=%s attempt=%s", request_id, trigger_source, attempt + 1)
+            return response
+        except RateLimitError as exc:
+            error_code = _extract_openai_error_code(exc)
+            logger.warning(
+                "OpenAI API call failed: request_id=%s trigger=%s attempt=%s error_type=%s error=%s",
+                request_id,
+                trigger_source,
+                attempt + 1,
+                type(exc).__name__,
+                str(exc),
+            )
+            if _is_insufficient_quota_error(exc):
+                logger.error(
+                    "Non-retryable OpenAI quota error: request_id=%s trigger=%s attempt=%s error_code=%s",
+                    request_id,
+                    trigger_source,
+                    attempt + 1,
+                    error_code or "-",
+                )
+                raise
+            if attempt == OPENAI_RETRY_ATTEMPTS - 1:
+                raise
+            delay = OPENAI_RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0.0, 0.35)
+            time.sleep(delay)
+        except (APIConnectionError, APITimeoutError) as exc:
+            logger.warning(
+                "OpenAI API transient connection failure: request_id=%s trigger=%s attempt=%s error_type=%s error=%s",
+                request_id,
+                trigger_source,
+                attempt + 1,
+                type(exc).__name__,
+                str(exc),
+            )
+            if attempt == OPENAI_RETRY_ATTEMPTS - 1:
+                raise
+            delay = OPENAI_RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0.0, 0.35)
+            time.sleep(delay)
+        except APIError as exc:
+            logger.warning(
+                "OpenAI API status failure: request_id=%s trigger=%s attempt=%s status_code=%s error=%s",
+                request_id,
+                trigger_source,
+                attempt + 1,
+                getattr(exc, "status_code", None),
+                str(exc),
+            )
+            if not _is_retryable_api_status_error(exc):
+                raise
             if attempt == OPENAI_RETRY_ATTEMPTS - 1:
                 raise
             delay = OPENAI_RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0.0, 0.35)
@@ -162,10 +306,18 @@ def _build_infographic_prompt(analysis_text: str, conditions: str, goals: str) -
 
 def _generate_infographic_data_url(client: OpenAI, analysis_text: str, conditions: str, goals: str) -> str:
     try:
-        print("OPENAI CALL ID:", uuid.uuid4())
+        request_id = str(uuid.uuid4())
+        print("OPENAI CALL ID:", request_id)
         print("CALL START", time.time())
-        print(f"[OpenAI API] images.generate model={SUPPLEMENT_INFOGRAPHIC_MODEL} feature=supplements-infographic")
-        logger.info("OpenAI API call: images.generate model=%s", SUPPLEMENT_INFOGRAPHIC_MODEL)
+        print(
+            f"[OpenAI API] images.generate model={SUPPLEMENT_INFOGRAPHIC_MODEL} trigger=supplement_infographic request_id={request_id} attempt=1"
+        )
+        logger.info(
+            "OpenAI API call: images.generate model=%s trigger=%s request_id=%s attempt=1",
+            SUPPLEMENT_INFOGRAPHIC_MODEL,
+            "supplement_infographic",
+            request_id,
+        )
         result = client.images.generate(
             model=SUPPLEMENT_INFOGRAPHIC_MODEL,
             prompt=_build_infographic_prompt(analysis_text, conditions, goals),
@@ -178,7 +330,27 @@ def _generate_infographic_data_url(client: OpenAI, analysis_text: str, condition
         return ""
 
 
-def analyze_supplement(image_bytes: bytes, content_type: str, conditions: str, goals: str) -> SupplementAnalysisResult:
+def analyze_supplement(
+    image_bytes: bytes,
+    content_type: str,
+    conditions: str,
+    goals: str,
+    request_id: str | None = None,
+) -> SupplementAnalysisResult:
+    request_id = request_id or str(uuid.uuid4())
+    service_entry_key = f"{request_id}|analyze_supplement"
+    duplicate_service_entry = _track_recent_entry(service_entry_key, entry_type="service")
+    print(f"OPENAI FUNCTION ENTERED fn=analyze_supplement request_id={request_id} ts={time.time()}")
+    logger.info(
+        "OPENAI FUNCTION ENTERED fn=%s request_id=%s duplicate_entry=%s ts=%s",
+        "analyze_supplement",
+        request_id,
+        duplicate_service_entry,
+        time.time(),
+    )
+    if duplicate_service_entry:
+        logger.error("Duplicate service entry detected fn=%s request_id=%s", "analyze_supplement", request_id)
+        raise RuntimeError(f"Duplicate service entry blocked for request_id={request_id} fn=analyze_supplement.")
     if not settings.openai_api_key:
         raise RuntimeError("Supplement analysis is unavailable because OPENAI_API_KEY is not configured.")
     if not image_bytes:
@@ -201,13 +373,19 @@ def analyze_supplement(image_bytes: bytes, content_type: str, conditions: str, g
         jpeg_quality=settings.openai_vision_jpeg_quality,
     )
 
-    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_api_base_url)
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_api_base_url,
+        timeout=settings.llm_timeout_seconds,
+        max_retries=0,
+    )
     image_data = base64.b64encode(optimized_bytes).decode("utf-8")
-
     try:
         response = _response_with_rate_limit_retry(
             client,
             model=SUPPLEMENT_ANALYSIS_MODEL,
+            request_id=request_id,
+            trigger_source="supplement_image_analyze",
             input_payload=[
                 {
                     "role": "user",
@@ -250,7 +428,26 @@ def analyze_supplement(image_bytes: bytes, content_type: str, conditions: str, g
     return result
 
 
-def analyze_supplement_by_name(supplement_name: str, conditions: str, goals: str) -> SupplementAnalysisResult:
+def analyze_supplement_by_name(
+    supplement_name: str,
+    conditions: str,
+    goals: str,
+    request_id: str | None = None,
+) -> SupplementAnalysisResult:
+    request_id = request_id or str(uuid.uuid4())
+    service_entry_key = f"{request_id}|analyze_supplement_by_name"
+    duplicate_service_entry = _track_recent_entry(service_entry_key, entry_type="service")
+    print(f"OPENAI FUNCTION ENTERED fn=analyze_supplement_by_name request_id={request_id} ts={time.time()}")
+    logger.info(
+        "OPENAI FUNCTION ENTERED fn=%s request_id=%s duplicate_entry=%s ts=%s",
+        "analyze_supplement_by_name",
+        request_id,
+        duplicate_service_entry,
+        time.time(),
+    )
+    if duplicate_service_entry:
+        logger.error("Duplicate service entry detected fn=%s request_id=%s", "analyze_supplement_by_name", request_id)
+        raise RuntimeError(f"Duplicate service entry blocked for request_id={request_id} fn=analyze_supplement_by_name.")
     normalized_name = supplement_name.strip()
     if not normalized_name:
         raise ValueError("Please enter a supplement name.")
@@ -265,11 +462,18 @@ def analyze_supplement_by_name(supplement_name: str, conditions: str, goals: str
     if cached is not None:
         return cached
 
-    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_api_base_url)
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_api_base_url,
+        timeout=settings.llm_timeout_seconds,
+        max_retries=0,
+    )
     try:
         response = _response_with_rate_limit_retry(
             client,
             model=SUPPLEMENT_ANALYSIS_MODEL,
+            request_id=request_id,
+            trigger_source="supplement_text_search",
             input_payload=[
                 {
                     "role": "user",
