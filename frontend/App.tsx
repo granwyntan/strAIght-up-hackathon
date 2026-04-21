@@ -20,6 +20,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import CaloriesPage from "./src/pages/CaloriesPage";
+import ProfilePage from "./src/pages/ProfilePage";
 import SupplementsPage from "./src/pages/SupplementsPage";
 
 import {
@@ -204,13 +205,6 @@ const medicationLogs = [
   { title: "Vitamin D3", subtitle: "1 capsule · with breakfast", time: "08:15", tone: "lime" as Tone, icon: "medicine" as IconKind },
   { title: "Omega-3", subtitle: "2 softgels · with lunch", time: "13:10", tone: "aqua" as Tone, icon: "medicine" as IconKind },
   { title: "Cetirizine", subtitle: "10 mg · evening as needed", time: "21:00", tone: "blue" as Tone, icon: "medicine" as IconKind }
-];
-
-const profileSections = [
-  { title: "Health profile", body: "Aly Tan, 29. Female. 168 cm, 61 kg. Light exercise 4 times weekly. Focused on sleep quality, skin health, and energy stability." },
-  { title: "Conditions and flags", body: "Mild seasonal allergies, occasional eczema flares, family history of hypertension. No diabetes, no known cardiovascular disease." },
-  { title: "Current routine", body: "Breakfast around 8 AM, lunch around 1 PM, 2 cups of coffee daily, 7 to 8 hours sleep target, 10,000-step weekly average goal." },
-  { title: "Medications and supplements", body: "Cetirizine as needed, Vitamin D3 daily, Omega-3 daily, magnesium glycinate occasionally for sleep." }
 ];
 
 const pipelineStageMeta: Array<{ key: string; title: string; icon: IconKind }> = [
@@ -536,7 +530,12 @@ export default function App() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor={palette.background} />
       <View style={styles.appShell}>
-        <ScrollView style={styles.screenScroller} contentContainerStyle={styles.screenContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.screenScroller}
+          contentContainerStyle={styles.screenContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <TopBar brand={bootstrap.brand.name} tagline={bootstrap.brand.tagline} />
 
           {activeTab === "home" ? (
@@ -574,14 +573,14 @@ export default function App() {
             />
           ) : activeTab === "nutrition" ? (
             <CaloriesPage
-              requestApi={(path, init) => requestApi(path, init, 120000)}
+              requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000)}
             />
           ) : activeTab === "supplements" ? (
             <SupplementsPage
-              requestApi={(path, init) => requestApi(path, init, 180000)}
+              requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000)}
             />
           ) : (
-            <ProfileScreen history={history} />
+            <ProfilePage history={history} />
           )}
         </ScrollView>
 
@@ -1343,35 +1342,6 @@ function PlaceholderTab({
           <Text style={styles.infoCardTitle}>Planned experience</Text>
           <Text style={styles.infoCardBody}>This section is scaffolded so we can expand it without disturbing the consultant workflow.</Text>
         </View>
-      </View>
-    </View>
-  );
-}
-
-function ProfileScreen({ history }: { history: InvestigationSummary[] }) {
-  const completedCount = history.filter((item) => item.status === "completed").length;
-  const latestScore = history.find((item) => item.overallScore !== null)?.overallScore;
-
-  return (
-    <View style={styles.pageStack}>
-      <View style={styles.heroPanel}>
-        <Chip label="Profile" tone="blue" />
-        <Text style={styles.heroTitle}>Personal health profile</Text>
-        <Text style={styles.heroSubtitle}>Dummy profile data for the premium app shell: useful context, everyday routines, and the kind of health details that could guide future personalization.</Text>
-        <View style={styles.statsRow}>
-          <MetricTile label="Saved Runs" value={String(history.length)} tone="blue" />
-          <MetricTile label="Completed" value={String(completedCount)} tone="lime" />
-          <MetricTile label="Latest Score" value={latestScore !== undefined && latestScore !== null ? String(latestScore) : "--"} tone="aqua" />
-        </View>
-      </View>
-
-      <View style={styles.cardStack}>
-        {profileSections.map((section, index) => (
-          <View key={section.title} style={[styles.infoCard, index % 3 === 0 ? toneStyles.blue.soft : index % 3 === 1 ? toneStyles.aqua.soft : toneStyles.lime.soft]}>
-            <Text style={styles.infoCardTitle}>{section.title}</Text>
-            <Text style={styles.infoCardBody}>{section.body}</Text>
-          </View>
-        ))}
       </View>
     </View>
   );

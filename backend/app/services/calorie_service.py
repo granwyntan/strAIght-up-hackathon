@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import random
 import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
 from ..database import get_connection
 from ..settings import settings
+from .image_preprocess import optimize_image_for_openai
 
 
 ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
@@ -18,7 +21,9 @@ DEFAULT_AGE = 25.0
 DEFAULT_BMI = 22.0
 DEFAULT_ACTIVITY_LEVEL = "moderate"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-CALORIE_ANALYSIS_MODEL = "gpt-4.1-mini"
+CALORIE_ANALYSIS_MODEL = "gpt-5.4-mini"
+OPENAI_RETRY_ATTEMPTS = 4
+OPENAI_RETRY_BASE_SECONDS = 0.8
 ACTIVITY_MULTIPLIER = {
     "sedentary": 1.2,
     "light": 1.375,
@@ -28,6 +33,17 @@ ACTIVITY_MULTIPLIER = {
 }
 
 _analysis_cache: dict[str, "CalorieCalculationResult"] = {}
+
+
+def _response_with_rate_limit_retry(client: OpenAI, *, model: str, input_payload: list[dict]) -> object:
+    for attempt in range(OPENAI_RETRY_ATTEMPTS):
+        try:
+            return client.responses.create(model=model, input=input_payload)
+        except RateLimitError:
+            if attempt == OPENAI_RETRY_ATTEMPTS - 1:
+                raise
+            delay = OPENAI_RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0.0, 0.35)
+            time.sleep(delay)
 
 
 @dataclass(slots=True)
@@ -120,9 +136,13 @@ def _build_cache_key(
     sex: str | None,
     weight_kg: float | None,
     height_cm: float | None,
+    medical_history: str | None,
 ) -> str:
     digest = hashlib.sha256(image_bytes).hexdigest()
-    return f"{digest}|{age:.2f}|{bmi:.2f}|{activity_level}|{sex or ''}|{weight_kg or ''}|{height_cm or ''}"
+    return (
+        f"{digest}|{age:.2f}|{bmi:.2f}|{activity_level}|{sex or ''}|{weight_kg or ''}|{height_cm or ''}|"
+        f"{(medical_history or '').strip().lower()}"
+    )
 
 
 def _estimate_daily_target_from_bmi(age: float, bmi: float) -> tuple[str, int]:
@@ -212,6 +232,20 @@ def _build_prompt(context: CalorieContext) -> str:
     )
 
 
+def _build_medical_warning_instructions(medical_history: str | None) -> str:
+    normalized = (medical_history or "").strip()
+    if not normalized:
+        return ""
+    return (
+        "Patient medical history and restrictions:\n"
+        f"{normalized}\n\n"
+        "Check whether any visible food items conflict with this medical history. "
+        "If allergies are present, do not recommend consuming allergen-containing foods. "
+        "If there is a meaningful risk or restriction, add a short warning in the Recommendation section using a bullet that starts with 'Warning:'. "
+        "If there is no meaningful concern, do not mention warnings or restrictions at all.\n\n"
+    )
+
+
 def _parse_sections(markdown: str) -> list[CalorieSection]:
     sections: list[CalorieSection] = []
     heading_pattern = re.compile(r"^\s*##\s+(.+?)\s*$")
@@ -283,6 +317,7 @@ def calculate_calories(
     height_cm: str | None,
     activity_level: str | None,
     sex: str | None,
+    medical_history: str | None = None,
 ) -> CalorieCalculationResult:
     if not settings.openai_api_key:
         raise RuntimeError("Calorie calculator is unavailable because OPENAI_API_KEY is not configured.")
@@ -323,23 +358,39 @@ def calculate_calories(
         sex=parsed_sex,
         weight_kg=parsed_weight_kg,
         height_cm=parsed_height_cm,
+        medical_history=medical_history,
     )
     cached = _analysis_cache.get(cache_key)
     if cached is not None:
         return cached
 
+    optimized_bytes, optimized_content_type = optimize_image_for_openai(
+        image_bytes,
+        max_dimension=settings.openai_vision_max_dimension,
+        jpeg_quality=settings.openai_vision_jpeg_quality,
+    )
+
     client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_api_base_url)
-    image_data = base64.b64encode(image_bytes).decode("utf-8")
+    image_data = base64.b64encode(optimized_bytes).decode("utf-8")
+    content_payload: list[dict[str, str]] = [{"type": "input_text", "text": _build_prompt(context)}]
+    warning_instructions = _build_medical_warning_instructions(medical_history)
+    if warning_instructions:
+        content_payload.append({"type": "input_text", "text": warning_instructions})
+    content_payload.append(
+        {
+            "type": "input_image",
+            "image_url": f"data:{optimized_content_type};base64,{image_data}",
+            "detail": settings.openai_vision_detail_normalized,
+        }
+    )
     try:
-        response = client.responses.create(
+        response = _response_with_rate_limit_retry(
+            client,
             model=CALORIE_ANALYSIS_MODEL,
-            input=[
+            input_payload=[
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": _build_prompt(context)},
-                        {"type": "input_image", "image_url": f"data:{content_type};base64,{image_data}"},
-                    ],
+                    "content": content_payload,
                 }
             ],
         )

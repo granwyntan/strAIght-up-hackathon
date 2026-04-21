@@ -1,5 +1,5 @@
 import React from "react";
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { palette } from "../../data";
 
@@ -13,9 +13,11 @@ export default function ImageUpload({
   loading,
   error,
   showCameraButton = true,
+  disableImageOptions = false,
+  clearImageSelectionLabel = "Clear image",
+  onClearImageSelection,
   onCaptureImage,
   onPickImage,
-  onAnalyze
 }) {
   return (
     <View style={styles.card}>
@@ -23,14 +25,20 @@ export default function ImageUpload({
       <Text style={styles.cardBody}>Pick a product label photo and we will evaluate ingredient fit, risks, and whether it matches your goals.</Text>
 
       {showCameraButton ? (
-        <Pressable style={styles.cameraButton} onPress={onCaptureImage} disabled={loading}>
+        <Pressable style={[styles.cameraButton, (loading || disableImageOptions) && styles.buttonDisabled]} onPress={onCaptureImage} disabled={loading || disableImageOptions}>
           <Text style={styles.cameraButtonText}>Use webcam / camera</Text>
         </Pressable>
       ) : null}
 
-      <Pressable style={styles.pickButton} onPress={onPickImage} disabled={loading}>
+      <Pressable style={[styles.pickButton, (loading || disableImageOptions) && styles.buttonDisabled]} onPress={onPickImage} disabled={loading || disableImageOptions}>
         <Text style={styles.pickButtonText}>{selectedImageUri ? "Replace image" : "Choose image"}</Text>
       </Pressable>
+
+      {selectedImageUri && typeof onClearImageSelection === "function" ? (
+        <Pressable style={styles.clearMiniButton} onPress={onClearImageSelection} disabled={loading}>
+          <Text style={styles.clearMiniButtonText}>{clearImageSelectionLabel}</Text>
+        </Pressable>
+      ) : null}
 
       {selectedImageUri ? <Image source={{ uri: selectedImageUri }} style={[styles.previewImage, { aspectRatio: selectedImageAspectRatio || 1.4 }]} resizeMode="contain" /> : null}
 
@@ -59,10 +67,6 @@ export default function ImageUpload({
           multiline
         />
       </View>
-
-      <Pressable style={[styles.analyzeButton, (loading || !selectedImageUri) && styles.analyzeButtonDisabled]} onPress={onAnalyze} disabled={loading || !selectedImageUri}>
-        {loading ? <ActivityIndicator color={palette.surface} size="small" /> : <Text style={styles.analyzeButtonText}>Analyze supplement</Text>}
-      </Pressable>
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>
@@ -95,6 +99,9 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 14,
     alignItems: "center"
+  },
+  buttonDisabled: {
+    opacity: 0.5
   },
   cameraButton: {
     borderRadius: 12,
@@ -140,18 +147,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     textAlignVertical: "top"
   },
-  analyzeButton: {
-    marginTop: 4,
-    borderRadius: 12,
-    backgroundColor: palette.blue,
-    paddingVertical: 12,
-    alignItems: "center"
+  clearMiniButton: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 5
   },
-  analyzeButtonDisabled: {
-    opacity: 0.55
-  },
-  analyzeButtonText: {
-    color: palette.surface,
+  clearMiniButtonText: {
+    color: palette.ink,
+    fontSize: 12,
     fontWeight: "700"
   },
   errorText: {

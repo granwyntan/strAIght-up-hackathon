@@ -6,6 +6,7 @@ import { palette } from "../data";
 import CalorieForm from "../components/calories/CalorieForm";
 import CalorieResult from "../components/calories/CalorieResult";
 import CalorieHistoryPage from "./CalorieHistoryPage";
+import { loadProfile } from "../storage/profileStorage";
 
 const DEFAULT_VALUES = {
   age: "25",
@@ -13,8 +14,20 @@ const DEFAULT_VALUES = {
   weightKg: "",
   heightCm: "",
   activityLevel: "moderate",
-  sex: "female"
+  sex: "female",
+  medicalHistory: ""
 };
+
+function mapProfileGenderToSex(gender) {
+  const normalized = (gender || "").trim().toLowerCase();
+  if (normalized === "male") {
+    return "male";
+  }
+  if (normalized === "female") {
+    return "female";
+  }
+  return "";
+}
 
 async function readApiError(response, fallback) {
   try {
@@ -96,6 +109,32 @@ export default function CaloriesPage({ requestApi }) {
       setValues((previous) => ({ ...previous, bmi: nextBmi }));
     }
   }, [values.weightKg, values.heightCm, values.bmi]);
+
+  useEffect(() => {
+    let mounted = true;
+    const hydrateFromProfile = async () => {
+      try {
+        const profile = await loadProfile();
+        if (!mounted) {
+          return;
+        }
+        setValues((previous) => ({
+          ...previous,
+          age: profile.age || previous.age,
+          weightKg: profile.weight || previous.weightKg,
+          heightCm: profile.height || previous.heightCm,
+          sex: mapProfileGenderToSex(profile.gender) || previous.sex,
+          medicalHistory: profile.medicalHistory || profile.medicalConditions || previous.medicalHistory
+        }));
+      } catch (error) {
+        console.warn("Unable to prefill calorie inputs from profile", error);
+      }
+    };
+    void hydrateFromProfile();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (Platform.OS === "web" && webcamActive && videoRef.current && streamRef.current) {
@@ -305,6 +344,7 @@ export default function CaloriesPage({ requestApi }) {
       formData.append("heightCm", values.heightCm);
       formData.append("activityLevel", values.activityLevel);
       formData.append("sex", values.sex);
+      formData.append("medicalHistory", values.medicalHistory);
 
       const response = await requestApi("/api/calories/calculate", {
         method: "POST",

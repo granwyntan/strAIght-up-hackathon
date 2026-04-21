@@ -1,7 +1,7 @@
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
-from ..services.supplement_analyzer import SupplementSection, analyze_supplement
+from ..services.supplement_analyzer import SupplementSection, analyze_supplement, analyze_supplement_by_name
 
 
 DEFAULT_CONDITIONS = "NIL"
@@ -25,6 +25,12 @@ class SupplementAnalysisResponse(BaseModel):
     analysisText: str
     sections: list[SupplementSectionResponse]
     infographicImageDataUrl: str
+
+
+class SupplementSearchRequest(BaseModel):
+    supplementName: str
+    conditions: str = DEFAULT_CONDITIONS
+    goals: str = DEFAULT_GOALS
 
 
 def _to_section_payload(section: SupplementSection) -> SupplementSectionResponse:
@@ -61,6 +67,28 @@ async def analyze_supplement_endpoint(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive fallback
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Supplement analysis failed.") from exc
+
+    return SupplementAnalysisResponse(
+        analysisText=result.analysis_text,
+        sections=[_to_section_payload(item) for item in result.sections],
+        infographicImageDataUrl=result.infographic_image_data_url,
+    )
+
+
+@router.post("/search", response_model=SupplementAnalysisResponse)
+def search_supplement_endpoint(payload: SupplementSearchRequest) -> SupplementAnalysisResponse:
+    try:
+        result = analyze_supplement_by_name(
+            supplement_name=payload.supplementName,
+            conditions=payload.conditions,
+            goals=payload.goals,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Supplement search failed.") from exc
 
     return SupplementAnalysisResponse(
         analysisText=result.analysis_text,

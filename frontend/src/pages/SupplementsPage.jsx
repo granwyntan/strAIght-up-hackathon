@@ -1,13 +1,34 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import { palette } from "../data";
 import ImageUpload from "../components/supplements/ImageUpload";
 import AnalysisResult from "../components/supplements/AnalysisResult";
+import { loadProfile } from "../storage/profileStorage";
+import {
+  addSupplementHistoryEntry,
+  clearSupplementHistory,
+  loadSupplementHistory,
+  removeSupplementHistoryEntry
+} from "../storage/supplementSearchStorage";
 
 const DEFAULT_CONDITIONS = "NIL";
 const DEFAULT_GOALS = "Reduce belly fat, Improve cognitive power";
+
+function composeConditionsFromProfile(profile) {
+  const lines = [];
+  if (profile.medicalConditions.trim()) {
+    lines.push(`Medical conditions: ${profile.medicalConditions.trim()}`);
+  }
+  if (profile.medicalHistory.trim()) {
+    lines.push(`Medical history: ${profile.medicalHistory.trim()}`);
+  }
+  if (profile.medicationsOrSupplements.trim()) {
+    lines.push(`Current medications/supplements: ${profile.medicationsOrSupplements.trim()}`);
+  }
+  return lines.join("\n");
+}
 
 async function readApiError(response, fallback) {
   try {
@@ -33,6 +54,9 @@ export default function SupplementsPage({ requestApi }) {
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [conditions, setConditions] = useState(DEFAULT_CONDITIONS);
   const [goals, setGoals] = useState(DEFAULT_GOALS);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeSubPage, setActiveSubPage] = useState("analyzer");
+  const [searchHistory, setSearchHistory] = useState([]);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -43,6 +67,21 @@ export default function SupplementsPage({ requestApi }) {
   const streamRef = useRef(null);
   const videoRef = useRef(null);
   const objectUrlRef = useRef(null);
+  const trimmedSearchQuery = searchQuery.trim();
+  const hasImageInput = Boolean(selectedAsset) || webcamActive;
+  const hasSearchInput = Boolean(trimmedSearchQuery);
+  const selectedMode = hasSearchInput ? "search" : hasImageInput ? "image" : "none";
+  const imageOptionsDisabled = selectedMode === "search";
+  const searchOptionsDisabled = selectedMode === "image";
+
+  const hydrateHistory = async () => {
+    try {
+      const entries = await loadSupplementHistory();
+      setSearchHistory(entries);
+    } catch (storageError) {
+      console.warn("Unable to load supplement history", storageError);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -65,7 +104,39 @@ export default function SupplementsPage({ requestApi }) {
     }
   }, [webcamActive]);
 
+  useEffect(() => {
+    let mounted = true;
+    const hydrateFromProfile = async () => {
+      try {
+        const profile = await loadProfile();
+        if (!mounted) {
+          return;
+        }
+        const profileConditions = composeConditionsFromProfile(profile);
+        if (profileConditions) {
+          setConditions(profileConditions);
+        }
+        if (profile.goals.trim()) {
+          setGoals(profile.goals.trim());
+        }
+      } catch (error) {
+        console.warn("Unable to prefill supplement inputs from profile", error);
+      }
+    };
+    void hydrateFromProfile();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    void hydrateHistory();
+  }, []);
+
   const pickImage = async () => {
+    if (imageOptionsDisabled) {
+      return;
+    }
     setError("");
 
     if (Platform.OS !== "web") {
@@ -89,6 +160,9 @@ export default function SupplementsPage({ requestApi }) {
   };
 
   const captureImage = async () => {
+    if (imageOptionsDisabled) {
+      return;
+    }
     setError("");
     setWebcamError("");
 
@@ -138,6 +212,15 @@ export default function SupplementsPage({ requestApi }) {
       streamRef.current = null;
     }
     setWebcamActive(false);
+  };
+
+  const clearImageSelection = () => {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+    closeWebcam();
+    setSelectedAsset(null);
   };
 
   const captureWebcamFrame = async () => {
@@ -221,11 +304,94 @@ export default function SupplementsPage({ requestApi }) {
 
       const payload = await response.json();
       setResult(payload);
+      const queryLabel =
+        (selectedAsset?.fileName && selectedAsset.fileName.trim()) ||
+        (selectedAsset?.uri ? "Uploaded supplement image" : "Supplement image");
+      const updatedHistory = await addSupplementHistoryEntry({
+        id: `image-${Date.now()}`,
+        query: queryLabel,
+        mode: "image",
+        searchedAt: new Date().toISOString()
+      });
+      setSearchHistory(updatedHistory);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to analyze the supplement right now.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const searchSupplementByName = async () => {
+    const trimmedQuery = searchQuery.trim();
+    if (!trimmedQuery) {
+      setError("Please enter a supplement name to search.");
+      return;
+    }
+    if (searchOptionsDisabled) {
+      return;
+    }
+    if (!canCallApi) {
+      setError("Supplements API is not configured in this screen.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setSelectedAsset(null);
+    setWebcamActive(false);
+
+    try {
+      const response = await requestApi("/api/supplements/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supplementName: trimmedQuery,
+          conditions: conditions || DEFAULT_CONDITIONS,
+          goals: goals || DEFAULT_GOALS
+        })
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "Supplement search failed."));
+      }
+      const payload = await response.json();
+      setResult(payload);
+      const updatedHistory = await addSupplementHistoryEntry({
+        id: `text-${Date.now()}`,
+        query: trimmedQuery,
+        mode: "text",
+        searchedAt: new Date().toISOString()
+      });
+      setSearchHistory(updatedHistory);
+      if (activeSubPage !== "analyzer") {
+        setActiveSubPage("analyzer");
+      }
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : "Unable to search supplement right now.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearOneHistoryItem = async (entryId) => {
+    const updated = await removeSupplementHistoryEntry(entryId);
+    setSearchHistory(updated);
+  };
+
+  const clearAllHistoryItems = async () => {
+    const updated = await clearSupplementHistory();
+    setSearchHistory(updated);
+  };
+
+  const clearSearchInput = () => {
+    setSearchQuery("");
+  };
+
+  const formatDateTime = (isoValue) => {
+    const date = new Date(isoValue);
+    if (Number.isNaN(date.getTime())) {
+      return isoValue;
+    }
+    return date.toLocaleString();
   };
 
   return (
@@ -236,47 +402,113 @@ export default function SupplementsPage({ requestApi }) {
         <Text style={styles.heroSubtitle}>Upload a supplement label to review key ingredients, expected benefits, contraindications, and goal fit in one guided report.</Text>
       </View>
 
-      {Platform.OS === "web" ? (
-        <View style={styles.webcamPanel}>
-          <Text style={styles.webcamTitle}>Webcam capture</Text>
-          <Text style={styles.webcamBody}>Use your browser webcam for instant supplement scanning.</Text>
-          {webcamActive ? (
-            <>
-              <video ref={videoRef} autoPlay playsInline muted style={StyleSheet.flatten(styles.webcamVideo)} />
-              <View style={styles.webcamButtonRow}>
-                <Pressable style={styles.webcamButton} onPress={captureWebcamFrame}>
-                  <Text style={styles.webcamButtonText}>Capture frame</Text>
+      <View style={styles.segmentRow}>
+        <Pressable style={[styles.segmentButton, activeSubPage === "analyzer" && styles.segmentButtonSelected]} onPress={() => setActiveSubPage("analyzer")}>
+          <Text style={[styles.segmentText, activeSubPage === "analyzer" && styles.segmentTextSelected]}>Analyzer</Text>
+        </Pressable>
+        <Pressable style={[styles.segmentButton, activeSubPage === "history" && styles.segmentButtonSelected]} onPress={() => setActiveSubPage("history")}>
+          <Text style={[styles.segmentText, activeSubPage === "history" && styles.segmentTextSelected]}>History</Text>
+        </Pressable>
+      </View>
+
+      {activeSubPage === "analyzer" ? (
+        <>
+          <View style={styles.searchCard}>
+            <Text style={styles.searchTitle}>Search supplement by name</Text>
+            <TextInput
+              style={[styles.searchInput, searchOptionsDisabled && styles.searchInputDisabled]}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="e.g. magnesium glycinate"
+              editable={!loading && !searchOptionsDisabled}
+              returnKeyType="search"
+              onSubmitEditing={() => void searchSupplementByName()}
+            />
+            {hasSearchInput ? (
+              <Pressable style={styles.clearMiniButton} onPress={clearSearchInput} disabled={loading}>
+                <Text style={styles.clearMiniButtonText}>Clear search</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          {Platform.OS === "web" ? (
+            <View style={styles.webcamPanel}>
+              <Text style={styles.webcamTitle}>Webcam capture</Text>
+              <Text style={styles.webcamBody}>Use your browser webcam for instant supplement scanning.</Text>
+              {webcamActive ? (
+                <>
+                  <video ref={videoRef} autoPlay playsInline muted style={StyleSheet.flatten(styles.webcamVideo)} />
+                  <View style={styles.webcamButtonRow}>
+                    <Pressable style={styles.webcamButton} onPress={captureWebcamFrame} disabled={loading}>
+                      <Text style={styles.webcamButtonText}>Capture frame</Text>
+                    </Pressable>
+                    <Pressable style={styles.webcamSecondaryButton} onPress={closeWebcam} disabled={loading}>
+                      <Text style={styles.webcamSecondaryButtonText}>Close webcam</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : (
+                <Pressable style={[styles.webcamButton, imageOptionsDisabled && styles.webcamButtonDisabled]} onPress={captureImage} disabled={loading || imageOptionsDisabled}>
+                  <Text style={styles.webcamButtonText}>Open webcam</Text>
                 </Pressable>
-                <Pressable style={styles.webcamSecondaryButton} onPress={closeWebcam}>
-                  <Text style={styles.webcamSecondaryButtonText}>Close webcam</Text>
-                </Pressable>
-              </View>
-            </>
-          ) : (
-            <Pressable style={styles.webcamButton} onPress={captureImage}>
-              <Text style={styles.webcamButtonText}>Open webcam</Text>
+              )}
+              {webcamError ? <Text style={styles.webcamError}>{webcamError}</Text> : null}
+            </View>
+          ) : null}
+
+          <ImageUpload
+            selectedImageUri={selectedAsset?.uri || ""}
+            selectedImageAspectRatio={selectedImageAspectRatio}
+            conditions={conditions}
+            onChangeConditions={setConditions}
+            goals={goals}
+            onChangeGoals={setGoals}
+            loading={loading}
+            error={error}
+            showCameraButton={Platform.OS !== "web"}
+            disableImageOptions={imageOptionsDisabled}
+            onClearImageSelection={clearImageSelection}
+            clearImageSelectionLabel="Clear image"
+            onCaptureImage={captureImage}
+            onPickImage={pickImage}
+          />
+
+          <Pressable
+            style={[styles.searchButton, (loading || selectedMode === "none") && styles.searchButtonDisabled]}
+            onPress={() => void (selectedMode === "search" ? searchSupplementByName() : analyzeSupplement())}
+            disabled={loading || selectedMode === "none"}
+          >
+            <Text style={styles.searchButtonText}>
+              {loading ? "Analyzing..." : selectedMode === "search" ? "Search and analyze supplement" : "Analyze supplement"}
+            </Text>
+          </Pressable>
+
+          <AnalysisResult result={result} selectedImageUri={selectedAsset?.uri || ""} selectedImageAspectRatio={selectedImageAspectRatio} />
+        </>
+      ) : (
+        <View style={styles.historyCard}>
+          <View style={styles.historyHeaderRow}>
+            <Text style={styles.historyTitle}>Recent supplement searches</Text>
+            <Pressable style={styles.clearAllButton} onPress={() => void clearAllHistoryItems()}>
+              <Text style={styles.clearAllButtonText}>Clear all</Text>
             </Pressable>
-          )}
-          {webcamError ? <Text style={styles.webcamError}>{webcamError}</Text> : null}
+          </View>
+          {searchHistory.length === 0 ? <Text style={styles.emptyHistoryText}>No searches yet.</Text> : null}
+          {searchHistory.map((entry) => (
+            <View key={entry.id} style={styles.historyItem}>
+              <View style={styles.historyTextWrap}>
+                <Text style={styles.historyQuery}>{entry.query || "Unknown supplement"}</Text>
+                <Text style={styles.historyMeta}>
+                  {entry.mode === "image" ? "Image scan" : "Text search"} · {formatDateTime(entry.searchedAt)}
+                </Text>
+              </View>
+              <Pressable style={styles.clearOneButton} onPress={() => void clearOneHistoryItem(entry.id)}>
+                <Text style={styles.clearOneButtonText}>Remove</Text>
+              </Pressable>
+            </View>
+          ))}
         </View>
-      ) : null}
-
-      <ImageUpload
-        selectedImageUri={selectedAsset?.uri || ""}
-        selectedImageAspectRatio={selectedImageAspectRatio}
-        conditions={conditions}
-        onChangeConditions={setConditions}
-        goals={goals}
-        onChangeGoals={setGoals}
-        loading={loading}
-        error={error}
-        showCameraButton={Platform.OS !== "web"}
-        onCaptureImage={captureImage}
-        onPickImage={pickImage}
-        onAnalyze={analyzeSupplement}
-      />
-
-      <AnalysisResult result={result} selectedImageUri={selectedAsset?.uri || ""} selectedImageAspectRatio={selectedImageAspectRatio} />
+      )}
     </View>
   );
 }
@@ -314,6 +546,81 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21
   },
+  segmentRow: {
+    flexDirection: "row",
+    gap: 10
+  },
+  segmentButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingVertical: 8,
+    paddingHorizontal: 14
+  },
+  segmentButtonSelected: {
+    borderColor: palette.blue,
+    backgroundColor: "#e8effb"
+  },
+  segmentText: {
+    color: palette.ink,
+    fontWeight: "600"
+  },
+  segmentTextSelected: {
+    color: palette.blue
+  },
+  searchCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    padding: 16,
+    gap: 10
+  },
+  searchTitle: {
+    color: palette.ink,
+    fontWeight: "700",
+    fontSize: 15
+  },
+  searchInput: {
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#fffdf9",
+    paddingHorizontal: 12,
+    color: palette.ink
+  },
+  searchInputDisabled: {
+    opacity: 0.5
+  },
+  searchButton: {
+    borderRadius: 12,
+    backgroundColor: palette.blue,
+    paddingVertical: 11,
+    alignItems: "center"
+  },
+  searchButtonDisabled: {
+    opacity: 0.55
+  },
+  searchButtonText: {
+    color: "#ffffff",
+    fontWeight: "700"
+  },
+  clearMiniButton: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 5
+  },
+  clearMiniButtonText: {
+    color: palette.ink,
+    fontSize: 12,
+    fontWeight: "700"
+  },
   webcamPanel: {
     borderRadius: 20,
     borderWidth: 1,
@@ -350,6 +657,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     alignItems: "center"
   },
+  webcamButtonDisabled: {
+    opacity: 0.5
+  },
   webcamButtonText: {
     color: "#ffffff",
     fontWeight: "700"
@@ -370,5 +680,75 @@ const styles = StyleSheet.create({
   webcamError: {
     color: palette.red,
     fontSize: 13
+  },
+  historyCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    padding: 16,
+    gap: 10
+  },
+  historyHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8
+  },
+  historyTitle: {
+    color: palette.ink,
+    fontWeight: "700",
+    fontSize: 16
+  },
+  clearAllButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  clearAllButtonText: {
+    color: palette.ink,
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  emptyHistoryText: {
+    color: palette.muted,
+    fontSize: 13
+  },
+  historyItem: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#faf7f1",
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10
+  },
+  historyTextWrap: {
+    flex: 1,
+    gap: 3
+  },
+  historyQuery: {
+    color: palette.ink,
+    fontWeight: "700"
+  },
+  historyMeta: {
+    color: palette.muted,
+    fontSize: 12
+  },
+  clearOneButton: {
+    borderRadius: 10,
+    backgroundColor: "#d95a5a",
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  clearOneButtonText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "700"
   }
 });

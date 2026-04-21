@@ -2,23 +2,39 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import random
 import re
+import time
 from dataclasses import dataclass
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
 from ..settings import settings
+from .image_preprocess import optimize_image_for_openai
 
 
 ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
 DEFAULT_CONDITIONS = "NIL"
 DEFAULT_GOALS = "Reduce belly fat, Improve cognitive power"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-SUPPLEMENT_ANALYSIS_MODEL = "gpt-4.1-mini"
+SUPPLEMENT_ANALYSIS_MODEL = "gpt-5.4-mini"
 SUPPLEMENT_INFOGRAPHIC_MODEL = "gpt-image-1"
+OPENAI_RETRY_ATTEMPTS = 4
+OPENAI_RETRY_BASE_SECONDS = 0.8
 
 _analysis_cache: dict[str, "SupplementAnalysisResult"] = {}
 _infographic_cache: dict[str, str] = {}
+
+
+def _response_with_rate_limit_retry(client: OpenAI, *, model: str, input_payload: list[dict]) -> object:
+    for attempt in range(OPENAI_RETRY_ATTEMPTS):
+        try:
+            return client.responses.create(model=model, input=input_payload)
+        except RateLimitError:
+            if attempt == OPENAI_RETRY_ATTEMPTS - 1:
+                raise
+            delay = OPENAI_RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0.0, 0.35)
+            time.sleep(delay)
 
 
 @dataclass(slots=True)
@@ -42,6 +58,27 @@ def _build_analysis_prompt(conditions: str, goals: str) -> str:
         "You are a pharmacist deciding if this patient should consume this supplement. "
         "Return clear markdown with exactly 4 top-level sections using H2 headings. "
         "Section 1: Supplement Identity and Ingredients. "
+        "Section 2: Potential Benefits and Mechanisms. "
+        "Section 3: Risks, Side Effects, and Contraindications. "
+        "Section 4: Suitability for This Patient and Recommendation. "
+        "For section 4, directly evaluate fit against the patient's conditions and goals. "
+        "Use concise medical language and practical guidance.\n\n"
+        f"Patient goals: {normalized_goals}\n"
+        f"Patient medical history: {normalized_conditions}\n"
+    )
+
+
+def _build_text_analysis_prompt(supplement_name: str, conditions: str, goals: str) -> str:
+    normalized_name = supplement_name.strip()
+    normalized_conditions = conditions.strip() or "No prior illness or long term conditions."
+    normalized_goals = goals.strip() or "General health support"
+    return (
+        "You are a pharmacist deciding if this patient should consume this supplement. "
+        f"The supplement to evaluate is: {normalized_name}. "
+        "Do not claim to have read a label image. "
+        "Use generally known ingredient profiles when possible, and clearly label uncertainty when product-specific details are unknown. "
+        "Return clear markdown with exactly 4 top-level sections using H2 headings. "
+        "Section 1: Supplement Identity and Likely Ingredients. "
         "Section 2: Potential Benefits and Mechanisms. "
         "Section 3: Risks, Side Effects, and Contraindications. "
         "Section 4: Suitability for This Patient and Recommendation. "
@@ -147,18 +184,29 @@ def analyze_supplement(image_bytes: bytes, content_type: str, conditions: str, g
     if cached is not None:
         return cached
 
+    optimized_bytes, optimized_content_type = optimize_image_for_openai(
+        image_bytes,
+        max_dimension=settings.openai_vision_max_dimension,
+        jpeg_quality=settings.openai_vision_jpeg_quality,
+    )
+
     client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_api_base_url)
-    image_data = base64.b64encode(image_bytes).decode("utf-8")
+    image_data = base64.b64encode(optimized_bytes).decode("utf-8")
 
     try:
-        response = client.responses.create(
+        response = _response_with_rate_limit_retry(
+            client,
             model=SUPPLEMENT_ANALYSIS_MODEL,
-            input=[
+            input_payload=[
                 {
                     "role": "user",
                     "content": [
                         {"type": "input_text", "text": _build_analysis_prompt(normalized_conditions, normalized_goals)},
-                        {"type": "input_image", "image_url": f"data:{content_type};base64,{image_data}"},
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{optimized_content_type};base64,{image_data}",
+                            "detail": settings.openai_vision_detail_normalized,
+                        },
                     ],
                 }
             ],
@@ -184,6 +232,49 @@ def analyze_supplement(image_bytes: bytes, content_type: str, conditions: str, g
         analysis_text=analysis_text,
         sections=_parse_sections(analysis_text),
         infographic_image_data_url=infographic_image_data_url,
+    )
+    _analysis_cache[cache_key] = result
+    return result
+
+
+def analyze_supplement_by_name(supplement_name: str, conditions: str, goals: str) -> SupplementAnalysisResult:
+    normalized_name = supplement_name.strip()
+    if not normalized_name:
+        raise ValueError("Please enter a supplement name.")
+    if not settings.openai_api_key:
+        raise RuntimeError("Supplement analysis is unavailable because OPENAI_API_KEY is not configured.")
+
+    normalized_conditions = conditions.strip() or DEFAULT_CONDITIONS
+    normalized_goals = goals.strip() or DEFAULT_GOALS
+    cache_payload = f"name:{normalized_name.lower()}|{normalized_conditions}|{normalized_goals}"
+    cache_key = hashlib.sha256(cache_payload.encode("utf-8")).hexdigest()
+    cached = _analysis_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_api_base_url)
+    try:
+        response = _response_with_rate_limit_retry(
+            client,
+            model=SUPPLEMENT_ANALYSIS_MODEL,
+            input_payload=[
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": _build_text_analysis_prompt(normalized_name, normalized_conditions, normalized_goals)}],
+                }
+            ],
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Supplement analysis provider call failed: {exc}") from exc
+
+    analysis_text = response.output_text.strip()
+    if not analysis_text:
+        raise RuntimeError("The model returned an empty analysis response.")
+
+    result = SupplementAnalysisResult(
+        analysis_text=analysis_text,
+        sections=_parse_sections(analysis_text),
+        infographic_image_data_url="",
     )
     _analysis_cache[cache_key] = result
     return result

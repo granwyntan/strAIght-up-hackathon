@@ -45,6 +45,9 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = None
     openai_api_base_url: str = "https://api.openai.com/v1"
+    openai_vision_detail: str = "auto"
+    openai_vision_max_dimension: int = 1024
+    openai_vision_jpeg_quality: int = 72
     openai_model: str = "gpt-5.4"
     openai_research_model: str = "gpt-5.4-mini"
     openai_reasoning_model: str = "gpt-5.4"
@@ -155,6 +158,13 @@ class Settings(BaseSettings):
     @property
     def has_serpapi(self) -> bool:
         return bool(self.serpapi_api_key)
+
+    @property
+    def openai_vision_detail_normalized(self) -> str:
+        candidate = self.openai_vision_detail.strip().lower()
+        if candidate in {"low", "high", "auto", "original"}:
+            return candidate
+        return "low"
 
     @property
     def cors_allowed_origins_list(self) -> list[str]:
