@@ -38,6 +38,37 @@ _analysis_cache: dict[str, "CalorieCalculationResult"] = {}
 logger = logging.getLogger(__name__)
 
 
+def _extract_openai_error_code(exc: Exception) -> str:
+    direct_code = getattr(exc, "code", None)
+    if isinstance(direct_code, str) and direct_code.strip():
+        return direct_code.strip().lower()
+
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        nested = body.get("error")
+        if isinstance(nested, dict):
+            nested_code = nested.get("code")
+            if isinstance(nested_code, str) and nested_code.strip():
+                return nested_code.strip().lower()
+        body_code = body.get("code")
+        if isinstance(body_code, str) and body_code.strip():
+            return body_code.strip().lower()
+
+    message = str(exc).lower()
+    if "insufficient_quota" in message:
+        return "insufficient_quota"
+    return ""
+
+
+def _is_insufficient_quota_error(exc: Exception) -> bool:
+    return _extract_openai_error_code(exc) == "insufficient_quota"
+
+
+def _is_retryable_api_status_error(exc: APIError) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    return isinstance(status_code, int) and status_code >= 500
+
+
 def _response_with_rate_limit_retry(
     client: OpenAI,
     *,
@@ -64,7 +95,53 @@ def _response_with_rate_limit_retry(
             print(f"SUCCESS RECEIVED request_id={request_id} attempt={attempt + 1}")
             logger.info("OpenAI API call success: request_id=%s trigger=%s attempt=%s", request_id, trigger_source, attempt + 1)
             return response
-        except (RateLimitError, APIConnectionError, APITimeoutError, APIError):
+        except RateLimitError as exc:
+            error_code = _extract_openai_error_code(exc)
+            logger.warning(
+                "OpenAI API call failed: request_id=%s trigger=%s attempt=%s error_type=%s error=%s",
+                request_id,
+                trigger_source,
+                attempt + 1,
+                type(exc).__name__,
+                str(exc),
+            )
+            if _is_insufficient_quota_error(exc):
+                logger.error(
+                    "Non-retryable OpenAI quota error: request_id=%s trigger=%s attempt=%s error_code=%s",
+                    request_id,
+                    trigger_source,
+                    attempt + 1,
+                    error_code or "-",
+                )
+                raise
+            if attempt == OPENAI_RETRY_ATTEMPTS - 1:
+                raise
+            delay = OPENAI_RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0.0, 0.35)
+            time.sleep(delay)
+        except (APIConnectionError, APITimeoutError) as exc:
+            logger.warning(
+                "OpenAI API transient connection failure: request_id=%s trigger=%s attempt=%s error_type=%s error=%s",
+                request_id,
+                trigger_source,
+                attempt + 1,
+                type(exc).__name__,
+                str(exc),
+            )
+            if attempt == OPENAI_RETRY_ATTEMPTS - 1:
+                raise
+            delay = OPENAI_RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0.0, 0.35)
+            time.sleep(delay)
+        except APIError as exc:
+            logger.warning(
+                "OpenAI API status failure: request_id=%s trigger=%s attempt=%s status_code=%s error=%s",
+                request_id,
+                trigger_source,
+                attempt + 1,
+                getattr(exc, "status_code", None),
+                str(exc),
+            )
+            if not _is_retryable_api_status_error(exc):
+                raise
             if attempt == OPENAI_RETRY_ATTEMPTS - 1:
                 raise
             delay = OPENAI_RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0.0, 0.35)

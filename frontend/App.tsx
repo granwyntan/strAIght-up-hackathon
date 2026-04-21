@@ -575,7 +575,7 @@ export default function App() {
             />
           ) : activeTab === "nutrition" ? (
             <CaloriesPage
-              requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000)}
+              requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000, true)}
             />
           ) : activeTab === "supplements" ? (
             <SupplementsPage
