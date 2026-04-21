@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import random
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
@@ -33,11 +35,16 @@ ACTIVITY_MULTIPLIER = {
 }
 
 _analysis_cache: dict[str, "CalorieCalculationResult"] = {}
+logger = logging.getLogger(__name__)
 
 
 def _response_with_rate_limit_retry(client: OpenAI, *, model: str, input_payload: list[dict]) -> object:
     for attempt in range(OPENAI_RETRY_ATTEMPTS):
         try:
+            print("OPENAI CALL ID:", uuid.uuid4())
+            print("CALL START", time.time())
+            print(f"[OpenAI API] responses.create model={model} feature=calorie attempt={attempt + 1}")
+            logger.info("OpenAI API call: responses.create model=%s feature=calorie attempt=%s", model, attempt + 1)
             return client.responses.create(model=model, input=input_payload)
         except RateLimitError:
             if attempt == OPENAI_RETRY_ATTEMPTS - 1:

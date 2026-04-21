@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import random
 import re
 import time
+import uuid
 from dataclasses import dataclass
 
 from openai import OpenAI, RateLimitError
@@ -24,11 +26,16 @@ OPENAI_RETRY_BASE_SECONDS = 0.8
 
 _analysis_cache: dict[str, "SupplementAnalysisResult"] = {}
 _infographic_cache: dict[str, str] = {}
+logger = logging.getLogger(__name__)
 
 
 def _response_with_rate_limit_retry(client: OpenAI, *, model: str, input_payload: list[dict]) -> object:
     for attempt in range(OPENAI_RETRY_ATTEMPTS):
         try:
+            print("OPENAI CALL ID:", uuid.uuid4())
+            print("CALL START", time.time())
+            print(f"[OpenAI API] responses.create model={model} feature=supplements attempt={attempt + 1}")
+            logger.info("OpenAI API call: responses.create model=%s feature=supplements attempt=%s", model, attempt + 1)
             return client.responses.create(model=model, input=input_payload)
         except RateLimitError:
             if attempt == OPENAI_RETRY_ATTEMPTS - 1:
@@ -155,6 +162,10 @@ def _build_infographic_prompt(analysis_text: str, conditions: str, goals: str) -
 
 def _generate_infographic_data_url(client: OpenAI, analysis_text: str, conditions: str, goals: str) -> str:
     try:
+        print("OPENAI CALL ID:", uuid.uuid4())
+        print("CALL START", time.time())
+        print(f"[OpenAI API] images.generate model={SUPPLEMENT_INFOGRAPHIC_MODEL} feature=supplements-infographic")
+        logger.info("OpenAI API call: images.generate model=%s", SUPPLEMENT_INFOGRAPHIC_MODEL)
         result = client.images.generate(
             model=SUPPLEMENT_INFOGRAPHIC_MODEL,
             prompt=_build_infographic_prompt(analysis_text, conditions, goals),
@@ -211,6 +222,8 @@ def analyze_supplement(image_bytes: bytes, content_type: str, conditions: str, g
                 }
             ],
         )
+    except RateLimitError:
+        raise
     except Exception as exc:
         raise RuntimeError(f"Supplement analysis provider call failed: {exc}") from exc
 
@@ -264,6 +277,8 @@ def analyze_supplement_by_name(supplement_name: str, conditions: str, goals: str
                 }
             ],
         )
+    except RateLimitError:
+        raise
     except Exception as exc:
         raise RuntimeError(f"Supplement analysis provider call failed: {exc}") from exc
 

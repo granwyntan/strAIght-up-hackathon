@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     final_cache_ttl_seconds: int = 21600
     cache_cleanup_probability: float = 0.08
 
-    openai_api_key: str | None = None
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     openai_api_base_url: str = "https://api.openai.com/v1"
     openai_vision_detail: str = "auto"
     openai_vision_max_dimension: int = 1024

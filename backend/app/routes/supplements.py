@@ -1,4 +1,9 @@
+import logging
+import math
+import re
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from openai import RateLimitError
 from pydantic import BaseModel
 
 from ..services.supplement_analyzer import SupplementSection, analyze_supplement, analyze_supplement_by_name
@@ -14,6 +19,7 @@ EXTENSION_TO_CONTENT_TYPE = {
 }
 
 router = APIRouter(prefix="/api/supplements", tags=["supplements"])
+logger = logging.getLogger(__name__)
 
 
 class SupplementSectionResponse(BaseModel):
@@ -35,6 +41,46 @@ class SupplementSearchRequest(BaseModel):
 
 def _to_section_payload(section: SupplementSection) -> SupplementSectionResponse:
     return SupplementSectionResponse(heading=section.heading, content=section.content)
+
+
+def _retry_after_from_rate_limit(exc: RateLimitError) -> int | None:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers:
+        direct = headers.get("retry-after") or headers.get("Retry-After")
+        if direct:
+            try:
+                parsed = int(math.ceil(float(direct)))
+                if parsed > 0:
+                    return parsed
+            except (TypeError, ValueError):
+                pass
+
+        # Some providers expose reset in milliseconds.
+        reset_ms = (
+            headers.get("x-ratelimit-reset-requests-ms")
+            or headers.get("x-ratelimit-reset-tokens-ms")
+            or headers.get("x-ratelimit-reset-ms")
+        )
+        if reset_ms:
+            try:
+                parsed_ms = int(float(reset_ms))
+                if parsed_ms > 0:
+                    return max(1, int(math.ceil(parsed_ms / 1000)))
+            except (TypeError, ValueError):
+                pass
+
+    message = str(exc)
+    # Fallback parse e.g. "...Please try again in 12.5s..."
+    match = re.search(r"try again in\s*([0-9]+(?:\.[0-9]+)?)\s*s", message, flags=re.IGNORECASE)
+    if match:
+        try:
+            parsed = int(math.ceil(float(match.group(1))))
+            if parsed > 0:
+                return parsed
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 @router.post("/analyze", response_model=SupplementAnalysisResponse)
@@ -61,6 +107,18 @@ async def analyze_supplement_endpoint(
             conditions=conditions,
             goals=goals,
         )
+    except RateLimitError as exc:
+        logger.warning("OpenAI rate limit during supplement image analysis: %s", exc)
+        retry_after = _retry_after_from_rate_limit(exc)
+        headers = {"Retry-After": str(retry_after)} if retry_after else None
+        detail = "OpenAI rate limit reached. Please retry in a moment."
+        if retry_after:
+            detail = f"OpenAI rate limit reached. Please retry in about {retry_after} seconds."
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=detail,
+            headers=headers,
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -83,6 +141,18 @@ def search_supplement_endpoint(payload: SupplementSearchRequest) -> SupplementAn
             conditions=payload.conditions,
             goals=payload.goals,
         )
+    except RateLimitError as exc:
+        logger.warning("OpenAI rate limit during supplement text search: %s", exc)
+        retry_after = _retry_after_from_rate_limit(exc)
+        headers = {"Retry-After": str(retry_after)} if retry_after else None
+        detail = "OpenAI rate limit reached. Please retry in a moment."
+        if retry_after:
+            detail = f"OpenAI rate limit reached. Please retry in about {retry_after} seconds."
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=detail,
+            headers=headers,
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RuntimeError as exc:
