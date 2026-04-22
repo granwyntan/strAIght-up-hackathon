@@ -2,7 +2,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const PROFILE_STORAGE_KEY = "gramwin.profile.v1";
 
+function resolveProfileStorageKey(accountId) {
+  const suffix = typeof accountId === "string" && accountId.trim() ? accountId.trim() : "guest";
+  return `${PROFILE_STORAGE_KEY}.${suffix}`;
+}
+
 export const emptyProfile = {
+  profilePicture: "",
   name: "",
   age: "",
   gender: "",
@@ -21,6 +27,7 @@ function normalizeString(value) {
 export function normalizeProfile(input) {
   const source = input && typeof input === "object" ? input : {};
   return {
+    profilePicture: normalizeString(source.profilePicture),
     name: normalizeString(source.name),
     age: normalizeString(source.age),
     gender: normalizeString(source.gender),
@@ -33,8 +40,8 @@ export function normalizeProfile(input) {
   };
 }
 
-export async function loadProfile() {
-  const raw = await AsyncStorage.getItem(PROFILE_STORAGE_KEY);
+export async function loadProfile(accountId) {
+  const raw = await AsyncStorage.getItem(resolveProfileStorageKey(accountId));
   if (!raw) {
     return { ...emptyProfile };
   }
@@ -46,8 +53,8 @@ export async function loadProfile() {
   }
 }
 
-export async function saveProfile(profile) {
+export async function saveProfile(profile, accountId) {
   const normalized = normalizeProfile(profile);
-  await AsyncStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(normalized));
+  await AsyncStorage.setItem(resolveProfileStorageKey(accountId), JSON.stringify(normalized));
   return normalized;
 }

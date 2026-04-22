@@ -7,6 +7,13 @@ import CalorieForm from "../components/calories/CalorieForm";
 import CalorieResult from "../components/calories/CalorieResult";
 import CalorieHistoryPage from "./CalorieHistoryPage";
 import { loadProfile } from "../storage/profileStorage";
+import {
+  addCalorieEntry,
+  clearCalorieDay,
+  deleteCalorieEntry,
+  loadCalorieWeek,
+  updateCalorieEntry
+} from "../storage/calorieTrackerStorage";
 
 const DEFAULT_VALUES = {
   age: "25",
@@ -49,7 +56,7 @@ async function readApiError(response, fallback) {
   return fallback;
 }
 
-export default function CaloriesPage({ requestApi }) {
+export default function CaloriesPage({ requestApi, accountId }) {
   const [values, setValues] = useState(DEFAULT_VALUES);
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [result, setResult] = useState(null);
@@ -116,7 +123,7 @@ export default function CaloriesPage({ requestApi }) {
     let mounted = true;
     const hydrateFromProfile = async () => {
       try {
-        const profile = await loadProfile();
+        const profile = await loadProfile(accountId);
         if (!mounted) {
           return;
         }
@@ -136,7 +143,7 @@ export default function CaloriesPage({ requestApi }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [accountId]);
 
   useEffect(() => {
     if (Platform.OS === "web" && webcamActive && videoRef.current && streamRef.current) {
@@ -166,16 +173,9 @@ export default function CaloriesPage({ requestApi }) {
   }
 
   async function loadHistory(anchorDate = weekAnchor) {
-    if (typeof requestApi !== "function") {
-      return;
-    }
     setHistoryLoading(true);
     try {
-      const response = await requestApi(`/api/calories/tracker?weekStart=${weekStartIso(anchorDate)}`);
-      if (!response.ok) {
-        throw new Error(await readApiError(response, "Unable to load calorie history."));
-      }
-      const payload = await response.json();
+      const payload = await loadCalorieWeek(accountId, weekStartIso(anchorDate));
       setHistoryPayload(payload);
     } catch (loadError) {
       setTrackerError(loadError instanceof Error ? loadError.message : "Unable to load calorie history.");
@@ -188,7 +188,7 @@ export default function CaloriesPage({ requestApi }) {
     if (activeSubPage === "history") {
       void loadHistory(weekAnchor);
     }
-  }, [activeSubPage, weekAnchor]);
+  }, [activeSubPage, weekAnchor, accountId]);
 
   useEffect(() => {
     if (!loading || !calcStartedAt) {
@@ -403,10 +403,6 @@ export default function CaloriesPage({ requestApi }) {
   };
 
   const addTrackerEntry = async ({ mealName, calories, entryDate, switchToHistory }) => {
-    if (typeof requestApi !== "function") {
-      setTrackerError("Calories API is not configured in this screen.");
-      return false;
-    }
     const parsedCalories = Number(calories);
     if (!Number.isFinite(parsedCalories) || parsedCalories <= 0) {
       setTrackerError("Enter valid calories before adding to tracker.");
@@ -434,20 +430,12 @@ export default function CaloriesPage({ requestApi }) {
     setTrackerLoading(true);
     setTrackerError("");
     try {
-      const response = await requestApi("/api/calories/tracker", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mealName: normalizedMealName,
-          calories: Math.round(parsedCalories),
-          date: entryDate || new Date().toISOString().slice(0, 10)
-        })
+      await addCalorieEntry(accountId, {
+        mealName: normalizedMealName,
+        calories: Math.round(parsedCalories),
+        date: entryDate || new Date().toISOString().slice(0, 10)
       });
-      if (!response.ok) {
-        throw new Error(await readApiError(response, "Unable to add calorie tracker entry."));
-      }
-      const payload = await response.json();
-      setHistoryPayload(payload.week);
+      await loadHistory(weekAnchor);
       if (switchToHistory && activeSubPage !== "history") {
         setActiveSubPage("history");
       }
@@ -486,22 +474,12 @@ export default function CaloriesPage({ requestApi }) {
   };
 
   const editTrackerEntry = async (entryId, updates) => {
-    if (typeof requestApi !== "function") {
-      return;
-    }
     setEntryActionLoading(true);
     try {
-      const response = await requestApi(`/api/calories/entry/${entryId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mealName: updates.mealName || "",
-          calories: Math.round(Number(updates.calories))
-        })
+      await updateCalorieEntry(accountId, entryId, {
+        mealName: updates.mealName || "",
+        calories: Math.round(Number(updates.calories))
       });
-      if (!response.ok) {
-        throw new Error(await readApiError(response, "Unable to update entry."));
-      }
       await loadHistory(weekAnchor);
     } catch (actionError) {
       setTrackerError(actionError instanceof Error ? actionError.message : "Unable to update entry.");
@@ -511,17 +489,9 @@ export default function CaloriesPage({ requestApi }) {
   };
 
   const deleteTrackerEntry = async (entryId) => {
-    if (typeof requestApi !== "function") {
-      return;
-    }
     setEntryActionLoading(true);
     try {
-      const response = await requestApi(`/api/calories/entry/${entryId}`, {
-        method: "DELETE"
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response, "Unable to delete entry."));
-      }
+      await deleteCalorieEntry(accountId, entryId);
       await loadHistory(weekAnchor);
     } catch (actionError) {
       setTrackerError(actionError instanceof Error ? actionError.message : "Unable to delete entry.");
@@ -531,17 +501,9 @@ export default function CaloriesPage({ requestApi }) {
   };
 
   const clearTrackerDay = async (entryDate) => {
-    if (typeof requestApi !== "function") {
-      return false;
-    }
     setEntryActionLoading(true);
     try {
-      const response = await requestApi(`/api/calories/day/${entryDate}`, {
-        method: "DELETE"
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response, "Unable to clear entries for this day."));
-      }
+      await clearCalorieDay(accountId, entryDate);
       await loadHistory(weekAnchor);
       return true;
     } catch (actionError) {

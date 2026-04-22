@@ -78,7 +78,7 @@ async function readApiError(response, fallback) {
   return fallback;
 }
 
-export default function SupplementsPage({ requestApi }) {
+export default function SupplementsPage({ requestApi, accountId }) {
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [conditions, setConditions] = useState(DEFAULT_CONDITIONS);
   const [goals, setGoals] = useState(DEFAULT_GOALS);
@@ -198,7 +198,7 @@ export default function SupplementsPage({ requestApi }) {
 
   const hydrateHistory = async () => {
     try {
-      const entries = await loadSupplementHistory();
+      const entries = await loadSupplementHistory(accountId);
       setSearchHistory(entries);
     } catch (storageError) {
       console.warn("Unable to load supplement history", storageError);
@@ -230,7 +230,7 @@ export default function SupplementsPage({ requestApi }) {
     let mounted = true;
     const hydrateFromProfile = async () => {
       try {
-        const profile = await loadProfile();
+        const profile = await loadProfile(accountId);
         if (!mounted) {
           return;
         }
@@ -249,11 +249,11 @@ export default function SupplementsPage({ requestApi }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [accountId]);
 
   useEffect(() => {
     void hydrateHistory();
-  }, []);
+  }, [accountId]);
 
   const pickImage = async () => {
     if (imageOptionsDisabled) {
@@ -441,7 +441,7 @@ export default function SupplementsPage({ requestApi }) {
         mode: "image",
         searchedAt: new Date().toISOString(),
         result: payload
-      });
+      }, accountId);
       setSearchHistory(updatedHistory);
     } catch (fetchError) {
       setTextGenerationStatus("failed");
@@ -501,7 +501,7 @@ export default function SupplementsPage({ requestApi }) {
         mode: "text",
         searchedAt: new Date().toISOString(),
         result: payload
-      });
+      }, accountId);
       setSearchHistory(updatedHistory);
       if (activeSubPage !== "analyzer") {
         setActiveSubPage("analyzer");
@@ -517,12 +517,12 @@ export default function SupplementsPage({ requestApi }) {
   };
 
   const clearOneHistoryItem = async (entryId) => {
-    const updated = await removeSupplementHistoryEntry(entryId);
+    const updated = await removeSupplementHistoryEntry(entryId, accountId);
     setSearchHistory(updated);
   };
 
   const clearAllHistoryItems = async () => {
-    const updated = await clearSupplementHistory();
+    const updated = await clearSupplementHistory(accountId);
     setSearchHistory(updated);
   };
 

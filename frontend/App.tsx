@@ -22,6 +22,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import CaloriesPage from "./src/pages/CaloriesPage";
 import ProfilePage from "./src/pages/ProfilePage";
 import ScannerPage from "./src/pages/SupplementsPage";
+import { getActiveSessionAccount, loginOrRegisterAccount, logoutActiveSession } from "./src/storage/accountStorage";
 
 import {
   defaultBootstrap,
@@ -225,6 +226,8 @@ const pipelineStageMeta: Array<{ key: string; title: string; icon: IconKind }> =
 
 export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(resolveApiBaseUrl);
+  const [activeAccount, setActiveAccount] = useState<{ id: string; email: string; createdAt?: string } | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>("home");
   const [bootstrap, setBootstrap] = useState<BootstrapPayload>(defaultBootstrap);
@@ -244,6 +247,20 @@ export default function App() {
   const [contextDraft, setContextDraft] = useState("Focus on whether evidence supports the wording and whether blogs are overclaiming.");
   const [sourceUrlDraft, setSourceUrlDraft] = useState("");
   const [depth, setDepth] = useState<"standard" | "deep">("deep");
+
+  useEffect(() => {
+    let mounted = true;
+    const hydrateSession = async () => {
+      const session = await getActiveSessionAccount();
+      if (mounted) {
+        setActiveAccount(session);
+      }
+    };
+    void hydrateSession();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     void warmApiConnection();
@@ -271,6 +288,31 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, [selectedInvestigation]);
+
+  async function handleAuthenticate(email: string, password: string) {
+    setAuthLoading(true);
+    try {
+      const account = await loginOrRegisterAccount(email, password);
+      setActiveAccount(account);
+      setSelectedId(null);
+      setSelectedInvestigation(null);
+      setHistory(defaultHistory);
+      setHistoryOrder([]);
+      setActiveTab("home");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    await logoutActiveSession();
+    setActiveAccount(null);
+    setSelectedId(null);
+    setSelectedInvestigation(null);
+    setHistory(defaultHistory);
+    setHistoryOrder([]);
+    setActiveTab("home");
+  }
 
   const filteredHistory = useMemo(() => {
     const query = safeLower(safeTrim(historyQuery));
@@ -576,13 +618,22 @@ export default function App() {
           ) : activeTab === "nutrition" ? (
             <CaloriesPage
               requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000, true)}
+              accountId={activeAccount?.id}
             />
           ) : activeTab === "scanner" ? (
             <ScannerPage
               requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000, true)}
+              accountId={activeAccount?.id}
             />
           ) : (
-            <ProfilePage history={history} />
+            <ProfilePage
+              history={history}
+              accountId={activeAccount?.id}
+              activeAccount={activeAccount}
+              authLoading={authLoading}
+              onAuthenticate={handleAuthenticate}
+              onLogout={() => void handleLogout()}
+            />
           )}
         </ScrollView>
 
@@ -1983,7 +2034,18 @@ const shadow = {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: palette.background,
+    backgroundColor: palette.background
+  },
+  authLoadingWrap: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 10
+  },
+  authLoadingText: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: "600"
   },
   appShell: {
     flex: 1
@@ -2019,6 +2081,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 2
   },
+  topBarAccount: {
+    color: palette.blue,
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: "700"
+  },
+  topBarActions: {
+    alignItems: "center",
+    gap: 8
+  },
   avatarShell: {
     width: 58,
     height: 58,
@@ -2040,6 +2112,19 @@ const styles = StyleSheet.create({
     color: palette.green,
     fontSize: 17,
     fontWeight: "900"
+  },
+  logoutChip: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: "#f3ede1",
+    borderWidth: 1,
+    borderColor: palette.border
+  },
+  logoutChipText: {
+    color: palette.ink,
+    fontSize: 11,
+    fontWeight: "700"
   },
   heroPanel: {
     backgroundColor: palette.surface,

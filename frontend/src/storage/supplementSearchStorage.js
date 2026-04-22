@@ -3,6 +3,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const SUPPLEMENT_HISTORY_KEY = "gramwin.supplement.history.v1";
 const MAX_HISTORY_ITEMS = 10;
 
+function resolveSupplementHistoryKey(accountId) {
+  const suffix = typeof accountId === "string" && accountId.trim() ? accountId.trim() : "guest";
+  return `${SUPPLEMENT_HISTORY_KEY}.${suffix}`;
+}
+
 function normalizeEntry(input) {
   const source = input && typeof input === "object" ? input : {};
   return {
@@ -15,8 +20,8 @@ function normalizeEntry(input) {
   };
 }
 
-export async function loadSupplementHistory() {
-  const raw = await AsyncStorage.getItem(SUPPLEMENT_HISTORY_KEY);
+export async function loadSupplementHistory(accountId) {
+  const raw = await AsyncStorage.getItem(resolveSupplementHistoryKey(accountId));
   if (!raw) {
     return [];
   }
@@ -31,27 +36,27 @@ export async function loadSupplementHistory() {
   }
 }
 
-async function saveHistory(entries) {
-  await AsyncStorage.setItem(SUPPLEMENT_HISTORY_KEY, JSON.stringify(entries.slice(0, MAX_HISTORY_ITEMS)));
+async function saveHistory(entries, accountId) {
+  await AsyncStorage.setItem(resolveSupplementHistoryKey(accountId), JSON.stringify(entries.slice(0, MAX_HISTORY_ITEMS)));
 }
 
-export async function addSupplementHistoryEntry(entry) {
+export async function addSupplementHistoryEntry(entry, accountId) {
   const next = normalizeEntry(entry);
-  const existing = await loadSupplementHistory();
+  const existing = await loadSupplementHistory(accountId);
   const filtered = existing.filter((item) => item.id !== next.id);
   const updated = [next, ...filtered].slice(0, MAX_HISTORY_ITEMS);
-  await saveHistory(updated);
+  await saveHistory(updated, accountId);
   return updated;
 }
 
-export async function removeSupplementHistoryEntry(entryId) {
-  const existing = await loadSupplementHistory();
+export async function removeSupplementHistoryEntry(entryId, accountId) {
+  const existing = await loadSupplementHistory(accountId);
   const updated = existing.filter((item) => item.id !== entryId);
-  await saveHistory(updated);
+  await saveHistory(updated, accountId);
   return updated;
 }
 
-export async function clearSupplementHistory() {
-  await AsyncStorage.removeItem(SUPPLEMENT_HISTORY_KEY);
+export async function clearSupplementHistory(accountId) {
+  await AsyncStorage.removeItem(resolveSupplementHistoryKey(accountId));
   return [];
 }
