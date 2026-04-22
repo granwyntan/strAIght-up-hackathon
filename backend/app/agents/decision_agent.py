@@ -16,7 +16,7 @@ def _weighted_signal(sources: list[SourceAssessment], sentiment: str) -> float:
     return sum(
         (source.sourceWeight or 0.4) * (source.confidenceFactor or 0.5)
         for source in sources
-        if source.sentiment == sentiment and source.sourceScore >= 2 and source.evidenceScore >= 3
+        if source.sentiment == sentiment and source.sourceScore >= 2 and source.evidenceScore >= 3 and source.citationIntegrity >= 50
     )
 
 
@@ -26,12 +26,14 @@ def _verdict(score: int, claim_analysis: ClaimAnalysis, sources: list[SourceAsse
     contradiction_weight = _weighted_signal(sources, "negative")
     strongest_claim = max((item.strength for item in claim_analysis.atomicClaims), default=1)
 
-    if score >= 70:
+    if score >= 72 and support_weight >= contradiction_weight * 1.35 and consensus.supportShare >= 0.5:
         return "trustworthy"
-    if score < 30:
+    if score <= 28 or (contradiction_weight >= support_weight * 1.25 and consensus.contradictionShare >= 0.34):
         return "untrustworthy"
-    if strongest_claim >= 4 and (contradiction_weight >= support_weight or claim_analysis.languageRiskScore >= 45 or consensus.contradictionShare >= 0.28):
+    if strongest_claim >= 4 and (contradiction_weight >= support_weight or claim_analysis.languageRiskScore >= 42 or consensus.contradictionShare >= 0.24):
         return "overstated"
+    if score >= 64 and support_weight > contradiction_weight and consensus.contradictionShare < 0.22:
+        return "trustworthy"
     return "mixed"
 
 
@@ -105,7 +107,7 @@ def summarize_decision(
     if verdict == "trustworthy":
         narrative = (
             f'The investigation lands in the agree range for "{claim}" because the stronger evidence generally points in the same direction, '
-            "although the claim should still be phrased with clinical caution."
+            "and the better sources hold up well enough for a clear positive read."
         )
     elif verdict == "overstated":
         narrative = (
