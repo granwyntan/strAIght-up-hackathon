@@ -4,7 +4,6 @@ from urllib.parse import urlparse
 import httpx
 
 from .. import repository
-from ..async_utils import retry_async
 from ..cache import cache_key, get_json, set_json
 from ..knowledge.base import GENERIC_AUTHORITY_SOURCES, KNOWLEDGE_SOURCES, KnowledgeSource
 from ..models import EvidenceTier, SourceBucket, SourceStance
@@ -130,6 +129,13 @@ def _result_rank(document: SearchDocument) -> tuple[int, int, int, int]:
     )
 
 
+def _published_at_from_payload(*candidates: object) -> str | None:
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None
+
+
 def _query_is_trending(query: str) -> bool:
     lowered = query.lower()
     return any(token in lowered for token in ["today", "latest", "new study", "news", "2025", "2026", "recent"])
@@ -140,7 +146,7 @@ def _search_cache_ttl(query: str) -> int:
 
 
 def _fallback_documents(query: str) -> list[SearchDocument]:
-    target_count = 24
+    target_count = 36
     ranked = sorted(KNOWLEDGE_SOURCES, key=lambda item: _score_overlap(query, item), reverse=True)
     matches = [item for item in ranked if _score_overlap(query, item) > 0][:target_count]
     if len(matches) < target_count:
@@ -160,25 +166,48 @@ def _fallback_documents(query: str) -> list[SearchDocument]:
     return [SearchDocument(**item.model_dump(), query=query, provider="seeded", cacheStatus="fallback") for item in matches]
 
 
-async def _search_tavily(query: str) -> list[SearchDocument]:
+def _provider_result_cap(provider: str, desired_depth: str) -> int:
+    if provider == "tavily":
+        configured = settings.tavily_max_results
+    elif provider == "serpapi":
+        configured = settings.serpapi_num_results
+    else:
+        configured = settings.exa_max_results
+    configured = configured if configured > 0 else 24
+    if provider == "tavily":
+        configured = min(configured, 20)
+    elif provider == "exa":
+        configured = min(configured, 20)
+    if desired_depth == "quick":
+        return min(configured, 10)
+    if desired_depth == "deep":
+        return max(configured, 20 if provider in {"tavily", "exa"} else 24)
+    return min(max(configured, 16), 18)
+
+
+def _search_tavily_payload(query: str, desired_depth: str) -> dict:
+    response = httpx.post(
+        "https://api.tavily.com/search",
+        json={
+            "api_key": settings.tavily_api_key,
+            "query": query,
+            "max_results": _provider_result_cap("tavily", desired_depth),
+            "search_depth": "advanced",
+            "include_answer": False,
+            "topic": "news" if _query_is_trending(query) else "general",
+        },
+        timeout=settings.search_timeout_seconds,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
+async def _search_tavily(query: str, desired_depth: str) -> list[SearchDocument]:
     if not settings.tavily_api_key:
         return []
 
-    async with httpx.AsyncClient(timeout=settings.search_timeout_seconds) as client:
-        response = await retry_async(
-            lambda: client.post(
-                "https://api.tavily.com/search",
-                json={
-                    "api_key": settings.tavily_api_key,
-                    "query": query,
-                    "max_results": settings.tavily_max_results,
-                    "search_depth": "advanced",
-                    "include_answer": False,
-                },
-            )
-        )
-        response.raise_for_status()
-        payload = response.json()
+    payload = await asyncio.to_thread(_search_tavily_payload, query, desired_depth)
 
     results: list[SearchDocument] = []
     for index, item in enumerate(payload.get("results", []), start=1):
@@ -195,6 +224,11 @@ async def _search_tavily(query: str) -> list[SearchDocument]:
                 title=item.get("title", "Untitled source"),
                 url=url,
                 domain=domain,
+                publishedAt=_published_at_from_payload(
+                    item.get("published_date"),
+                    item.get("publishedDate"),
+                    item.get("date"),
+                ),
                 snippet=snippet,
                 sourceBucket=bucket,
                 journalType=tier.replace("_", " "),
@@ -210,24 +244,27 @@ async def _search_tavily(query: str) -> list[SearchDocument]:
     return results
 
 
-async def _search_serpapi(query: str) -> list[SearchDocument]:
+def _search_serpapi_payload(query: str, desired_depth: str) -> dict:
+    response = httpx.get(
+        "https://serpapi.com/search.json",
+        params={
+            "engine": settings.serpapi_engine,
+            "q": query,
+            "api_key": settings.serpapi_api_key,
+            "num": _provider_result_cap("serpapi", desired_depth),
+        },
+        timeout=settings.search_timeout_seconds,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
+async def _search_serpapi(query: str, desired_depth: str) -> list[SearchDocument]:
     if not settings.serpapi_api_key:
         return []
 
-    async with httpx.AsyncClient(timeout=settings.search_timeout_seconds) as client:
-        response = await retry_async(
-            lambda: client.get(
-                "https://serpapi.com/search.json",
-                params={
-                    "engine": settings.serpapi_engine,
-                    "q": query,
-                    "api_key": settings.serpapi_api_key,
-                    "num": settings.serpapi_num_results,
-                },
-            )
-        )
-        response.raise_for_status()
-        payload = response.json()
+    payload = await asyncio.to_thread(_search_serpapi_payload, query, desired_depth)
 
     results: list[SearchDocument] = []
     for index, item in enumerate(payload.get("organic_results", []), start=1):
@@ -245,6 +282,11 @@ async def _search_serpapi(query: str) -> list[SearchDocument]:
                 title=title,
                 url=url,
                 domain=domain,
+                publishedAt=_published_at_from_payload(
+                    item.get("date"),
+                    item.get("published_date"),
+                    item.get("publishedDate"),
+                ),
                 snippet=snippet,
                 sourceBucket=bucket,
                 journalType=tier.replace("_", " "),
@@ -260,6 +302,71 @@ async def _search_serpapi(query: str) -> list[SearchDocument]:
     return results
 
 
+def _search_exa_payload(query: str, desired_depth: str) -> dict:
+    response = httpx.post(
+        "https://api.exa.ai/search",
+        headers={
+            "x-api-key": settings.exa_api_key or "",
+            "Content-Type": "application/json",
+        },
+        json={
+            "query": query,
+            "numResults": _provider_result_cap("exa", desired_depth),
+            "type": "auto",
+            "contents": {
+                "text": {
+                    "maxCharacters": 600,
+                }
+            },
+        },
+        timeout=settings.search_timeout_seconds,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
+async def _search_exa(query: str, desired_depth: str) -> list[SearchDocument]:
+    if not settings.exa_api_key:
+        return []
+
+    payload = await asyncio.to_thread(_search_exa_payload, query, desired_depth)
+
+    results: list[SearchDocument] = []
+    for index, item in enumerate(payload.get("results", []), start=1):
+        url = item.get("url", "")
+        if not url:
+            continue
+        domain = urlparse(url).netloc or "unknown"
+        title = item.get("title", "Untitled source")
+        snippet = item.get("text", "") or item.get("highlights", [{}])[0].get("text", "") if item.get("highlights") else ""
+        bucket = infer_source_bucket(domain)
+        tier = infer_evidence_tier(title, snippet)
+        results.append(
+            SearchDocument(
+                id=f"exa-{index}-{abs(hash((query, url)))}",
+                title=title,
+                url=url,
+                domain=domain,
+                publishedAt=_published_at_from_payload(
+                    item.get("publishedDate"),
+                    item.get("published_date"),
+                ),
+                snippet=snippet,
+                sourceBucket=bucket,
+                journalType=tier.replace("_", " "),
+                evidenceTier=tier,
+                stance=infer_stance(query, snippet),
+                topics=_normalize(query),
+                citations=[],
+                query=query,
+                provider="exa",
+                cacheStatus="live",
+            )
+        )
+    return results
+
+
 def _merge_documents(documents: list[SearchDocument]) -> list[SearchDocument]:
     by_url: dict[str, SearchDocument] = {}
     for document in documents:
@@ -269,20 +376,27 @@ def _merge_documents(documents: list[SearchDocument]) -> list[SearchDocument]:
     return sorted(by_url.values(), key=_result_rank, reverse=True)
 
 
-async def search(query: str, mode: str = "auto") -> list[SearchDocument]:
+async def search(query: str, mode: str = "auto", allow_seeded_fallback: bool = True, desired_depth: str = "standard") -> list[SearchDocument]:
     if mode == "offline":
         return _fallback_documents(query)
 
-    key = cache_key("search", mode, query.strip().lower())
+    live_search_expected = settings.has_tavily or settings.has_serpapi or settings.has_exa
+    if live_search_expected:
+        allow_seeded_fallback = False
+
+    key = cache_key("search", mode, desired_depth, query.strip().lower())
     cached_payload = get_json("search", key)
     if cached_payload is not None:
-        return [SearchDocument.model_validate({**item, "cacheStatus": "cached"}) for item in cached_payload]
+        cached_documents = [SearchDocument.model_validate({**item, "cacheStatus": "cached"}) for item in cached_payload]
+        cached_seeded = any(item.provider == "seeded" for item in cached_documents)
+        if not (cached_seeded and not allow_seeded_fallback):
+            return cached_documents
 
     async def load_tavily() -> list[SearchDocument]:
         if not settings.has_tavily:
             return []
         try:
-            return await _search_tavily(query)
+            return await _search_tavily(query, desired_depth)
         except Exception:
             return []
 
@@ -290,20 +404,35 @@ async def search(query: str, mode: str = "auto") -> list[SearchDocument]:
         if not settings.has_serpapi:
             return []
         try:
-            return await _search_serpapi(query)
+            return await _search_serpapi(query, desired_depth)
         except Exception:
             return []
 
-    tavily_results, serpapi_results = await asyncio.gather(load_tavily(), load_serpapi())
-    live_documents = [*tavily_results, *serpapi_results]
+    async def load_exa() -> list[SearchDocument]:
+        if not settings.has_exa:
+            return []
+        try:
+            return await _search_exa(query, desired_depth)
+        except Exception:
+            return []
+
+    tavily_results, serpapi_results, exa_results = await asyncio.gather(
+        load_tavily(),
+        load_serpapi(),
+        load_exa(),
+    )
+    live_documents = [*tavily_results, *serpapi_results, *exa_results]
 
     merged = _merge_documents(live_documents)
     if merged:
         set_json("search", key, [item.model_dump() for item in merged], _search_cache_ttl(query))
         return merged
 
+    if not allow_seeded_fallback:
+        return []
+
     fallback = _fallback_documents(query)
-    set_json("search", key, [item.model_dump() for item in fallback], _search_cache_ttl(query))
+    set_json("search", key, [item.model_dump() for item in fallback], min(120, _search_cache_ttl(query)))
     return fallback
 
 

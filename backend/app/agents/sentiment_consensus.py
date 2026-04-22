@@ -149,7 +149,14 @@ def _confidence_factor(source: SourceAssessment, agreement_factor: float, clarit
 
 
 def _source_weight(source: SourceAssessment) -> float:
-    return settings.source_weight_for_bucket(source.sourceBucket)
+    quality_multiplier = {
+        "verified": 1.0,
+        "established": 0.86,
+        "general": 0.65,
+    }.get(source.sourceQualityLabel, 0.65)
+    spam_multiplier = max(0.45, 1 - (source.spamRiskScore / 140))
+    weighted = settings.source_weight_for_bucket(source.sourceBucket) * quality_multiplier * spam_multiplier
+    return round(max(0.2, min(1.0, weighted)), 3)
 
 
 def _stance_score(sentiment: SourceSentiment) -> int:
@@ -258,6 +265,16 @@ async def apply_sentiment_consensus(claim: str, sources: list[SourceAssessment])
                     summary = "NLP Cloud and cross-check signals flagged that the source fails to cleanly support the claim as stated."
             elif nlp_cloud_sentiment == final_sentiment:
                 agreement_factor = max(agreement_factor, 0.8)
+
+        if (
+            final_sentiment == "positive"
+            and source.sourceQualityLabel == "general"
+            and source.spamRiskScore >= 65
+            and source.evidenceScore <= 2
+        ):
+            final_sentiment = "neutral"
+            agreement_factor = min(agreement_factor, 0.62)
+            summary = "The source leaned supportive, but low credibility and promotional risk kept it from counting as reliable support."
 
         clarity_factor = _clarity_factor(source, heuristic_sentiment)
         confidence_factor = _confidence_factor(source, agreement_factor, clarity_factor)

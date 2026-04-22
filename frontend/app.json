@@ -6,33 +6,44 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "backgroundColor": "#F5F1EA",
+    "backgroundColor": "#F4F7FB",
+    "plugins": [
+      "expo-notifications"
+    ],
     "assetBundlePatterns": [
       "**/*"
     ],
     "androidStatusBar": {
-      "backgroundColor": "#F5F1EA",
+      "backgroundColor": "#F4F7FB",
       "barStyle": "dark-content"
     },
     "androidNavigationBar": {
-      "backgroundColor": "#F5F1EA",
+      "backgroundColor": "#F4F7FB",
       "barStyle": "dark-content"
     },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "GramWIN can use the camera for future document and source capture flows.",
-        "NSPhotoLibraryUsageDescription": "GramWIN can use your photos for future source and evidence uploads."
+        "NSPhotoLibraryUsageDescription": "GramWIN can use your photos for future source and evidence uploads.",
+        "NSUserNotificationUsageDescription": "GramWIN sends a notification when your investigation is ready."
       }
     },
     "android": {
       "permissions": [
         "CAMERA",
-        "READ_EXTERNAL_STORAGE"
-      ]
+        "READ_EXTERNAL_STORAGE",
+        "POST_NOTIFICATIONS"
+      ],
+      "package": "com.greny.gramwin"
     },
     "web": {
       "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "0837cee1-2f01-4719-905d-ab66c4e67ffd"
+      }
     }
   }
 }

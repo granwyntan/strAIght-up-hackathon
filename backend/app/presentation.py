@@ -4,12 +4,15 @@ from collections import Counter
 from .core.scoring import weighted_consensus_breakdown
 from .models import (
     ClaimAnalysis,
+    ClaimGraphNode,
     ConfidenceLevel,
+    EvidenceGraphNode,
     EffectDirection,
     EvidenceExtraction,
     EvidenceGroup,
     PipelineStepSummary,
     SentimentDistribution,
+    SourceRegistryEntry,
     SourceAssessment,
     SourceSentiment,
 )
@@ -45,6 +48,22 @@ NEUTRAL_SIGNALS = [
     "needs validation",
     "insufficient evidence",
 ]
+APPROVED_GENERAL_HEALTH_DOMAIN_MARKERS = (
+    "sleepfoundation.org",
+    "webmd.com",
+    "medicalnewstoday.com",
+    "healthline.com",
+    "mayoclinic.org",
+    "clevelandclinic.org",
+    "bannerhealth.com",
+    "medlineplus.gov",
+    "nih.gov",
+    "nccih.nih.gov",
+    "ods.od.nih.gov",
+    "aad.org",
+    "aap.org",
+    "aasm.org",
+)
 
 
 def _source_name(domain: str) -> str:
@@ -86,11 +105,9 @@ def _source_name(domain: str) -> str:
     return candidate.replace("-", " ").title()
 
 
-def _quoted_evidence(text: str, fallback: str) -> str:
-    cleaned = " ".join(text.split())
-    if cleaned:
-        return cleaned[:220]
-    return fallback[:220]
+def _domain_matches(domain: str, patterns: tuple[str, ...]) -> bool:
+    lowered = domain.lower()
+    return any(lowered == pattern or lowered.endswith(f".{pattern}") or pattern in lowered for pattern in patterns)
 
 
 def classify_source_sentiment(source: SourceAssessment) -> tuple[SourceSentiment, str]:
@@ -154,6 +171,10 @@ def _build_bias_notes(source: SourceAssessment) -> list[str]:
     notes: list[str] = []
     if source.sourceBucket == "tier_1_blog":
         notes.append("Lower-authority domain, so interpretation may overreach compared with the underlying evidence.")
+    if source.sourceQualityLabel == "general":
+        notes.append("General-web source, so it should not carry the same weight as verified medical authorities or established journals.")
+    if source.spamRiskScore >= 65:
+        notes.append("Promotional or click-driven wording reduced confidence in the source.")
     if source.citationIntegrity < 50:
         notes.append("Citation support is weak or incomplete.")
     if source.stance == "supportive" and source.evidenceScore <= 2:
@@ -220,8 +241,8 @@ def _build_evidence(source: SourceAssessment, sentiment: SourceSentiment, method
         sampleSize=_sample_size_text(source),
         limitations=limitations,
         effectDirection=_effect_direction(sentiment),
-        quotedEvidence=_quoted_evidence(source.extractedText or source.snippet, source.title),
-        quoteVerified=source.quoteVerified,
+        quotedEvidence="",
+        quoteVerified=False,
         expertAnalysis=expert_analysis[:240],
     )
 
@@ -251,12 +272,14 @@ def enrich_sources(sources: list[SourceAssessment], claim_analysis: ClaimAnalysi
 
 def _display_rank(source: SourceAssessment) -> float:
     contradiction_bonus = 6 if source.sentiment == "negative" else 0
+    direct_evidence_bonus = 10 if source.directEvidenceEligible else 0
     return (
         source.sourceScore * 24
         + source.evidenceScore * 14
         + source.citationIntegrity * 0.3
         + source.confidenceFactor * 18
         + contradiction_bonus
+        + direct_evidence_bonus
     )
 
 
@@ -286,34 +309,132 @@ def build_source_groups(sources: list[SourceAssessment]) -> tuple[list[EvidenceG
     relevance_filtered = [source for source in sources if source.relevanceScore >= 38]
     pool = relevance_filtered or sources
     ranked = sorted(pool, key=_display_rank, reverse=True)
-    target_count = min(max(18, len(ranked)), 30) if ranked else 0
-    selected = ranked[:target_count]
+    direct_evidence = [source for source in ranked if source.directEvidenceEligible]
+    context_only = [
+        source
+        for source in ranked
+        if (
+            not source.directEvidenceEligible
+            and (
+                source.sourceQualityLabel != "general"
+                or (
+                    _domain_matches(source.domain, APPROVED_GENERAL_HEALTH_DOMAIN_MARKERS)
+                    and (source.citationIntegrity >= 45 or source.relevanceScore >= 62)
+                )
+            )
+        )
+    ]
+    general_context_only = [source for source in context_only if source.sourceQualityLabel == "general"]
+    stronger_context_only = [source for source in context_only if source.sourceQualityLabel != "general"]
+    target_count = min(max(18, len(direct_evidence) + min(12, len(context_only))), 48) if ranked else 0
+    selected = [
+        *direct_evidence[:target_count],
+        *stronger_context_only[: max(0, target_count - len(direct_evidence[:target_count]))],
+        *general_context_only[: min(6, max(0, target_count - len(direct_evidence[:target_count]) - len(stronger_context_only[: max(0, target_count - len(direct_evidence[:target_count]))])))],
+    ]
 
-    best_evidence = [source for source in selected if source.sourceScore >= 2 and source.evidenceScore >= 4]
-    contradictions = [source for source in selected if source.sentiment == "negative"]
+    best_evidence = [source for source in selected if source.directEvidenceEligible and source.sourceScore >= 2 and source.evidenceScore >= 4]
+    contradictions = [source for source in selected if source.directEvidenceEligible and source.sentiment == "negative"]
     mixed_limited = [source for source in selected if source not in best_evidence and source not in contradictions]
 
     groups = [
         EvidenceGroup(
             key="best_evidence",
             title="Best evidence",
-            summary=f"{len(best_evidence)} stronger review, trial, or authority-led sources stayed visible.",
+            summary=f"{len(best_evidence)} validated sources passed the strict direct-evidence gate and stayed visible as first-class evidence.",
             sources=best_evidence,
         ),
         EvidenceGroup(
             key="mixed_or_limited",
             title="Mixed or limited",
-            summary=f"{len(mixed_limited)} sources add nuance, limited support, or mechanism context without settling the claim.",
+            summary=f"{len(mixed_limited)} sources add nuance or context, but they are weaker, indirect, or limited-access rather than direct evidence cards.",
             sources=mixed_limited,
         ),
         EvidenceGroup(
             key="contradictions",
             title="Contradictions",
-            summary=f"{len(contradictions)} sources materially challenge or narrow the claim.",
+            summary=f"{len(contradictions)} validated sources materially challenge or narrow the claim.",
             sources=contradictions,
         ),
     ]
     return groups, selected
+
+
+def build_claim_graph(claim_analysis: ClaimAnalysis) -> list[ClaimGraphNode]:
+    nodes: list[ClaimGraphNode] = []
+    relationship_type = claim_analysis.semantics.relationshipType if claim_analysis.semantics else "correlational"
+    for index, atomic_claim in enumerate(claim_analysis.atomicClaims):
+        if relationship_type == "causal":
+            claim_type: str = "causal"
+        elif relationship_type == "opinion":
+            claim_type = "opinion"
+        elif any(token in atomic_claim.text.lower() for token in ["%", "percent", "rate", "risk ratio", "odds"]):
+            claim_type = "statistical"
+        else:
+            claim_type = "factual"
+        nodes.append(
+            ClaimGraphNode(
+                id=f"claim-{index + 1}",
+                text=atomic_claim.text,
+                claimType=claim_type,
+                importanceWeight=round(min(1.0, max(0.2, atomic_claim.strength / 5)), 2),
+                entities=claim_analysis.nlpEntities[:6],
+            )
+        )
+    if nodes:
+        return nodes
+    return [
+        ClaimGraphNode(
+            id="claim-1",
+            text=claim_analysis.summary,
+            claimType="causal" if relationship_type == "causal" else "opinion" if relationship_type == "opinion" else "factual",
+            importanceWeight=0.8,
+            entities=claim_analysis.nlpEntities[:6],
+        )
+    ]
+
+
+def build_source_registry(sources: list[SourceAssessment]) -> list[SourceRegistryEntry]:
+    registry: list[SourceRegistryEntry] = []
+    for source in sources:
+        registry.append(
+            SourceRegistryEntry(
+                sourceId=source.id,
+                title=source.title,
+                domain=source.domain,
+                provider=source.sourceProvider,
+                discoveredUrl=source.discoveredUrl or source.url,
+                resolvedUrl=source.resolvedUrl or source.url,
+                evidenceUrl=source.evidenceUrl or source.resolvedUrl or source.url,
+                linkAlive=source.linkAlive,
+                contentAccessible=source.contentAccessible,
+                httpStatusCode=source.httpStatusCode,
+                quoteVerified=source.quoteVerified,
+                directEvidenceEligible=source.directEvidenceEligible,
+                sourceQualityLabel=source.sourceQualityLabel,
+            )
+        )
+    return registry
+
+
+def build_evidence_graph(claim_graph: list[ClaimGraphNode], sources: list[SourceAssessment]) -> list[EvidenceGraphNode]:
+    primary_claim_id = claim_graph[0].id if claim_graph else "claim-1"
+    graph: list[EvidenceGraphNode] = []
+    for index, source in enumerate(sources):
+        graph.append(
+            EvidenceGraphNode(
+                id=f"evidence-{index + 1}",
+                claimId=primary_claim_id,
+                sourceId=source.id,
+                stance=source.quoteStance,
+                quote=(source.evidence.quotedEvidence if source.evidence else "")[:220],
+                quoteVerified=source.quoteVerified,
+                directEvidenceEligible=source.directEvidenceEligible,
+                evidenceUrl=source.evidenceUrl or source.resolvedUrl or source.url,
+                credibilityScore=min(100, round((source.citationIntegrity * 0.45) + (source.relevanceScore * 0.25) + (source.semanticSimilarity * 0.3))),
+            )
+        )
+    return graph
 
 
 def infer_confidence_level(
@@ -420,6 +541,8 @@ def build_step_summaries(
     verdict_summary: str,
     confidence_level: ConfidenceLevel,
     matrix_lines: list[str],
+    investigation_brief_summary: str = "",
+    investigation_brief_details: list[str] | None = None,
 ) -> list[PipelineStepSummary]:
     total_sources = sum(len(group.sources) for group in groups)
     semantics = claim_analysis.semantics
@@ -432,55 +555,50 @@ def build_step_summaries(
         f"Relationship: {semantics.relationshipType}" if semantics and semantics.relationshipType else "",
     ]
     semantic_lines = [line for line in semantic_lines if line]
+    if investigation_brief_summary:
+        semantic_lines = [investigation_brief_summary, *(investigation_brief_details or []), *semantic_lines]
+
     return [
         PipelineStepSummary(
-            key="claim_breakdown",
-            title="Understand the claim",
+            key="claim_analysis",
+            title="Claim analysis",
             status="completed",
             summary=f"The wording was parsed as a {max((item.strength for item in claim_analysis.atomicClaims), default=1)}/5 strength claim before evidence was gathered.",
             details=semantic_lines,
         ),
         PipelineStepSummary(
-            key="query_generation",
-            title="Plan the evidence search",
+            key="searching_sources",
+            title="Searching sources",
             status="completed",
             summary=f"{len(claim_analysis.generatedQueries)} search paths were prepared across support, contradiction, and medical phrasing angles.",
             details=claim_analysis.generatedQueries[:6],
         ),
         PipelineStepSummary(
-            key="source_validation",
-            title="Check source quality",
+            key="validating_sources",
+            title="Validating sources",
             status="completed",
-            summary=f"{total_sources} readable sources stayed in the review after link and accessibility checks.",
+            summary=f"{total_sources} readable sources stayed in the review after link, accessibility, and credibility checks.",
             details=[
                 "Broken or inaccessible links were removed before analysis.",
+                "Domain credibility and promotional-risk checks ran before sources influenced the score.",
                 groups[0].summary,
                 groups[2].summary,
             ],
         ),
         PipelineStepSummary(
-            key="relevance_filter",
-            title="Keep only relevant evidence",
+            key="analyzing_evidence",
+            title="Analyzing evidence",
             status="completed",
-            summary=f"{total_sources} sources remained after off-topic or weakly related pages were filtered out.",
+            summary=f"{total_sources} sources remained after relevance filtering, quote verification, and stance analysis.",
             details=[
                 "Generic or weakly related pages were discarded before scoring.",
                 "Contradiction evidence stayed visible when it addressed the same claim from the opposite direction.",
+                "Only exact quotes that matched accessible source text were allowed into the final evidence cards.",
             ],
         ),
         PipelineStepSummary(
-            key="quote_verification",
-            title="Verify quotes",
-            status="completed",
-            summary="Only quotes that matched accessible source text were allowed into the final evidence cards.",
-            details=[
-                "Quotes that could not be matched directly to source text were removed.",
-                "Links shown in the UI map to the same source used for the quote block.",
-            ],
-        ),
-        PipelineStepSummary(
-            key="consensus_check",
-            title="Compare support and pushback",
+            key="computing_score",
+            title="Computing score",
             status="completed",
             summary=sentiment.summary,
             details=[
@@ -490,8 +608,8 @@ def build_step_summaries(
             ],
         ),
         PipelineStepSummary(
-            key="final_verdict",
-            title="Write the final verdict",
+            key="finalizing_results",
+            title="Finalizing results",
             status="completed",
             summary=f"{confidence_level.title()} confidence. {verdict_summary}",
             details=matrix_lines[:4],

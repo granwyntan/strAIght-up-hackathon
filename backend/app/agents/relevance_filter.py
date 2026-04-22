@@ -32,6 +32,38 @@ STOP_WORDS = {
     "would",
     "should",
 }
+CONTEXT_ONLY_DOMAIN_MARKERS = (
+    "npr.org",
+    "sacbee.com",
+    "cnn.com",
+    "foxnews.com",
+    "newsweek.com",
+    "forbes.com",
+    "msn.com",
+    "yahoo.com",
+)
+LOW_VALUE_MARKETING_DOMAIN_MARKERS = (
+    "drstanfield.com",
+    "usamedical.com",
+    "consensus.app",
+    "droracle.ai",
+)
+APPROVED_GENERAL_HEALTH_DOMAIN_MARKERS = (
+    "sleepfoundation.org",
+    "webmd.com",
+    "medicalnewstoday.com",
+    "healthline.com",
+    "mayoclinic.org",
+    "clevelandclinic.org",
+    "bannerhealth.com",
+    "medlineplus.gov",
+    "nih.gov",
+    "nccih.nih.gov",
+    "ods.od.nih.gov",
+    "aad.org",
+    "aap.org",
+    "aasm.org",
+)
 
 
 class RelevanceReviewOutput(BaseModel):
@@ -66,6 +98,11 @@ def _heuristic_relevance_score(claim: str, claim_analysis: ClaimAnalysis, source
     if source.query:
         score += 6
     return max(10, min(100, score))
+
+
+def _domain_matches(domain: str, patterns: tuple[str, ...]) -> bool:
+    lowered = domain.lower()
+    return any(lowered == pattern or lowered.endswith(f".{pattern}") or pattern in lowered for pattern in patterns)
 
 
 def _primary_relevance_review(claim: str, claim_analysis: ClaimAnalysis, source: SourceAssessment) -> RelevanceReviewOutput | None:
@@ -139,6 +176,39 @@ def _checker_relevance_review(claim: str, claim_analysis: ClaimAnalysis, source:
 
 
 async def _review_one(source: SourceAssessment, claim: str, claim_analysis: ClaimAnalysis) -> SourceAssessment | None:
+    if _domain_matches(source.domain, LOW_VALUE_MARKETING_DOMAIN_MARKERS):
+        return None
+
+    if (
+        _domain_matches(source.domain, CONTEXT_ONLY_DOMAIN_MARKERS)
+        and not source.directEvidenceEligible
+        and source.sourceQualityLabel == "general"
+        and source.evidenceScore <= 2
+    ):
+        return None
+
+    if source.spamRiskScore >= 82 and source.sourceQualityLabel == "general" and not source.directEvidenceEligible:
+        return None
+
+    if (
+        source.sourceQualityLabel == "general"
+        and source.evidenceTier == "blog"
+        and not source.directEvidenceEligible
+        and source.citationIntegrity < 45
+    ):
+        return None
+
+    if source.spamRiskScore >= 65 and source.evidenceTier == "blog":
+        return None
+
+    if (
+        source.sourceQualityLabel == "general"
+        and source.evidenceTier == "blog"
+        and not source.directEvidenceEligible
+        and not _domain_matches(source.domain, APPROVED_GENERAL_HEALTH_DOMAIN_MARKERS)
+    ):
+        return None
+
     heuristic_score = _heuristic_relevance_score(claim, claim_analysis, source)
     primary = await asyncio.to_thread(_primary_relevance_review, claim, claim_analysis, source)
     checker = None
@@ -183,4 +253,19 @@ async def filter_relevant_sources(claim: str, claim_analysis: ClaimAnalysis, sou
         concurrency=settings.pipeline_max_concurrency,
     )
     filtered = [source for source in reviewed if source is not None]
-    return filtered or sources[: min(len(sources), 12)]
+    if filtered:
+        return filtered
+
+    fallback_ranked = sorted(
+        sources,
+        key=lambda source: (
+            source.sourceScore,
+            source.evidenceScore,
+            source.citationIntegrity,
+            1 if source.linkAlive and source.contentAccessible else 0,
+            len((source.extractedText or source.snippet or "").split()),
+        ),
+        reverse=True,
+    )
+    fallback_limit = min(len(fallback_ranked), max(24, min(60, round(len(fallback_ranked) * 0.55))))
+    return fallback_ranked[:fallback_limit]

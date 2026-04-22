@@ -2,7 +2,7 @@ import re
 
 from pydantic import BaseModel, Field
 
-from .nlp_cloud_agent import refine_claim_with_nlp_cloud
+from .nlp_cloud_agent import NlpCloudClaimSignals, refine_claim_signals
 from ..ai import generate_structured_output
 from ..models import AtomicClaim, ClaimAnalysis, ClaimSemantics
 
@@ -132,6 +132,14 @@ class ClaimAnalyzerOutput(BaseModel):
 
 def _clean_phrase(text: str) -> str:
     return " ".join(text.strip(" .,!?:;").split())
+
+
+def _clean_query_phrase(text: str) -> str:
+    tokens: list[str] = []
+    for token in _clean_phrase(text).split():
+        if not tokens or token.lower() != tokens[-1].lower():
+            tokens.append(token)
+    return " ".join(tokens)
 
 
 def _focus_terms(text: str) -> list[str]:
@@ -398,7 +406,7 @@ def _generate_queries(claim: str, context: str, semantics: ClaimSemantics, focus
             for subject_variant in subject_pool[:3]:
                 for intervention_variant in intervention_pool[:3]:
                     for outcome_variant in outcome_pool[:3]:
-                        query = _clean_phrase(
+                        query = _clean_query_phrase(
                             template.format(
                                 claim_variant=claim_variant,
                                 subject_variant=subject_variant,
@@ -416,11 +424,11 @@ def _generate_queries(claim: str, context: str, semantics: ClaimSemantics, focus
 
 def _target_query_count(semantics: ClaimSemantics, focus_terms: list[str], context: str, desired_depth: str) -> int:
     if desired_depth == "quick":
-        base = 10
+        base = 12
     elif desired_depth == "deep":
-        base = 24
+        base = 30
     else:
-        base = 18
+        base = 22
     if semantics.relationshipType == "causal":
         base += 3
     if semantics.strength >= 4:
@@ -433,11 +441,11 @@ def _target_query_count(semantics: ClaimSemantics, focus_terms: list[str], conte
         base += 2
 
     if desired_depth == "quick":
-        floor, ceiling = 8, 16
+        floor, ceiling = 10, 18
     elif desired_depth == "deep":
-        floor, ceiling = 22, 36
+        floor, ceiling = 28, 48
     else:
-        floor, ceiling = 16, 28
+        floor, ceiling = 20, 36
     return max(floor, min(ceiling, base))
 
 
@@ -499,17 +507,60 @@ def _llm_semantic_check(claim: str, context: str, draft: ClaimAnalyzerOutput, ba
     )
 
 
-def analyze_claim(claim: str, context: str = "", desired_depth: str = "standard") -> ClaimAnalysis:
+def _llm_semantic_arbiter(
+    claim: str,
+    context: str,
+    primary: ClaimAnalyzerOutput,
+    checker: ClaimAnalyzerOutput,
+    baseline: ClaimSemantics,
+) -> ClaimAnalyzerOutput | None:
+    return generate_structured_output(
+        "consensus",
+        (
+            "You arbitrate a disagreement in health-claim semantic parsing. "
+            "Return JSON only with claimType, summary, focusTerms, redFlags, subject, intervention, action, outcome, relationshipType, and strength."
+        ),
+        {
+            "claim": claim,
+            "context": context,
+            "baseline": baseline.model_dump(),
+            "primary": primary.model_dump(),
+            "checker": checker.model_dump(),
+            "instructions": [
+                "Prefer the more conservative causal interpretation when the analyses disagree.",
+                "Preserve the full meaning of the original claim.",
+            ],
+        },
+        ClaimAnalyzerOutput,
+        preferred_providers=["openai", "gemini", "claude"],
+    )
+
+
+def analyze_claim(
+    claim: str,
+    context: str = "",
+    desired_depth: str = "standard",
+    nlp_cloud_signals: NlpCloudClaimSignals | None = None,
+) -> ClaimAnalysis:
     cleaned_claim = _clean_phrase(claim)
     focus_terms = _focus_terms(f"{cleaned_claim} {context}")
     red_flags, language_risk = _language_flags(cleaned_claim)
     heuristics = _semantic_frame(cleaned_claim)
     claim_type = _claim_type(cleaned_claim)
-    nlp_cloud_signals = refine_claim_with_nlp_cloud(cleaned_claim, context)
+    nlp_cloud_signals = nlp_cloud_signals or refine_claim_signals(cleaned_claim, context)
 
     llm_analysis = _llm_semantic_pass(cleaned_claim, context, heuristics, claim_type, red_flags)
     if llm_analysis is not None:
-        llm_analysis = _llm_semantic_check(cleaned_claim, context, llm_analysis, heuristics) or llm_analysis
+        semantic_check = _llm_semantic_check(cleaned_claim, context, llm_analysis, heuristics)
+        if semantic_check is not None and (
+            semantic_check.relationshipType != llm_analysis.relationshipType
+            or semantic_check.strength != llm_analysis.strength
+            or semantic_check.subject != llm_analysis.subject
+            or semantic_check.outcome != llm_analysis.outcome
+        ):
+            llm_analysis = _llm_semantic_arbiter(cleaned_claim, context, llm_analysis, semantic_check, heuristics) or semantic_check
+        else:
+            llm_analysis = semantic_check or llm_analysis
     semantics = heuristics
     direction = _claim_direction(cleaned_claim, heuristics)
     summary = (
@@ -543,6 +594,7 @@ def analyze_claim(claim: str, context: str = "", desired_depth: str = "standard"
                 "relationshipType": nlp_cloud_signals.relationshipType or semantics.relationshipType,
             }
         )
+        claim_type = nlp_cloud_signals.claimDomain or claim_type
 
     claim_strength = max(semantics.strength, min(5, max(1, round(language_risk / 20) + 1)))
     if nlp_cloud_signals is not None and nlp_cloud_signals.strength is not None:
@@ -568,4 +620,6 @@ def analyze_claim(claim: str, context: str = "", desired_depth: str = "standard"
         generatedQueries=queries,
         atomicClaims=[atomic_claim],
         semantics=semantics,
+        nlpEntities=nlp_cloud_signals.entities if nlp_cloud_signals is not None else [],
+        claimDomain=claim_type,
     )

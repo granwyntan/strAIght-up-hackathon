@@ -16,6 +16,9 @@ ConfidenceLevel = Literal["low", "medium", "high"]
 EffectDirection = Literal["support", "neutral", "contradict"]
 MisinformationRisk = Literal["low", "moderate", "high"]
 CacheStatus = Literal["live", "cached", "fallback"]
+SourceQualityLabel = Literal["verified", "established", "general"]
+NotificationPlatform = Literal["ios", "android", "web", "unknown"]
+QuoteStance = Literal["supportive", "uncertain", "unsupportive"]
 
 
 class BrandInfo(BaseModel):
@@ -57,7 +60,7 @@ class InvestigationCreateRequest(BaseModel):
     context: str = Field(default="", max_length=2000)
     sourceUrls: list[str] = Field(default_factory=list)
     mode: InvestigationMode = "auto"
-    desiredDepth: DesiredDepth = "standard"
+    desiredDepth: DesiredDepth = "deep"
 
 
 class ProgressEvent(BaseModel):
@@ -88,6 +91,8 @@ class ClaimAnalysis(BaseModel):
     generatedQueries: list[str]
     atomicClaims: list["AtomicClaim"] = Field(default_factory=list)
     semantics: "ClaimSemantics | None" = None
+    nlpEntities: list[str] = Field(default_factory=list)
+    claimDomain: str = ""
 
 
 class AtomicClaim(BaseModel):
@@ -123,16 +128,59 @@ class EvidenceExtraction(BaseModel):
     effectDirection: EffectDirection = "neutral"
     quotedEvidence: str = ""
     quoteVerified: bool = False
+    quoteStance: QuoteStance = "uncertain"
     expertAnalysis: str = ""
+
+
+class ClaimGraphNode(BaseModel):
+    id: str
+    text: str
+    claimType: Literal["factual", "statistical", "causal", "opinion"] = "factual"
+    importanceWeight: float = Field(default=0.5, ge=0.0, le=1.0)
+    entities: list[str] = Field(default_factory=list)
+
+
+class SourceRegistryEntry(BaseModel):
+    sourceId: str
+    title: str
+    domain: str
+    provider: str = ""
+    discoveredUrl: str
+    resolvedUrl: str = ""
+    evidenceUrl: str = ""
+    linkAlive: bool = False
+    contentAccessible: bool = False
+    httpStatusCode: int | None = None
+    quoteVerified: bool = False
+    directEvidenceEligible: bool = False
+    sourceQualityLabel: SourceQualityLabel = "general"
+
+
+class EvidenceGraphNode(BaseModel):
+    id: str
+    claimId: str
+    sourceId: str
+    stance: QuoteStance = "uncertain"
+    quote: str = ""
+    quoteVerified: bool = False
+    directEvidenceEligible: bool = False
+    evidenceUrl: str = ""
+    credibilityScore: int = Field(default=0, ge=0, le=100)
 
 
 class SourceAssessment(BaseModel):
     id: str
     title: str
     url: str
+    discoveredUrl: str = ""
+    resolvedUrl: str = ""
+    evidenceUrl: str = ""
     domain: str
+    publishedAt: str | None = None
+    author: str = ""
     sourceName: str = ""
     query: str
+    sourceProvider: str = ""
     snippet: str
     sourceBucket: SourceBucket
     sourceScore: int = Field(ge=1, le=3)
@@ -152,8 +200,15 @@ class SourceAssessment(BaseModel):
     citations: list[CitationAssessment] = Field(default_factory=list)
     linkAlive: bool = True
     contentAccessible: bool = True
+    httpStatusCode: int | None = None
+    contentType: str = ""
+    fetchRedirected: bool = False
     extractedText: str = ""
+    semanticSimilarity: int = Field(default=0, ge=0, le=100)
+    directEvidenceEligible: bool = False
+    linkValidationSummary: str = ""
     quoteVerified: bool = False
+    quoteStance: QuoteStance = "uncertain"
     sentimentScientific: SourceSentiment | None = None
     sentimentCritical: SourceSentiment | None = None
     agreementFactor: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -163,6 +218,10 @@ class SourceAssessment(BaseModel):
     sourceWeight: float = Field(default=0.4, ge=0.0, le=1.0)
     weightedContribution: float = 0.0
     cacheStatus: CacheStatus = "live"
+    sourceQualityLabel: SourceQualityLabel = "general"
+    sourceQualityReason: str = ""
+    spamRiskScore: int = Field(default=0, ge=0, le=100)
+    credibilityNotes: list[str] = Field(default_factory=list)
     evidence: EvidenceExtraction | None = None
 
 
@@ -176,6 +235,8 @@ class DecisionMatrixFactor(BaseModel):
 class PipelineStepSummary(BaseModel):
     key: str
     title: str
+    role: str = ""
+    goal: str = ""
     status: AgentStatus
     summary: str
     details: list[str] = Field(default_factory=list)
@@ -212,12 +273,36 @@ class EvidenceGroup(BaseModel):
     sources: list[SourceAssessment] = Field(default_factory=list)
 
 
+class ProviderReviewSummary(BaseModel):
+    provider: Literal["openai", "claude", "gemini", "xai", "deepseek"]
+    model: str = ""
+    role: str = ""
+    verdict: ClaimVerdict
+    confidence: int = Field(default=50, ge=0, le=100)
+    scoreAdjustment: int = Field(default=0, ge=-20, le=20)
+    rationale: str = ""
+    strengths: list[str] = Field(default_factory=list)
+    concerns: list[str] = Field(default_factory=list)
+    hallucinationFlags: list[str] = Field(default_factory=list)
+
+
+class HoaxSignal(BaseModel):
+    label: str
+    severity: Literal["low", "moderate", "high"] = "moderate"
+    rationale: str = ""
+
+
 class InvestigationState(BaseModel):
     claimAnalysis: ClaimAnalysis | None = None
+    claimGraph: list[ClaimGraphNode] = Field(default_factory=list)
+    evidenceGraph: list[EvidenceGraphNode] = Field(default_factory=list)
+    sourceRegistry: list[SourceRegistryEntry] = Field(default_factory=list)
     recommendedQueries: list[str] = Field(default_factory=list)
     sources: list[SourceAssessment] = Field(default_factory=list)
     sourceGroups: list[EvidenceGroup] = Field(default_factory=list)
     stepSummaries: list[PipelineStepSummary] = Field(default_factory=list)
+    providerReviews: list[ProviderReviewSummary] = Field(default_factory=list)
+    hoaxSignals: list[HoaxSignal] = Field(default_factory=list)
     sentiment: SentimentDistribution | None = None
     consensus: ConsensusBreakdown | None = None
     matrix: list[DecisionMatrixFactor] = Field(default_factory=list)
@@ -232,6 +317,7 @@ class InvestigationState(BaseModel):
     orchestrationNotes: list[str] = Field(default_factory=list)
     expertInsight: str = ""
     aiSummary: str = ""
+    eli15Summary: str = ""
     verdictSummary: str = ""
     finalNarrative: str = ""
     evidenceBreakdown: list[str] = Field(default_factory=list)
@@ -264,10 +350,15 @@ class InvestigationSummary(BaseModel):
 
 class InvestigationDetail(InvestigationSummary):
     claimAnalysis: ClaimAnalysis | None = None
+    claimGraph: list[ClaimGraphNode] = Field(default_factory=list)
+    evidenceGraph: list[EvidenceGraphNode] = Field(default_factory=list)
+    sourceRegistry: list[SourceRegistryEntry] = Field(default_factory=list)
     recommendedQueries: list[str] = Field(default_factory=list)
     sources: list[SourceAssessment] = Field(default_factory=list)
     sourceGroups: list[EvidenceGroup] = Field(default_factory=list)
     stepSummaries: list[PipelineStepSummary] = Field(default_factory=list)
+    providerReviews: list[ProviderReviewSummary] = Field(default_factory=list)
+    hoaxSignals: list[HoaxSignal] = Field(default_factory=list)
     sentiment: SentimentDistribution | None = None
     consensus: ConsensusBreakdown | None = None
     matrix: list[DecisionMatrixFactor] = Field(default_factory=list)
@@ -282,6 +373,7 @@ class InvestigationDetail(InvestigationSummary):
     orchestrationNotes: list[str] = Field(default_factory=list)
     expertInsight: str = ""
     aiSummary: str = ""
+    eli15Summary: str = ""
     verdictSummary: str = ""
     finalNarrative: str = ""
     evidenceBreakdown: list[str] = Field(default_factory=list)
@@ -296,3 +388,13 @@ class InvestigationDetail(InvestigationSummary):
 
 class InvestigationCollection(BaseModel):
     items: list[InvestigationSummary]
+
+
+class NotificationRegistrationRequest(BaseModel):
+    expoPushToken: str = Field(min_length=10, max_length=400)
+    platform: NotificationPlatform = "unknown"
+
+
+class NotificationRegistrationResponse(BaseModel):
+    success: bool = True
+    registeredAt: str

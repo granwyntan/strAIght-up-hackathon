@@ -88,7 +88,7 @@ export default function AnalysisResult({ result, selectedImageUri, selectedImage
     <View className="gap-3 rounded-[28px] border border-line bg-card p-5 shadow-panel">
       <Text className="font-['Poppins_700Bold'] text-base text-ink">Analysis result</Text>
       <Text className="font-['Poppins_400Regular'] leading-6 text-muted">
-        Structured pharmacist-style feedback generated from your uploaded supplement label.
+        Structured pharmacist-style feedback generated from the uploaded label, using the same typography and calmer material styling as the main app.
       </Text>
 
       {selectedImageUri ? (

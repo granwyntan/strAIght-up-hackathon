@@ -115,6 +115,7 @@ if (-not $NoReload) {
 Write-Host "Starting backend from $backendDir" -ForegroundColor Cyan
 Write-Host "Using Python: $pythonCommand" -ForegroundColor DarkCyan
 Write-Host "Binding API to http://$backendHost`:$backendPort" -ForegroundColor DarkCyan
+Write-Host "Tip: use run-frontend.ps1 -UsbDebugging to reverse Android USB ports automatically." -ForegroundColor DarkCyan
 
 Push-Location $backendDir
 try {

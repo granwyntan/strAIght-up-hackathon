@@ -3,10 +3,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import repository
 from .ai import stage_target_label
-from .core.orchestrator import queue_investigation
+from .core.orchestrator import queue_investigation, start_investigation_workers
 from .database import init_db
 from .knowledge.base import BOOTSTRAP
-from .models import BootstrapPayload, InvestigationCollection, InvestigationCreateRequest, InvestigationDetail
+from .models import (
+    BootstrapPayload,
+    InvestigationCollection,
+    InvestigationCreateRequest,
+    InvestigationDetail,
+    NotificationRegistrationRequest,
+    NotificationRegistrationResponse,
+)
 from .routes.supplements import router as supplements_router
 from .settings import settings
 
@@ -32,6 +39,7 @@ app.include_router(supplements_router)
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    start_investigation_workers()
 
 
 @app.get("/health")
@@ -47,6 +55,7 @@ def health() -> dict[str, object]:
             "nlpcloud": settings.has_nlpcloud,
             "tavily": settings.has_tavily,
             "serpapi": settings.has_serpapi,
+            "exa": settings.has_exa,
         },
         "publicBaseUrl": settings.backend_public_base_url,
         "llmRoutes": {
@@ -58,18 +67,22 @@ def health() -> dict[str, object]:
         },
         "searchStrategy": {
             "breadth": "SerpAPI",
-            "depth": "Tavily",
+            "depth": "Tavily, Exa",
         },
         "cache": {
             "searchStableTtlSeconds": settings.search_cache_ttl_stable_seconds,
             "searchTrendingTtlSeconds": settings.search_cache_ttl_trending_seconds,
-            "finalTtlSeconds": settings.final_cache_ttl_seconds,
+            "extractionTtlSeconds": settings.extraction_cache_ttl_seconds,
+            "finalResultReuse": False,
         },
         "pipeline": {
             "maxConcurrency": settings.pipeline_max_concurrency,
             "quickSourceTarget": settings.source_target_quick,
             "standardSourceTarget": settings.source_target_standard,
             "deepSourceTarget": settings.source_target_deep,
+        },
+        "database": {
+            "resolvedPath": str(settings.resolved_database_path),
         },
     }
 
@@ -113,3 +126,15 @@ def delete_investigation(investigation_id: str) -> dict[str, bool]:
     if not deleted:
         raise HTTPException(status_code=404, detail="Investigation not found")
     return {"deleted": True}
+
+
+@app.delete("/api/investigations")
+def clear_investigations() -> dict[str, int]:
+    cleared = repository.clear_investigations()
+    return {"cleared": cleared}
+
+
+@app.post("/api/notifications/register", response_model=NotificationRegistrationResponse)
+def register_notifications(payload: NotificationRegistrationRequest) -> NotificationRegistrationResponse:
+    registered_at = repository.save_push_subscription(payload.expoPushToken, payload.platform)
+    return NotificationRegistrationResponse(success=True, registeredAt=registered_at)

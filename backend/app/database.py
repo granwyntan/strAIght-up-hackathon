@@ -5,7 +5,7 @@ from .settings import settings
 
 
 def get_connection() -> sqlite3.Connection:
-    db_path = Path(settings.database_path)
+    db_path = Path(settings.resolved_database_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path, check_same_thread=False)
     connection.row_factory = sqlite3.Row
@@ -79,10 +79,18 @@ def init_db() -> None:
                 seen_count INTEGER NOT NULL DEFAULT 1
             );
 
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                expo_push_token TEXT PRIMARY KEY,
+                platform TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_investigations_created_at ON investigations (created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_investigations_updated_at ON investigations (updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_investigations_verdict ON investigations (verdict);
             CREATE INDEX IF NOT EXISTS idx_investigations_score ON investigations (overall_score DESC);
+            CREATE INDEX IF NOT EXISTS idx_push_subscriptions_last_seen ON push_subscriptions (last_seen_at DESC);
             """
         )
 

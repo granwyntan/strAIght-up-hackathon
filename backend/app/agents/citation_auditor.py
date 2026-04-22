@@ -88,7 +88,7 @@ def _audit_one(claim: str, index: int, source: SourceAssessment) -> SourceAssess
     broken_links = 0
     supporting_strength = 0
 
-    knowledge_entry = resolve_source_by_url(source.url)
+    knowledge_entry = resolve_source_by_url(source.url) if source.sourceProvider == "seeded" else None
     citation_refs = knowledge_entry.citations if knowledge_entry else []
 
     for citation in citation_refs:

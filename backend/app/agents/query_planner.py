@@ -13,10 +13,17 @@ class QueryPlannerOutput(BaseModel):
 
 def _dedupe(items: list[str], limit: int) -> list[str]:
     cleaned: list[str] = []
+    seen_normalized: set[str] = set()
     for item in items:
-        normalized = item.strip()
-        if normalized and normalized not in cleaned:
+        collapsed_tokens: list[str] = []
+        for token in item.strip().split():
+            if not collapsed_tokens or token.lower() != collapsed_tokens[-1].lower():
+                collapsed_tokens.append(token)
+        normalized = " ".join(collapsed_tokens).strip()
+        normalized_key = normalized.lower()
+        if normalized and normalized_key not in seen_normalized:
             cleaned.append(normalized)
+            seen_normalized.add(normalized_key)
     return cleaned[:limit]
 
 
@@ -82,6 +89,39 @@ def _checked_plan(
     )
 
 
+def _arbiter_plan(
+    claim: str,
+    context: str,
+    desired_depth: str,
+    baseline: ClaimAnalysis,
+    primary: QueryPlannerOutput,
+    checker: QueryPlannerOutput,
+    target_query_count: int,
+) -> QueryPlannerOutput | None:
+    return generate_structured_output(
+        "consensus",
+        (
+            "You arbitrate a disagreement in a health-claim query plan. "
+            "Return JSON only with summary, focusTerms, redFlags, and generatedQueries."
+        ),
+        {
+            "claim": claim,
+            "context": context,
+            "desired_depth": desired_depth,
+            "baseline": baseline.model_dump(),
+            "primary": primary.model_dump(),
+            "checker": checker.model_dump(),
+            "instructions": [
+                "Prefer the cleaner and more medically relevant query set.",
+                "Preserve contradiction-finding and null-result searches.",
+                f"Keep the final query list around {target_query_count} items.",
+            ],
+        },
+        QueryPlannerOutput,
+        preferred_providers=["openai", "gemini", "claude"],
+    )
+
+
 def refine_claim_analysis(claim: str, context: str, desired_depth: str, baseline: ClaimAnalysis) -> ClaimAnalysis:
     target_query_count = _target_query_count(desired_depth, baseline)
     query_limit = max(target_query_count, min(36, len(baseline.generatedQueries) or target_query_count))
@@ -115,7 +155,11 @@ def refine_claim_analysis(claim: str, context: str, desired_depth: str, baseline
 
     if result is None:
         return baseline
-    result = _checked_plan(claim, context, desired_depth, baseline, result, target_query_count) or result
+    checked = _checked_plan(claim, context, desired_depth, baseline, result, target_query_count)
+    if checked is not None and set(checked.generatedQueries) != set(result.generatedQueries):
+        result = _arbiter_plan(claim, context, desired_depth, baseline, result, checked, target_query_count) or checked
+    else:
+        result = checked or result
 
     return baseline.model_copy(
         update={

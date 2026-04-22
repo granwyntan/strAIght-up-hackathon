@@ -1,7 +1,12 @@
 param(
     [string]$ApiBaseUrl = "",
     [switch]$NoStart,
-    [switch]$UpdateDeps
+    [switch]$UpdateDeps,
+    [switch]$UseDevClient,
+    [switch]$UseExpoGo,
+    [switch]$UsbDebugging,
+    [ValidateSet("lan", "tunnel", "localhost")]
+    [string]$ExpoHost = "lan"
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +21,7 @@ $frontendNodeModules = Join-Path $frontendDir "node_modules"
 $frontendDepsStamp = Join-Path $frontendNodeModules ".gramwin-install-stamp"
 $apiCandidates = @()
 $backendPort = "8000"
+$metroPort = "8081"
 
 function Add-ApiCandidate {
     param([string]$Value)
@@ -36,6 +42,30 @@ function Add-ApiCandidate {
     $normalized = $normalized.TrimEnd('/')
     if ($script:apiCandidates -notcontains $normalized) {
         $script:apiCandidates += $normalized
+    }
+}
+
+function Invoke-AdbReverseIfAvailable {
+    param(
+        [string[]]$Ports
+    )
+
+    $adbCommand = Get-Command adb -ErrorAction SilentlyContinue
+    if (-not $adbCommand) {
+        Write-Host "USB debugging requested, but adb was not found on PATH. Skipping adb reverse." -ForegroundColor Yellow
+        return
+    }
+
+    $deviceRows = & $adbCommand.Source devices 2>$null | Select-Object -Skip 1 | Where-Object { $_.Trim() }
+    $connectedDevices = @($deviceRows | Where-Object { $_ -match "\sdevice$" })
+    if ($connectedDevices.Count -eq 0) {
+        Write-Host "USB debugging requested, but no authorized Android device was detected. Skipping adb reverse." -ForegroundColor Yellow
+        return
+    }
+
+    foreach ($port in $Ports) {
+        Write-Host "Running adb reverse for tcp:$port" -ForegroundColor DarkCyan
+        & $adbCommand.Source reverse "tcp:$port" "tcp:$port" | Out-Null
     }
 }
 
@@ -149,9 +179,38 @@ function Ensure-FrontendDeps {
 Ensure-FrontendDeps
 
 if (-not $NoStart) {
+    if ($UsbDebugging) {
+        Invoke-AdbReverseIfAvailable -Ports @($metroPort, $backendPort)
+    }
+
+    $expoArgs = @("start", "--clear")
+    switch ($ExpoHost) {
+        "tunnel" {
+            $expoArgs += "--tunnel"
+        }
+        "localhost" {
+            $expoArgs += "--localhost"
+        }
+        default {
+            $expoArgs += "--lan"
+        }
+    }
+
+    $launchDevClient = $UseDevClient -and -not $UseExpoGo
+
+    if ($launchDevClient) {
+        $expoArgs += "--dev-client"
+    }
+
     Push-Location $frontendDir
     try {
-        npx expo start --clear --lan
+        Write-Host "Starting Expo with host mode '$ExpoHost'" -ForegroundColor DarkCyan
+        if ($launchDevClient) {
+            Write-Host "Launching in Expo dev client mode." -ForegroundColor DarkCyan
+        } else {
+            Write-Host "Launching for Expo Go." -ForegroundColor DarkCyan
+        }
+        npx expo @expoArgs
     } finally {
         Pop-Location
     }

@@ -4,6 +4,8 @@ export type ClaimVerdict = "trustworthy" | "mixed" | "overstated" | "untrustwort
 export type SourceSentiment = "positive" | "neutral" | "negative";
 export type ConfidenceLevel = "low" | "medium" | "high";
 export type MisinformationRisk = "low" | "moderate" | "high";
+export type SourceQualityLabel = "verified" | "established" | "general";
+export type QuoteStance = "supportive" | "uncertain" | "unsupportive";
 
 export interface BrandInfo {
   name: string;
@@ -57,6 +59,8 @@ export interface ClaimAnalysis {
   generatedQueries: string[];
   atomicClaims: AtomicClaim[];
   semantics: ClaimSemantics | null;
+  nlpEntities: string[];
+  claimDomain: string;
 }
 
 export interface AtomicClaim {
@@ -84,13 +88,55 @@ export interface CitationAssessment {
   broken: boolean;
 }
 
+export interface ClaimGraphNode {
+  id: string;
+  text: string;
+  claimType: "factual" | "statistical" | "causal" | "opinion";
+  importanceWeight: number;
+  entities: string[];
+}
+
+export interface SourceRegistryEntry {
+  sourceId: string;
+  title: string;
+  domain: string;
+  provider: string;
+  discoveredUrl: string;
+  resolvedUrl: string;
+  evidenceUrl: string;
+  linkAlive: boolean;
+  contentAccessible: boolean;
+  httpStatusCode: number | null;
+  quoteVerified: boolean;
+  directEvidenceEligible: boolean;
+  sourceQualityLabel: SourceQualityLabel;
+}
+
+export interface EvidenceGraphNode {
+  id: string;
+  claimId: string;
+  sourceId: string;
+  stance: QuoteStance;
+  quote: string;
+  quoteVerified: boolean;
+  directEvidenceEligible: boolean;
+  evidenceUrl: string;
+  credibilityScore: number;
+}
+
 export interface SourceAssessment {
   id: string;
   title: string;
   url: string;
+  discoveredUrl: string;
+  resolvedUrl: string;
+  evidenceUrl: string;
   domain: string;
+  publishedAt: string | null;
+  author: string;
   sourceName: string;
   query: string;
+  sourceProvider: string;
   snippet: string;
   sourceBucket: string;
   sourceScore: number;
@@ -110,8 +156,15 @@ export interface SourceAssessment {
   citations: CitationAssessment[];
   linkAlive: boolean;
   contentAccessible: boolean;
+  httpStatusCode: number | null;
+  contentType: string;
+  fetchRedirected: boolean;
   extractedText: string;
+  semanticSimilarity: number;
+  directEvidenceEligible: boolean;
+  linkValidationSummary: string;
   quoteVerified: boolean;
+  quoteStance: QuoteStance;
   sentimentScientific: SourceSentiment | null;
   sentimentCritical: SourceSentiment | null;
   agreementFactor: number;
@@ -121,6 +174,10 @@ export interface SourceAssessment {
   sourceWeight: number;
   weightedContribution: number;
   cacheStatus: "live" | "cached" | "fallback";
+  sourceQualityLabel: SourceQualityLabel;
+  sourceQualityReason: string;
+  spamRiskScore: number;
+  credibilityNotes: string[];
   evidence: EvidenceExtraction | null;
 }
 
@@ -132,6 +189,7 @@ export interface EvidenceExtraction {
   effectDirection: "support" | "neutral" | "contradict";
   quotedEvidence: string;
   quoteVerified: boolean;
+  quoteStance: QuoteStance;
   expertAnalysis: string;
 }
 
@@ -163,9 +221,30 @@ export interface ProgressEvent {
 export interface PipelineStepSummary {
   key: string;
   title: string;
+  role: string;
+  goal: string;
   status: "pending" | "running" | "completed" | "failed";
   summary: string;
   details: string[];
+}
+
+export interface ProviderReviewSummary {
+  provider: "openai" | "claude" | "gemini" | "xai" | "deepseek";
+  model: string;
+  role: string;
+  verdict: ClaimVerdict;
+  confidence: number;
+  scoreAdjustment: number;
+  rationale: string;
+  strengths: string[];
+  concerns: string[];
+  hallucinationFlags: string[];
+}
+
+export interface HoaxSignal {
+  label: string;
+  severity: "low" | "moderate" | "high";
+  rationale: string;
 }
 
 export interface SentimentDistribution {
@@ -221,10 +300,15 @@ export interface InvestigationSummary {
 
 export interface InvestigationDetail extends InvestigationSummary {
   claimAnalysis: ClaimAnalysis | null;
+  claimGraph: ClaimGraphNode[];
+  evidenceGraph: EvidenceGraphNode[];
+  sourceRegistry: SourceRegistryEntry[];
   recommendedQueries: string[];
   sources: SourceAssessment[];
   sourceGroups: EvidenceGroup[];
   stepSummaries: PipelineStepSummary[];
+  providerReviews: ProviderReviewSummary[];
+  hoaxSignals: HoaxSignal[];
   sentiment: SentimentDistribution | null;
   consensus: ConsensusBreakdown | null;
   matrix: DecisionMatrixFactor[];
@@ -239,6 +323,7 @@ export interface InvestigationDetail extends InvestigationSummary {
   orchestrationNotes: string[];
   expertInsight: string;
   aiSummary: string;
+  eli15Summary: string;
   verdictSummary: string;
   finalNarrative: string;
   evidenceBreakdown: string[];
@@ -256,90 +341,104 @@ export interface InvestigationCollection {
 }
 
 export const palette = {
-  lime: "#E8F1EC",
-  aqua: "#DDEBE3",
-  blue: "#477DB3",
-  red: "#B34C43",
-  green: "#3D695C",
-  background: "#F7FAF8",
+  lime: "#EEF5F1",
+  aqua: "#EAF0F6",
+  blue: "#5E7EA7",
+  red: "#C25747",
+  green: "#1E7A5F",
+  background: "#F4F7FB",
   surface: "#ffffff",
-  surfaceSoft: "#F1F6F3",
-  surfaceMuted: "#E8EFEA",
-  border: "#D8E2DC",
-  ink: "#18231d",
-  muted: "#617068",
-  primary: "#3D695C",
-  primarySoft: "#E6F0EB",
-  secondary: "#6D877C",
-  text: "#18231d",
-  success: "#2F7D5C",
-  successSoft: "#E8F4EE",
-  warning: "#477DB3",
-  warningSoft: "#EAF2FB",
-  danger: "#B34C43",
-  dangerSoft: "#F8E9E7",
-  pin: "#C8A92D",
-  pinSoft: "#FFF6D8"
+  surfaceSoft: "#F8FAFD",
+  surfaceMuted: "#EEF2F8",
+  border: "rgba(15, 23, 42, 0.06)",
+  ink: "#101828",
+  muted: "#667085",
+  primary: "#1F6F66",
+  primarySoft: "#E6F4F1",
+  secondary: "#70819A",
+  text: "#101828",
+  success: "#1E7A5F",
+  successSoft: "#E7F5EF",
+  warning: "#5E7EA7",
+  warningSoft: "#EAF0F6",
+  danger: "#C25747",
+  dangerSoft: "#FBECE9",
+  pin: "#C49A37",
+  pinSoft: "#FFF5D9"
 };
 
 export const defaultBootstrap: BootstrapPayload = {
   brand: {
     name: "GramWIN",
     tagline: "Health and Wellness at your fingertips",
-    accent: ["#3D695C", "#D3E9A4", "#BED6C8", "#A35A4F"]
+    accent: ["#3D695C", "#6D877C", "#DDEBE3", "#E6F0EB"]
   },
-  featuredClaims: [
-    {
-      id: "c1",
-      claim: "A short video says magnesium glycinate cures insomnia within a week for most adults.",
-      whyItIsInteresting: "It mixes a common supplement topic with very strong cure language."
-    },
-    {
-      id: "c2",
-      claim: "A wellness post says gut health supplements can fix eczema flare-ups in adults.",
-      whyItIsInteresting: "It turns a plausible mechanism story into a much stronger clinical promise."
-    },
-    {
-      id: "c3",
-      claim: "A reel says drinking more water is automatically healthy and better than other beverages.",
-      whyItIsInteresting: "It sounds reasonable, but still needs wording checks and real evidence context."
-    }
-  ],
+  featuredClaims: [],
   architecture: [
     {
       id: "a1",
-      title: "Claim Analyst · Medical Doctor",
-      summary: "Reads the full claim as one meaning-preserving health statement and checks whether the wording clinically overreaches."
+      title: "Investigation Brief Agent · Truth Guard",
+      summary: "Frames the run around falsification, contradiction evidence, and misinformation risk before any search results arrive."
     },
     {
       id: "a2",
-      title: "Research Agent · Scientist",
-      summary: "Uses broad and deep retrieval paths to gather studies, reviews, guidelines, and contradiction-seeking evidence."
+      title: "NLP Claim Scan Agent · Clinical Linguist",
+      summary: "Uses NLP Cloud to extract entities, relationship type, domain, and wording strength before the deeper reasoning stages."
     },
     {
       id: "a3",
-      title: "Validation Agent · Data Engineer",
-      summary: "Keeps only accessible links with readable content so dead or empty sources never reach the result."
+      title: "Claim Framing Agent · Medical Doctor",
+      summary: "Preserves the actual meaning of the claim, separates hype from semantics, and sets up the search questions."
     },
     {
       id: "a4",
-      title: "Stance Agent · Epidemiologist",
-      summary: "Interprets whether each source supports, contradicts, or stays uncertain based on actual evidence quality."
+      title: "Query Planning Agent · Research Librarian",
+      summary: "Builds search paths that look for support, contradiction, limitations, and hoax-style mismatch instead of only supportive content."
     },
     {
       id: "a5",
-      title: "Consensus Agent · Statistician",
-      summary: "Combines evidence quality, contradiction pressure, and agreement into the final credibility score."
+      title: "Evidence Retrieval Agent · Scientist",
+      summary: "Pulls candidate evidence from Tavily, SerpAPI, manual URLs, and known authority sources at deep-review scale."
     },
     {
       id: "a6",
-      title: "Verifier Agent · Auditor",
-      summary: "Checks quotes, contradictions, and model mismatches before the result is allowed to settle."
+      title: "Link Validation Agent · Data Engineer",
+      summary: "Checks dead links, extracts readable content, and rescues only credible excerpts when direct fetching fails."
     },
     {
       id: "a7",
-      title: "Summary Agent · Health Communicator",
-      summary: "Turns the technical review into plain-language guidance without burying the user in jargon."
+      title: "Credibility Audit Agent · Quality Auditor",
+      summary: "Downgrades promotional domains, spammy pages, weak authority signals, and fragile source credibility."
+    },
+    {
+      id: "a8",
+      title: "Study & Citation Audit Agent · Epidemiologist",
+      summary: "Classifies study design, checks citation integrity, and penalizes weak or broken reference chains."
+    },
+    {
+      id: "a9",
+      title: "Quote & Stance Agent · Evidence Interpreter",
+      summary: "Verifies exact highlights and classifies each source or quote as supportive, uncertain, or unsupportive."
+    },
+    {
+      id: "a10",
+      title: "Hoax Detection Agent · Misinformation Analyst",
+      summary: "Scans for fabricated-health patterns, evidence mismatch, and claims that behave more like hoaxes than facts."
+    },
+    {
+      id: "a11",
+      title: "Decision Engine Agent · Statistician",
+      summary: "Builds the weighted evidence score using source quality, contradiction pressure, citation strength, and wording discipline."
+    },
+    {
+      id: "a12",
+      title: "Cross-Model Review Agent · Fact-Check Panel",
+      summary: "Has OpenAI, Claude, Gemini, Grok, and DeepSeek challenge the evidence set, then audits that panel for hallucinations."
+    },
+    {
+      id: "a13",
+      title: "Summary Synthesis Agent · Consultant Doctor",
+      summary: "Uses Gemini-first writing with fallback and verification to produce short, simple, and detailed explanations."
     }
   ],
   suggestedLibraries: [

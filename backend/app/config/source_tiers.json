@@ -6,6 +6,7 @@
       "nih.gov",
       "cdc.gov",
       "fda.gov",
+      "cancer.gov",
       "ods.od.nih.gov",
       "nccih.nih.gov",
       "medlineplus.gov",
@@ -15,7 +16,11 @@
       "cochrane.org",
       "cochranelibrary.com",
       "nice.org.uk",
+      "nhs.uk",
       "aap.org",
+      "aafp.org",
+      "heart.org",
+      "escardio.org",
       "mayoclinicproceedings.org"
     ]
   },
@@ -27,14 +32,20 @@
       "thelancet.com",
       "nejm.org",
       "nature.com",
+      "annals.org",
+      "diabetesjournals.org",
       "sciencedirect.com",
       "springer.com",
+      "wiley.com",
+      "onlinelibrary.wiley.com",
+      "biomedcentral.com",
       "cell.com",
       "harvard.edu",
       "hsph.harvard.edu",
       "stanford.edu",
       "mayoclinic.org",
       "clevelandclinic.org",
+      "sleepfoundation.org",
       "aad.org",
       "aasm.org"
     ]
@@ -45,6 +56,8 @@
       "healthline.com",
       "webmd.com",
       "medicalnewstoday.com",
+      "verywellhealth.com",
+      "medscape.com",
       "patient.info"
     ]
   }

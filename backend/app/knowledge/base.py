@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+from ..core.workflow_engine import workflow_architecture_blocks
 from ..models import BootstrapPayload, ArchitectureBlock, BrandInfo, FeaturedClaim, StackLibrary
 
 
@@ -12,6 +13,7 @@ class KnowledgeSource(BaseModel):
     title: str
     url: str
     domain: str
+    publishedAt: str | None = None
     snippet: str
     sourceBucket: str
     journalType: str
@@ -32,15 +34,7 @@ BOOTSTRAP = BootstrapPayload(
         FeaturedClaim(id="c2", claim="A wellness post says gut health supplements can fix eczema flare-ups in adults.", whyItIsInteresting="It turns a plausible mechanism story into a much stronger clinical promise."),
         FeaturedClaim(id="c3", claim="A reel says drinking more water is automatically healthy and better than other beverages.", whyItIsInteresting="It sounds reasonable, but still needs wording checks and real evidence context."),
     ],
-    architecture=[
-        ArchitectureBlock(id="a1", title="Claim Analyst · Medical Doctor", summary="Reads the claim semantically as a whole, separates intervention from outcome, and checks whether the wording overreaches clinically."),
-        ArchitectureBlock(id="a2", title="Research Agent · Scientist", summary="Searches broadly and deeply for studies, reviews, guidelines, and contradiction-seeking evidence paths."),
-        ArchitectureBlock(id="a3", title="Validation Agent · Data Engineer", summary="Drops dead or inaccessible links, caches extracted content, and keeps only readable evidence for analysis."),
-        ArchitectureBlock(id="a4", title="Stance Agent · Epidemiologist", summary="Interprets whether each source supports, contradicts, or remains uncertain based on evidence quality and wording."),
-        ArchitectureBlock(id="a5", title="Consensus Agent · Statistician", summary="Weights evidence by source tier and confidence so the final score reflects stronger evidence more heavily."),
-        ArchitectureBlock(id="a6", title="Verifier Agent · Auditor", summary="Cross-checks quotes, contradictions, and model disagreements to reduce hallucinations and overconfident claims."),
-        ArchitectureBlock(id="a7", title="Summary Agent · Health Communicator", summary="Turns the technical review into short, user-friendly explanations that stay faithful to the evidence."),
-    ],
+    architecture=workflow_architecture_blocks(),
     suggestedLibraries=[
         StackLibrary(id="l1", name="TanStack Query", category="Caching", whyItHelps="Handles request caching, background refresh, and stale-state recovery cleanly in the app.", adoptionNote="Recommended for the next frontend pass."),
         StackLibrary(id="l2", name="Zustand", category="State", whyItHelps="Keeps UI state compact without overloading component trees.", adoptionNote="Good fit for lightweight global app state."),

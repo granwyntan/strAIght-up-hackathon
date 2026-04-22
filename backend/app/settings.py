@@ -28,17 +28,19 @@ class Settings(BaseSettings):
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     backend_public_base_url: str = "http://127.0.0.1:8000"
+    app_deep_link_scheme: str = "gramwin"
     cors_allowed_origins: str = "*"
     agentic_workflow_enabled: bool = True
     llm_max_output_tokens: int = 1200
-    llm_timeout_seconds: float = 14.0
-    pipeline_max_concurrency: int = 10
-    search_query_budget_quick: int = 10
+    llm_timeout_seconds: float = 28.0
+    pipeline_max_concurrency: int = 16
+    background_worker_count: int = 2
+    search_query_budget_quick: int = 12
     search_query_budget_standard: int = 24
     search_query_budget_deep: int = 36
-    source_target_quick: int = 28
-    source_target_standard: int = 56
-    source_target_deep: int = 120
+    source_target_quick: int = 42
+    source_target_standard: int = 72
+    source_target_deep: int = 128
     search_cache_ttl_trending_seconds: int = 1800
     search_cache_ttl_stable_seconds: int = 86400
     extraction_cache_ttl_seconds: int = 43200
@@ -90,20 +92,28 @@ class Settings(BaseSettings):
     nlpcloud_classification_model: str = "bart-large-mnli-yahoo-answers"
     nlpcloud_timeout_seconds: float = 8.0
     nlpcloud_max_stance_refinements: int = 16
-    sentiment_disagreement_review_limit: int = 14
+    sentiment_disagreement_review_limit: int = 24
 
     research_stage_providers: str = "gemini,openai,claude,deepseek,xai"
-    audit_stage_providers: str = "claude,openai,gemini,deepseek,xai"
-    reasoning_stage_providers: str = "openai,xai,claude,deepseek,gemini"
-    synthesis_stage_providers: str = "openai,claude,xai,gemini,deepseek"
-    consensus_stage_providers: str = "deepseek,claude,openai,gemini,xai"
+    audit_stage_providers: str = "openai,gemini,claude,xai,deepseek"
+    reasoning_stage_providers: str = "openai,gemini,claude,xai,deepseek"
+    synthesis_stage_providers: str = "gemini,openai,claude,xai,deepseek"
+    consensus_stage_providers: str = "openai,gemini,claude,xai,deepseek"
 
     tavily_api_key: str | None = None
-    tavily_max_results: int = 16
+    tavily_max_results: int = 24
     serpapi_api_key: str | None = None
     serpapi_engine: str = "google"
-    serpapi_num_results: int = 16
-    search_timeout_seconds: float = 4.5
+    serpapi_num_results: int = 24
+    exa_api_key: str | None = None
+    exa_max_results: int = 20
+    source_validation_timeout_seconds: float = 18.0
+    source_validation_llm_review_limit: int = 10
+    source_validation_rescue_excerpt_chars: int = 3200
+    source_validation_general_rescue_min_chars: int = 120
+    notifications_enabled: bool = True
+    expo_push_api_url: str = "https://exp.host/--/api/v2/push/send"
+    search_timeout_seconds: float = 12.0
     source_tier_config_path: str = str(DEFAULT_SOURCE_TIER_PATH)
     database_path: str = str(DEFAULT_DB_PATH)
 
@@ -159,6 +169,10 @@ class Settings(BaseSettings):
         return bool(self.serpapi_api_key)
 
     @property
+    def has_exa(self) -> bool:
+        return bool(self.exa_api_key)
+
+    @property
     def cors_allowed_origins_list(self) -> list[str]:
         values = [item.strip() for item in self.cors_allowed_origins.split(",") if item.strip()]
         return values or ["*"]
@@ -172,20 +186,43 @@ class Settings(BaseSettings):
                 domains.append(normalized)
         return domains
 
-    def _resolve_config_path(self, raw_path: str) -> Path:
+    def _resolve_repo_path(self, raw_path: str) -> Path:
         candidate = Path(raw_path)
         if not candidate.is_absolute():
             candidate = BASE_DIR / candidate
         return candidate
 
+    def _legacy_backend_path(self, raw_path: str) -> Path | None:
+        candidate = Path(raw_path)
+        if candidate.is_absolute():
+            return None
+        candidate_parts = tuple(part.lower() for part in candidate.parts)
+        if candidate_parts and candidate_parts[0] == "backend":
+            return None
+        legacy = BASE_DIR / "backend" / candidate
+        return legacy
+
+    def _resolve_data_path(self, raw_path: str) -> Path:
+        canonical = self._resolve_repo_path(raw_path)
+        legacy = self._legacy_backend_path(raw_path)
+        if canonical.exists():
+            return canonical
+        if legacy is not None and legacy.exists():
+            return legacy
+        return canonical
+
     @cached_property
     def source_tier_config(self) -> SourceTierConfig:
-        config_path = self._resolve_config_path(self.source_tier_config_path)
+        config_path = self._resolve_repo_path(self.source_tier_config_path)
         try:
             payload = json.loads(config_path.read_text(encoding="utf-8"))
             return SourceTierConfig.model_validate(payload)
         except Exception:
             return SourceTierConfig()
+
+    @cached_property
+    def resolved_database_path(self) -> Path:
+        return self._resolve_data_path(self.database_path)
 
     @property
     def verified_authorities_list(self) -> list[str]:

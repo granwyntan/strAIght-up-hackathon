@@ -1,6 +1,8 @@
 import json
+import time
 from dataclasses import dataclass
 from functools import lru_cache
+from threading import Lock
 from threading import local
 from typing import Any, Literal, TypeVar
 
@@ -16,12 +18,43 @@ ProviderName = Literal["openai", "claude", "gemini", "xai", "deepseek"]
 VALID_PROVIDERS: tuple[ProviderName, ...] = ("openai", "claude", "gemini", "xai", "deepseek")
 ANTHROPIC_VERSION = "2023-06-01"
 _ORCHESTRATION_STATE = local()
+_PROVIDER_LOCK = Lock()
+_PROVIDER_COOLDOWNS: dict[ProviderName, float] = {}
+PROVIDER_FAILURE_COOLDOWN_SECONDS = 900
+PROVIDER_HARD_FAILURE_MARKERS = (
+    "quota",
+    "credit balance",
+    "insufficient balance",
+    "rate limit",
+    "permission",
+    "forbidden",
+    "authentication",
+    "unauthorized",
+    "401",
+    "403",
+    "429",
+)
 
 
 @dataclass(frozen=True)
 class StageTarget:
     provider: ProviderName
     model: str
+
+
+@dataclass(frozen=True)
+class StructuredProviderResult:
+    provider: ProviderName
+    model: str
+    payload: BaseModel
+    raw_text: str
+
+
+@dataclass(frozen=True)
+class StructuredProviderFailure:
+    provider: ProviderName
+    model: str
+    error: str
 
 
 def reset_stage_rotation() -> None:
@@ -73,6 +106,38 @@ def _provider_enabled(provider: ProviderName) -> bool:
     return settings.has_deepseek
 
 
+def _provider_in_cooldown(provider: ProviderName) -> bool:
+    now = time.time()
+    with _PROVIDER_LOCK:
+        cooldown_until = _PROVIDER_COOLDOWNS.get(provider)
+        if cooldown_until is None:
+            return False
+        if cooldown_until <= now:
+            _PROVIDER_COOLDOWNS.pop(provider, None)
+            return False
+        return True
+
+
+def _mark_provider_failure(provider: ProviderName, exc: Exception) -> None:
+    message = f"{type(exc).__name__}: {exc}".lower()
+    if not any(marker in message for marker in PROVIDER_HARD_FAILURE_MARKERS):
+        return
+    with _PROVIDER_LOCK:
+        _PROVIDER_COOLDOWNS[provider] = time.time() + PROVIDER_FAILURE_COOLDOWN_SECONDS
+
+
+def _clear_provider_failure(provider: ProviderName) -> None:
+    with _PROVIDER_LOCK:
+        _PROVIDER_COOLDOWNS.pop(provider, None)
+
+
+def clear_provider_failures(providers: list[ProviderName] | None = None) -> None:
+    targets = providers or list(VALID_PROVIDERS)
+    with _PROVIDER_LOCK:
+        for provider in targets:
+            _PROVIDER_COOLDOWNS.pop(provider, None)
+
+
 def _provider_api_key(provider: ProviderName) -> str | None:
     if provider == "openai":
         return settings.openai_api_key
@@ -115,15 +180,24 @@ def _provider_stage_model(provider: ProviderName, stage: str) -> str:
     return getattr(settings, f"{provider}_model", "")
 
 
-def stage_targets(stage: str, preferred_providers: list[ProviderName] | None = None) -> list[StageTarget]:
+def stage_targets(
+    stage: str,
+    preferred_providers: list[ProviderName] | None = None,
+    *,
+    allow_rotation: bool = True,
+) -> list[StageTarget]:
     ordered = preferred_providers or _ordered_providers(getattr(settings, _route_attr(stage), ",".join(VALID_PROVIDERS)))
     targets: list[StageTarget] = []
     for provider in ordered:
         if not _provider_enabled(provider):
             continue
+        if _provider_in_cooldown(provider):
+            continue
         model = _provider_stage_model(provider, stage).strip()
         if model:
             targets.append(StageTarget(provider=provider, model=model))
+    if not allow_rotation:
+        return targets
     last_provider = _last_provider()
     if last_provider and len(targets) > 1:
         preferred = [target for target in targets if target.provider != last_provider]
@@ -336,9 +410,11 @@ def generate_structured_output(
             if not text:
                 continue
             parsed = schema.model_validate(_extract_json_object(text))
+            _clear_provider_failure(target.provider)
             _remember_provider(target.provider)
             return parsed
-        except Exception:
+        except Exception as exc:
+            _mark_provider_failure(target.provider, exc)
             continue
     return None
 
@@ -359,8 +435,56 @@ def generate_structured_list(
             if not text:
                 continue
             parsed = [schema.model_validate(item) for item in _extract_json_array(text)]
+            _clear_provider_failure(target.provider)
             _remember_provider(target.provider)
             return parsed
-        except Exception:
+        except Exception as exc:
+            _mark_provider_failure(target.provider, exc)
             continue
     return []
+
+
+def generate_structured_outputs_by_provider(
+    stage: str,
+    system_prompt: str,
+    payload: dict[str, Any],
+    schema: type[StageModel],
+    preferred_providers: list[ProviderName] | None = None,
+) -> tuple[list[StructuredProviderResult], list[StructuredProviderFailure]]:
+    if not llm_enabled():
+        return [], []
+
+    successes: list[StructuredProviderResult] = []
+    failures: list[StructuredProviderFailure] = []
+    for target in stage_targets(stage, preferred_providers=preferred_providers, allow_rotation=False):
+        try:
+            text = _call_provider(target, system_prompt, payload)
+            if not text:
+                failures.append(
+                    StructuredProviderFailure(
+                        provider=target.provider,
+                        model=target.model,
+                        error="empty response",
+                    )
+                )
+                continue
+            parsed = schema.model_validate(_extract_json_object(text))
+            _clear_provider_failure(target.provider)
+            successes.append(
+                StructuredProviderResult(
+                    provider=target.provider,
+                    model=target.model,
+                    payload=parsed,
+                    raw_text=text,
+                )
+            )
+        except Exception as exc:
+            _mark_provider_failure(target.provider, exc)
+            failures.append(
+                StructuredProviderFailure(
+                    provider=target.provider,
+                    model=target.model,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            )
+    return successes, failures

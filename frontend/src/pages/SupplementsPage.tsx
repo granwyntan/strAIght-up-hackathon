@@ -252,17 +252,17 @@ export default function SupplementsPage({ requestApi }: SupplementsPageProps) {
   return (
     <View className="gap-4">
       <View className="gap-2.5 rounded-[28px] border border-line bg-card p-6 shadow-panel">
-        <Text className="self-start rounded-full bg-moss px-3 py-1.5 font-['Poppins_600SemiBold'] text-xs text-sage">Supplement scanner</Text>
+        <Text className="self-start rounded-full bg-soft px-3 py-1.5 font-['Poppins_600SemiBold'] text-xs text-sage">Supplement scanner</Text>
         <Text className="font-['Poppins_700Bold'] text-[23px] leading-8 text-ink">Medicine and supplement analyzer</Text>
         <Text className="font-['Poppins_400Regular'] text-[14px] leading-6 text-muted">
-          Upload a supplement label to review key ingredients, expected benefits, contraindications, and goal fit in one guided report.
+          Upload a label or bottle photo to review ingredients, expected benefits, cautions, and goal fit in a calmer pharmacist-style report.
         </Text>
       </View>
 
       {Platform.OS === "web" ? (
         <View className="gap-2.5 rounded-3xl border border-line bg-card p-4 shadow-panel">
           <Text className="font-['Poppins_700Bold'] text-base text-ink">Webcam capture</Text>
-          <Text className="font-['Poppins_400Regular'] leading-5 text-muted">Use your browser webcam for instant supplement scanning.</Text>
+          <Text className="font-['Poppins_400Regular'] leading-5 text-muted">Use your browser webcam for a quick front-label scan.</Text>
           {webcamActive ? (
             <>
               <video ref={videoRef} autoPlay playsInline muted style={styles.webcamVideo} />
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 9,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#D5E1D0",
+    borderColor: "#D8E2DC",
     backgroundColor: "#000",
   },
 });

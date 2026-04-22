@@ -89,6 +89,14 @@ def update_state(investigation_id: str, mutate_fn) -> InvestigationState:
         return new_state
 
 
+def get_investigation_state(investigation_id: str) -> InvestigationState:
+    with get_connection() as connection:
+        row = connection.execute("SELECT state_json FROM investigations WHERE id = ?", (investigation_id,)).fetchone()
+    if row is None:
+        raise KeyError(f"Unknown investigation {investigation_id}")
+    return _parse_state(row["state_json"])
+
+
 def list_investigations() -> list[InvestigationSummary]:
     with get_connection() as connection:
         rows = connection.execute(
@@ -112,7 +120,7 @@ def list_investigations() -> list[InvestigationSummary]:
                 negative_count,
                 summary
             FROM investigations
-            ORDER BY created_at DESC
+            ORDER BY updated_at DESC, created_at DESC
             """
         ).fetchall()
 
@@ -149,6 +157,16 @@ def delete_investigation(investigation_id: str) -> bool:
         connection.execute("DELETE FROM agent_runs WHERE investigation_id = ?", (investigation_id,))
         connection.execute("DELETE FROM investigations WHERE id = ?", (investigation_id,))
     return True
+
+
+def clear_investigations() -> int:
+    with get_connection() as connection:
+        count_row = connection.execute("SELECT COUNT(*) AS count FROM investigations").fetchone()
+        total = int(count_row["count"] or 0) if count_row is not None else 0
+        connection.execute("DELETE FROM progress_events")
+        connection.execute("DELETE FROM agent_runs")
+        connection.execute("DELETE FROM investigations")
+    return total
 
 
 def get_investigation_detail(investigation_id: str) -> InvestigationDetail | None:
@@ -222,10 +240,15 @@ def get_investigation_detail(investigation_id: str) -> InvestigationDetail | Non
         negativeCount=int(investigation["negative_count"] or 0),
         summary=investigation["summary"],
         claimAnalysis=state.claimAnalysis,
+        claimGraph=state.claimGraph,
+        evidenceGraph=state.evidenceGraph,
+        sourceRegistry=state.sourceRegistry,
         recommendedQueries=state.recommendedQueries,
         sources=state.sources,
         sourceGroups=state.sourceGroups,
         stepSummaries=state.stepSummaries,
+        providerReviews=state.providerReviews,
+        hoaxSignals=state.hoaxSignals,
         sentiment=state.sentiment,
         consensus=state.consensus,
         matrix=state.matrix,
@@ -238,6 +261,7 @@ def get_investigation_detail(investigation_id: str) -> InvestigationDetail | Non
         orchestrationNotes=state.orchestrationNotes,
         expertInsight=state.expertInsight,
         aiSummary=state.aiSummary,
+        eli15Summary=state.eli15Summary,
         verdictSummary=state.verdictSummary,
         finalNarrative=state.finalNarrative,
         evidenceBreakdown=state.evidenceBreakdown,
@@ -342,6 +366,40 @@ def add_progress_event(investigation_id: str, agent_key: str, level: str, messag
             """,
             (event_id, investigation_id, agent_key, level, message, utc_now_iso()),
         )
+
+
+def save_push_subscription(expo_push_token: str, platform: str) -> str:
+    now = utc_now_iso()
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO push_subscriptions (expo_push_token, platform, created_at, last_seen_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(expo_push_token)
+            DO UPDATE SET
+                platform = excluded.platform,
+                last_seen_at = excluded.last_seen_at
+            """,
+            (expo_push_token, platform, now, now),
+        )
+    return now
+
+
+def list_push_subscriptions() -> list[tuple[str, str]]:
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT expo_push_token, platform
+            FROM push_subscriptions
+            ORDER BY last_seen_at DESC
+            """
+        ).fetchall()
+    return [(row["expo_push_token"], row["platform"]) for row in rows if row["expo_push_token"]]
+
+
+def delete_push_subscription(expo_push_token: str) -> None:
+    with get_connection() as connection:
+        connection.execute("DELETE FROM push_subscriptions WHERE expo_push_token = ?", (expo_push_token,))
 
 
 def register_source_domains(sources: list[SourceAssessment]) -> None:

@@ -36,11 +36,11 @@ export default function ImageUpload({
     <View className="gap-3 rounded-[28px] border border-line bg-card p-5 shadow-panel">
       <Text className="font-['Poppins_700Bold'] text-base text-ink">Upload supplement image</Text>
       <Text className="font-['Poppins_400Regular'] leading-6 text-muted">
-        Pick a product label photo and we will evaluate ingredient fit, risks, and whether it matches your goals.
+        Pick a product label photo and GramWIN will review ingredient fit, likely benefits, cautions, and whether the product matches your goals.
       </Text>
 
       {showCameraButton ? (
-        <Pressable className="items-center rounded-2xl border border-moss bg-moss/50 px-4 py-3" onPress={onCaptureImage} disabled={loading}>
+        <Pressable className="items-center rounded-2xl border border-line bg-soft px-4 py-3" onPress={onCaptureImage} disabled={loading}>
           <Text className="font-['Poppins_600SemiBold'] text-sage">Use webcam / camera</Text>
         </Pressable>
       ) : null}
@@ -64,7 +64,7 @@ export default function ImageUpload({
           className="min-h-[58px] rounded-2xl border border-line bg-card px-3 py-3 font-['Poppins_400Regular'] leading-6 text-ink"
           value={conditions}
           onChangeText={onChangeConditions}
-          placeholder="NIL"
+          placeholder="Example: NIL, seasonal allergies, eczema, high blood pressure"
           placeholderTextColor="#8B8F99"
           editable={!loading}
           multiline
@@ -78,7 +78,7 @@ export default function ImageUpload({
           className="min-h-[58px] rounded-2xl border border-line bg-card px-3 py-3 font-['Poppins_400Regular'] leading-6 text-ink"
           value={goals}
           onChangeText={onChangeGoals}
-          placeholder="Reduce belly fat, improve cognitive power"
+          placeholder="Example: better sleep, energy, gym recovery, focus, or general wellness"
           placeholderTextColor="#8B8F99"
           editable={!loading}
           multiline

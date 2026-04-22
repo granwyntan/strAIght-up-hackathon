@@ -38,3 +38,8 @@ backend/data/
 *.key
 *.p12
 *.pfx
+
+# Local temp folders that can break EAS packaging on Windows
+.tmp-ensurepip/
+tmp/
+temp/

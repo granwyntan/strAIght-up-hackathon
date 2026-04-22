@@ -28,7 +28,18 @@ SENTIMENT_TO_SCORE = {
 def source_quality_score(sources: list[SourceAssessment]) -> int:
     if not sources:
         return 20
-    values = [((source.sourceScore / 3) * 100) for source in sources]
+    label_bonus = {
+        "verified": 100,
+        "established": 74,
+        "general": 46,
+    }
+    values = [
+        max(
+            20,
+            round((((source.sourceScore / 3) * 100) * 0.55) + (label_bonus.get(source.sourceQualityLabel, 46) * 0.45) - (source.spamRiskScore * 0.18)),
+        )
+        for source in sources
+    ]
     return round(sum(values) / len(values))
 
 
