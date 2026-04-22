@@ -11,10 +11,12 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StyleProp,
   StatusBar,
   StyleSheet,
   useWindowDimensions,
   View,
+  ViewStyle,
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -61,7 +63,7 @@ import {
   type SourceQualityLabel,
   type SingaporeAuthorityReview,
 } from "./src/data";
-import { notificationDataUrl, parseInvestigationUrl, registerForPushNotificationsAsync } from "./src/notifications";
+import { notificationDataUrl, notificationsSupportedInCurrentShell, parseInvestigationUrl, registerForPushNotificationsAsync } from "./src/notifications";
 import SupplementsPage from "./src/pages/SupplementsPage";
 
 const BASE_SCREEN_WIDTH = 390;
@@ -223,7 +225,7 @@ const profileSections = [
   },
 ];
 
-type HistorySort = "manual" | "recent" | "oldest" | "score";
+type HistorySort = "manual" | "recent" | "oldest" | "score" | "lowestScore";
 type HistoryFilter = "all" | "trustworthy" | "uncertain" | "untrustworthy" | "pinned" | "running" | "completed" | "deep" | "highConfidence";
 type ConsultantView = "investigate" | "history";
 type ProfileView = "overview" | "settings";
@@ -250,6 +252,8 @@ type LocalHealthGuard = {
   title: string;
   body: string;
 };
+
+const NON_ENGLISH_BLOCK_RE = /[\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u0900-\u097F\u0E00-\u0E7F\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/;
 
 function safeText(value: unknown) {
   return typeof value === "string" ? value : "";
@@ -510,6 +514,14 @@ function stageIcon(step: PipelineStepSummary) {
   return "chart-timeline-variant";
 }
 
+function splitWorkflowTitle(title: string) {
+  const parts = title.split("·").map((item) => safeTrim(item)).filter(Boolean);
+  return {
+    purpose: parts[0] || title,
+    role: parts[1] || "",
+  };
+}
+
 function sourceQualityMeta(label: SourceQualityLabel) {
   if (label === "verified") {
     return { label: "Verified", color: palette.success, background: palette.successSoft, icon: "shield-check" };
@@ -585,6 +597,9 @@ function historySortLabel(sort: HistorySort) {
   if (sort === "oldest") {
     return "Oldest First";
   }
+  if (sort === "lowestScore") {
+    return "Lowest Score";
+  }
   if (sort === "score") {
     return "Highest Score";
   }
@@ -656,6 +671,16 @@ function assessHealthClaimLocally(claim: string, context = ""): LocalHealthGuard
   const haystack = safeLower(`${claim} ${context}`);
   if (!safeTrim(haystack)) {
     return { allowed: true, title: "", body: "" };
+  }
+  const englishProbe = `${claim} ${context}`;
+  const asciiLetters = (englishProbe.match(/[A-Za-z]/g) || []).length;
+  const blockedScriptChars = (englishProbe.match(NON_ENGLISH_BLOCK_RE) || []).length;
+  if (blockedScriptChars >= 2 && asciiLetters < Math.max(8, blockedScriptChars * 3)) {
+    return {
+      allowed: false,
+      title: "English claims only for now",
+      body: "GramWIN is temporarily limited to English health claims while the multilingual pipeline is being tightened. The run is paused and no evidence APIs will be called for this query.",
+    };
   }
   if (HEALTH_KEYWORDS.some((keyword) => haystack.includes(keyword))) {
     return { allowed: true, title: "", body: "" };
@@ -854,21 +879,23 @@ function GramwinApp() {
     void warmApiConnection();
     void loadBootstrap();
     void loadHistory();
-    void registerNotifications();
+    if (notificationsSupportedInCurrentShell()) {
+      void registerNotifications();
+    }
     void hydrateInitialNotificationTarget();
 
     const linkSubscription = Linking.addEventListener("url", ({ url }) => {
       void openInvestigationFromUrl(url);
     });
     const notificationSubscription =
-      Platform.OS === "web"
+      Platform.OS === "web" || !notificationsSupportedInCurrentShell()
         ? null
         : Notifications.addNotificationResponseReceivedListener((response) => {
-            const url = notificationDataUrl(response.notification.request.content.data as Record<string, unknown> | undefined);
-            if (url) {
-              void openInvestigationFromUrl(url);
-            }
-          });
+          const url = notificationDataUrl(response.notification.request.content.data as Record<string, unknown> | undefined);
+          if (url) {
+            void openInvestigationFromUrl(url);
+          }
+        });
 
     return () => {
       linkSubscription.remove();
@@ -945,6 +972,9 @@ function GramwinApp() {
       }
       if (historySort === "score") {
         return (b.overallScore ?? -1) - (a.overallScore ?? -1);
+      }
+      if (historySort === "lowestScore") {
+        return (a.overallScore ?? Number.MAX_SAFE_INTEGER) - (b.overallScore ?? Number.MAX_SAFE_INTEGER);
       }
       const aIndex = historyOrder.indexOf(a.id);
       const bIndex = historyOrder.indexOf(b.id);
@@ -1068,7 +1098,7 @@ function GramwinApp() {
 
   async function hydrateInitialNotificationTarget() {
     try {
-      if (Platform.OS !== "web") {
+      if (Platform.OS !== "web" && notificationsSupportedInCurrentShell()) {
         const response = await Notifications.getLastNotificationResponseAsync();
         const notificationUrl = notificationDataUrl(response?.notification.request.content.data as Record<string, unknown> | undefined);
         if (notificationUrl) {
@@ -1238,23 +1268,17 @@ function GramwinApp() {
   }
 
   async function restartInvestigation(investigation: InvestigationDetail) {
-    setSubmitting(true);
-    try {
-      const restarted = await beginInvestigation(
-        {
-          claim: safeTrim(investigation.claim),
-          context: safeTrim(investigation.context),
-          sourceUrls: [],
-          desiredDepth: investigation.desiredDepth,
-        },
-        "Investigation started again"
-      );
-      if (restarted) {
-        setHistorySheetVisible(false);
-      }
-    } finally {
-      setSubmitting(false);
-    }
+    setClaimDraft(safeTrim(investigation.claim));
+    setContextDraft(safeTrim(investigation.context));
+    setClaimSourceDraft("");
+    setPopulationDraft("");
+    setFocusDraft("");
+    setSourceUrlDraft("");
+    setDepth(investigation.desiredDepth);
+    setConsultantView("investigate");
+    setActiveTab("consultant");
+    setHistorySheetVisible(false);
+    setSnackbar({ visible: true, message: "Claim loaded into the investigation form" });
   }
 
   async function openHistorySheet(id: string) {
@@ -1386,9 +1410,9 @@ function GramwinApp() {
         current.map((item) =>
           item.id === id
             ? {
-                ...item,
-                summary: "Stop requested. The current step will finish safely before the run closes.",
-              }
+              ...item,
+              summary: "Stop requested. The current step will finish safely before the run closes.",
+            }
             : item
         )
       );
@@ -1519,7 +1543,7 @@ function GramwinApp() {
     }
   }
 
-function applyFeaturedClaim(item: FeaturedClaim) {
+  function applyFeaturedClaim(item: FeaturedClaim) {
     setClaimDraft(formatClaimForDisplay(item.claim));
     setContextDraft(item.id.startsWith("recent-") ? "" : item.whyItIsInteresting);
     setClaimSourceDraft("");
@@ -1565,10 +1589,10 @@ function applyFeaturedClaim(item: FeaturedClaim) {
                   ? "Saved investigations"
                   : "Claim consultant"
                 : activeTab === "nutrition"
-                ? "Nutrition insights"
-                : activeTab === "supplements"
-                ? "Supplement analyzer"
-                : "Profile and settings"
+                  ? "Nutrition insights"
+                  : activeTab === "supplements"
+                    ? "Supplement analyzer"
+                    : "Profile and settings"
             }
             body={
               activeTab === "consultant"
@@ -1576,10 +1600,10 @@ function applyFeaturedClaim(item: FeaturedClaim) {
                   ? "Review saved reports, compare close reruns, and keep the history list tidy."
                   : "Check health claims with cleaner evidence summaries, stronger source integrity, and calmer presentation."
                 : activeTab === "nutrition"
-                ? "Meal and diet planning in the same calmer, lower-clutter visual system."
-                : activeTab === "supplements"
-                ? "Scan labels and review supplement fit without leaving the shared GramWIN theme."
-                : "Manage your health context, saved presets, and investigation preferences."
+                  ? "Meal and diet planning in the same calmer, lower-clutter visual system."
+                  : activeTab === "supplements"
+                    ? "Scan labels and review supplement fit without leaving the shared GramWIN theme."
+                    : "Manage your health context, saved presets, and investigation preferences."
             }
             apiError={apiError}
             onRetry={retryBackendConnection}
@@ -1670,16 +1694,16 @@ function applyFeaturedClaim(item: FeaturedClaim) {
 
       <BottomTabs activeTab={activeTab} onSelect={setActiveTab} bottomInset={bottomInset} />
 
-        <HistorySheet
-          visible={historySheetVisible}
-          investigation={historySheetDetail}
-          loading={historySheetLoading}
-          onClose={() => setHistorySheetVisible(false)}
-          onRestart={(investigation) => void restartInvestigation(investigation)}
-          onDelete={(id) => void deleteHistoryItem(id)}
-          onCancel={(id) => void cancelInvestigation(id)}
-          cancellingIds={cancellingIds}
-        />
+      <HistorySheet
+        visible={historySheetVisible}
+        investigation={historySheetDetail}
+        loading={historySheetLoading}
+        onClose={() => setHistorySheetVisible(false)}
+        onRestart={(investigation) => void restartInvestigation(investigation)}
+        onDelete={(id) => void deleteHistoryItem(id)}
+        onCancel={(id) => void cancelInvestigation(id)}
+        cancellingIds={cancellingIds}
+      />
 
       <Snackbar
         visible={snackbar.visible}
@@ -1687,15 +1711,15 @@ function applyFeaturedClaim(item: FeaturedClaim) {
         action={
           snackbar.action === "retry"
             ? {
-                label: reconnecting ? "Loading..." : "Reconnect",
-                onPress: () => void retryBackendConnection(),
-              }
+              label: reconnecting ? "Loading..." : "Reconnect",
+              onPress: () => void retryBackendConnection(),
+            }
             : snackbar.action === "undoDelete"
-            ? {
+              ? {
                 label: "Undo",
                 onPress: undoDeleteHistoryItem,
               }
-            : undefined
+              : undefined
         }
         style={styles.snackbar}
       >
@@ -1718,11 +1742,11 @@ function Header({
 }) {
   return (
     <Surface style={styles.headerSurface} elevation={0}>
-        <View style={styles.headerTop}>
-          <View style={styles.headerBrandWrap}>
-            <Text variant="headlineSmall" style={styles.headerTitle}>
-              {brand}
-            </Text>
+      <View style={styles.headerTop}>
+        <View style={styles.headerBrandWrap}>
+          <Text variant="headlineSmall" style={styles.headerTitle}>
+            {brand}
+          </Text>
           <Text variant="bodyMedium" style={styles.headerSubtitle}>
             {tagline}
           </Text>
@@ -1921,7 +1945,7 @@ function QuickLinks({ onOpenTab }: { onOpenTab: (tab: AppTab) => void }) {
   const links: Array<{ tab: AppTab; icon: string; label: string; body: string }> = [
     { tab: "consultant", icon: "stethoscope", label: "Consultant", body: "Investigate claims and read evidence." },
     { tab: "nutrition", icon: "silverware-fork-knife", label: "Nutrition", body: "Meals, hydration, and nutrient planning." },
-    { tab: "supplements", icon: "capsule", label: "Supplements", body: "Supplement notes and medication workflows." },
+    { tab: "supplements", icon: "pill-multiple", label: "Supplements", body: "Supplement notes and medication workflows." },
     { tab: "profile", icon: "account-circle-outline", label: "Profile", body: "Health profile, goals, and context." },
   ];
 
@@ -2056,7 +2080,7 @@ function ConsultantScreen(props: ConsultantScreenProps) {
       .map((item) => ({
         id: `recent-${item.id}`,
         claim: item.claim,
-        whyItIsInteresting: item.summary,
+        whyItIsInteresting: "",
       }))
       .filter((item) => {
         const key = normalizedClaimKey(item.claim);
@@ -2099,19 +2123,6 @@ function ConsultantScreen(props: ConsultantScreenProps) {
       .slice(0, 5);
   }, [claimSuggestions, recentQueryMatches]);
 
-  const starterClaims = useMemo(() => {
-    const combined = [...recentSuggestions, ...bootstrap.featuredClaims];
-    const seen = new Set<string>();
-    return combined.filter((item) => {
-      const key = normalizedClaimKey(item.claim);
-      if (!key || seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
-    }).slice(0, 6);
-  }, [bootstrap.featuredClaims, recentSuggestions]);
-
   useEffect(() => {
     if ([contextDraft, claimSourceDraft, populationDraft, focusDraft, sourceUrlDraft].some((value) => safeTrim(value))) {
       setShowOptionalContext(true);
@@ -2141,183 +2152,169 @@ function ConsultantScreen(props: ConsultantScreenProps) {
             <View style={styles.consultantPrimaryColumn}>
               <Card mode="contained" style={styles.formCard}>
                 <Card.Content style={styles.formCardContent}>
-              <Text variant="titleLarge" style={styles.formTitle}>
-                New investigation
-              </Text>
-              <Text variant="bodyMedium" style={styles.sectionBody}>
-                Paste the claim as you saw it. Keep context light. The backend handles wording risk, contradiction checks, source quality, and final synthesis.
-              </Text>
+                  <Text variant="titleLarge" style={styles.formTitle}>
+                    New investigation
+                  </Text>
+                  <Text variant="bodyMedium" style={styles.sectionBody}>
+                    Paste the claim as you saw it. Keep context light. The backend handles wording risk, contradiction checks, source quality, and final synthesis.
+                  </Text>
 
-              <View style={styles.cardStack}>
-                <TextInput
-                  mode="outlined"
-                  label="Claim to investigate"
-                  placeholder="Example: A reel says magnesium glycinate cures insomnia within one week for most adults."
-                  value={claimDraft}
-                  onChangeText={onClaimChange}
-                  multiline
-                  outlineStyle={styles.inputOutline}
-                  style={styles.paperInput}
-                  contentStyle={styles.inputContent}
-                />
-                {!healthGuard.allowed ? (
-                  <Card mode="contained" style={styles.scopeWarningCard}>
-                    <Card.Content style={styles.cardStack}>
-                      <View style={styles.rowGapTop}>
-                        <View style={styles.scopeWarningIcon}>
-                          <MaterialCommunityIcons name="shield-off-outline" size={20} color={palette.warning} />
-                        </View>
-                        <View style={styles.flexOne}>
-                          <Text variant="titleMedium" style={styles.linkTitle}>
-                            {healthGuard.title}
-                          </Text>
-                          <Text variant="bodySmall" style={styles.sectionBody}>
-                            {healthGuard.body}
-                          </Text>
-                        </View>
-                      </View>
-                    </Card.Content>
-                  </Card>
-                ) : null}
-                {recentQueryMatches.length > 0 ? (
-                  <Card mode="contained" style={styles.recentQueryCard}>
-                    <Card.Content style={styles.cardStack}>
-                      <Text variant="labelLarge" style={styles.linkTitle}>
-                        Recent queries
-                      </Text>
-                      {recentQueryMatches.map((item) => (
-                        <TouchableRipple key={item.id} style={styles.recentQueryRow} onPress={() => onUseClaim(item)}>
-                          <View style={styles.cardStack}>
-                            <Text variant="bodyMedium" style={styles.linkTitle}>
-                              {formatClaimForDisplay(item.claim)}
-                            </Text>
-                            {safeTrim(item.whyItIsInteresting) ? (
-                              <Text variant="bodySmall" style={styles.historyMetaLine}>
-                                {item.whyItIsInteresting}
+                  <View style={styles.cardStack}>
+                    <TextInput
+                      mode="outlined"
+                      label="Claim to investigate"
+                      placeholder="Example: Magnesium glycinate cures insomnia."
+                      value={claimDraft}
+                      onChangeText={onClaimChange}
+                      multiline
+                      outlineStyle={styles.inputOutline}
+                      style={styles.paperInput}
+                      contentStyle={styles.inputContent}
+                    />
+                    {!healthGuard.allowed ? (
+                      <Card mode="contained" style={styles.scopeWarningCard}>
+                        <Card.Content style={styles.cardStack}>
+                          <View style={styles.rowGapTop}>
+                            <View style={styles.scopeWarningIcon}>
+                              <MaterialCommunityIcons name="shield-off-outline" size={20} color={palette.warning} />
+                            </View>
+                            <View style={styles.flexOne}>
+                              <Text variant="titleMedium" style={styles.linkTitle}>
+                                {healthGuard.title}
                               </Text>
-                            ) : null}
+                              <Text variant="bodySmall" style={styles.sectionBody}>
+                                {healthGuard.body}
+                              </Text>
+                            </View>
                           </View>
-                        </TouchableRipple>
-                      ))}
-                    </Card.Content>
-                  </Card>
-                ) : null}
-                {liveQueryMatches.length > 0 ? (
-                  <Card mode="contained" style={styles.recentQueryCard}>
-                    <Card.Content style={styles.cardStack}>
+                        </Card.Content>
+                      </Card>
+                    ) : null}
+                    {recentQueryMatches.length > 0 ? (
+                      <Card mode="contained" style={styles.recentQueryCard}>
+                        <Card.Content style={styles.cardStack}>
+                          <Text variant="labelLarge" style={styles.linkTitle}>
+                            Recent queries
+                          </Text>
+                          {recentQueryMatches.map((item) => (
+                            <TouchableRipple key={item.id} style={styles.recentQueryRow} onPress={() => onUseClaim(item)}>
+                              <View style={styles.cardStack}>
+                                <Text variant="bodyMedium" style={styles.linkTitle}>
+                                  {formatClaimForDisplay(item.claim)}
+                                </Text>
+                                {safeTrim(item.whyItIsInteresting) ? (
+                                  <Text variant="bodySmall" style={styles.historyMetaLine}>
+                                    {item.whyItIsInteresting}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            </TouchableRipple>
+                          ))}
+                        </Card.Content>
+                      </Card>
+                    ) : null}
+                    {liveQueryMatches.length > 0 ? (
+                      <Card mode="contained" style={styles.recentQueryCard}>
+                        <Card.Content style={styles.cardStack}>
+                          <View style={styles.rowBetween}>
+                            <Text variant="labelLarge" style={styles.linkTitle}>
+                              Search suggestions
+                            </Text>
+                            {suggestionsLoading ? <ActivityIndicator size="small" color={palette.primary} /> : null}
+                          </View>
+                          {liveQueryMatches.map((item) => (
+                            <TouchableRipple key={item.id} style={styles.recentQueryRow} onPress={() => onUseClaim(item)}>
+                              <View style={styles.cardStack}>
+                                <Text variant="bodyMedium" style={styles.linkTitle}>
+                                  {formatClaimForDisplay(item.claim)}
+                                </Text>
+                                {safeTrim(item.whyItIsInteresting) ? (
+                                  <Text variant="bodySmall" style={styles.historyMetaLine}>
+                                    {item.whyItIsInteresting}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            </TouchableRipple>
+                          ))}
+                        </Card.Content>
+                      </Card>
+                    ) : null}
+                    <TouchableRipple style={styles.optionalContextCard} onPress={() => setShowOptionalContext((current) => !current)}>
                       <View style={styles.rowBetween}>
-                        <Text variant="labelLarge" style={styles.linkTitle}>
-                          Search suggestions
-                        </Text>
-                        {suggestionsLoading ? <ActivityIndicator size="small" color={palette.primary} /> : null}
-                      </View>
-                      {liveQueryMatches.map((item) => (
-                        <TouchableRipple key={item.id} style={styles.recentQueryRow} onPress={() => onUseClaim(item)}>
-                          <View style={styles.cardStack}>
-                            <Text variant="bodyMedium" style={styles.linkTitle}>
-                              {formatClaimForDisplay(item.claim)}
-                            </Text>
-                            {safeTrim(item.whyItIsInteresting) ? (
-                              <Text variant="bodySmall" style={styles.historyMetaLine}>
-                                {item.whyItIsInteresting}
-                              </Text>
-                            ) : null}
+                        <View style={styles.rowGapTop}>
+                          <View style={styles.expandableIconWrap}>
+                            <MaterialCommunityIcons name="tune-variant" size={20} color={palette.primary} />
                           </View>
-                        </TouchableRipple>
-                      ))}
-                    </Card.Content>
-                  </Card>
-                ) : null}
-                {!safeTrim(claimDraft) ? (
-                  <View style={styles.cardStack}>
-                    <Text variant="bodySmall" style={styles.depthHint}>
-                      Recent investigations and featured myths
-                    </Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-                      {starterClaims.map((item) => (
-                        <Chip key={item.id} onPress={() => onUseClaim(item)} style={styles.segmentChip}>
-                          {item.claim.length > 56 ? `${item.claim.slice(0, 56)}...` : item.claim}
-                        </Chip>
-                      ))}
-                    </ScrollView>
-                  </View>
-                ) : null}
-                <TouchableRipple style={styles.optionalContextCard} onPress={() => setShowOptionalContext((current) => !current)}>
-                  <View style={styles.rowBetween}>
-                    <View style={styles.rowGapTop}>
-                      <View style={styles.expandableIconWrap}>
-                        <MaterialCommunityIcons name="tune-variant" size={20} color={palette.primary} />
+                          <View style={styles.flexOne}>
+                            <Text variant="titleMedium" style={styles.linkTitle}>
+                              Optional context
+                            </Text>
+                            <Text variant="bodySmall" style={styles.sectionBody}>
+                              Add one note about what worries you, where you saw it, or links you already have.
+                            </Text>
+                          </View>
+                        </View>
+                        <IconButton icon={showOptionalContext ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={styles.dragButton} />
                       </View>
-                      <View style={styles.flexOne}>
-                        <Text variant="titleMedium" style={styles.linkTitle}>
-                          Optional context
-                        </Text>
-                        <Text variant="bodySmall" style={styles.sectionBody}>
-                          Add one note about what worries you, where you saw it, or links you already have.
-                        </Text>
+                    </TouchableRipple>
+
+                    {showOptionalContext ? (
+                      <View style={styles.cardStack}>
+                        <TextInput
+                          mode="outlined"
+                          label="What do you want checked?"
+                          placeholder="Example: Check whether the wording overstates the evidence, hides contradictions, or confuses mechanism with real outcomes."
+                          value={contextDraft}
+                          onChangeText={onContextChange}
+                          multiline
+                          outlineStyle={styles.inputOutline}
+                          style={styles.paperInput}
+                          contentStyle={[styles.inputContent, styles.multilineInput]}
+                        />
+                        <TextInput
+                          mode="outlined"
+                          label="Where did you see this?"
+                          placeholder="Example: Instagram reel, product page, TikTok video, podcast clip, clinic article, or a friend’s recommendation."
+                          value={claimSourceDraft}
+                          onChangeText={onClaimSourceChange}
+                          multiline
+                          outlineStyle={styles.inputOutline}
+                          style={styles.paperInput}
+                          contentStyle={styles.inputContent}
+                        />
+                        <TextInput
+                          mode="outlined"
+                          label="Links to review"
+                          placeholder="Paste article, reel, product page, study, or transcript links here. Separate multiple URLs with commas or new lines."
+                          value={sourceUrlDraft}
+                          onChangeText={onSourceUrlChange}
+                          multiline
+                          outlineStyle={styles.inputOutline}
+                          style={styles.paperInput}
+                          contentStyle={styles.inputContent}
+                        />
                       </View>
-                    </View>
-                    <IconButton icon={showOptionalContext ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={styles.dragButton} />
+                    ) : null}
                   </View>
-                </TouchableRipple>
 
-                {showOptionalContext ? (
-                  <View style={styles.cardStack}>
-                    <TextInput
-                      mode="outlined"
-                      label="What do you want checked?"
-                      placeholder="Example: Check whether the wording overstates the evidence, hides contradictions, or confuses mechanism with real outcomes."
-                      value={contextDraft}
-                      onChangeText={onContextChange}
-                      multiline
-                      outlineStyle={styles.inputOutline}
-                      style={styles.paperInput}
-                      contentStyle={[styles.inputContent, styles.multilineInput]}
-                    />
-                    <TextInput
-                      mode="outlined"
-                      label="Where did you see this?"
-                      placeholder="Example: Instagram reel, product page, TikTok video, podcast clip, clinic article, or a friend’s recommendation."
-                      value={claimSourceDraft}
-                      onChangeText={onClaimSourceChange}
-                      multiline
-                      outlineStyle={styles.inputOutline}
-                      style={styles.paperInput}
-                      contentStyle={styles.inputContent}
-                    />
-                    <TextInput
-                      mode="outlined"
-                      label="Links to review"
-                      placeholder="Paste article, reel, product page, study, or transcript links here. Separate multiple URLs with commas or new lines."
-                      value={sourceUrlDraft}
-                      onChangeText={onSourceUrlChange}
-                      multiline
-                      outlineStyle={styles.inputOutline}
-                      style={styles.paperInput}
-                      contentStyle={styles.inputContent}
-                    />
+                  <View style={styles.segmentRow}>
+                    <Chip selected={depth === "quick"} onPress={() => onDepthChange("quick")} style={styles.segmentChip}>
+                      Quick
+                    </Chip>
+                    <Chip selected={depth === "standard"} onPress={() => onDepthChange("standard")} style={styles.segmentChip}>
+                      Standard
+                    </Chip>
+                    <Chip selected={depth === "deep"} onPress={() => onDepthChange("deep")} style={styles.segmentChip}>
+                      Deep
+                    </Chip>
                   </View>
-                ) : null}
-              </View>
+                  <Text variant="bodySmall" style={styles.depthHint}>
+                    {depthDescription(depth)}
+                  </Text>
 
-              <View style={styles.segmentRow}>
-                <Chip selected={depth === "quick"} onPress={() => onDepthChange("quick")} style={styles.segmentChip}>
-                  Quick
-                </Chip>
-                <Chip selected={depth === "standard"} onPress={() => onDepthChange("standard")} style={styles.segmentChip}>
-                  Standard
-                </Chip>
-                <Chip selected={depth === "deep"} onPress={() => onDepthChange("deep")} style={styles.segmentChip}>
-                  Deep
-                </Chip>
-              </View>
-              <Text variant="bodySmall" style={styles.depthHint}>
-                {depthDescription(depth)}
-              </Text>
-
-              <Button mode="contained" icon="magnify" onPress={onSubmit} loading={submitting} disabled={submitting || !healthGuard.allowed} buttonColor={palette.primary}>
-                Start investigation
-              </Button>
+                  <Button mode="contained" icon="magnify" onPress={onSubmit} loading={submitting} disabled={submitting || !healthGuard.allowed} buttonColor={palette.primary}>
+                    Start investigation
+                  </Button>
                 </Card.Content>
               </Card>
             </View>
@@ -2476,6 +2473,7 @@ function HistoryPanel({
                   ["oldest", "Oldest"],
                   ["manual", "Custom"],
                   ["score", "Highest score"],
+                  ["lowestScore", "Lowest score"],
                 ] as const).map(([value, label]) => (
                   <Chip key={value} selected={historySort === value} onPress={() => onSortChange(value)} style={styles.segmentChip}>
                     {label}
@@ -2667,24 +2665,33 @@ function ProcessingCard({
           <View style={styles.cardStack}>
             {steps.map((step) => {
               const indicator = statusIcon(step.status);
+              const stepTitle = splitWorkflowTitle(step.title);
               return (
-                <View key={step.key} style={[styles.stepRow, compact && styles.stepRowCompact]}>
+                <View key={step.key} style={styles.stepRow}>
                   <Avatar.Icon size={40} icon={stageIcon(step)} color={palette.primary} style={styles.stepAvatar} />
                   <View style={styles.flexOne}>
                     <View style={[styles.rowBetween, compact && styles.stepHeaderCompact]}>
-                      <Text variant="titleSmall" style={styles.stepTitle}>
-                        {step.title}
-                      </Text>
+                      <View style={styles.flexOne}>
+                        <Text variant="titleSmall" style={styles.stepTitle}>
+                          {stepTitle.purpose}
+                        </Text>
+                        {stepTitle.role ? (
+                          <Text variant="bodySmall" style={styles.stepRoleLine}>
+                            {stepTitle.role}
+                          </Text>
+                        ) : null}
+                      </View>
                       <Chip compact icon={indicator.icon} style={compact ? styles.statusChipCompact : undefined} textStyle={[styles.miniChipText, { color: indicator.color }]}>
                         {statusLabel(step.status)}
                       </Chip>
                     </View>
+                    <View style={styles.stepDivider} />
                     <Text variant="bodySmall" style={styles.stepBody}>
                       {step.summary}
                     </Text>
-                    {safeTrim(step.role) || safeTrim(step.goal) ? (
+                    {safeTrim(step.goal) ? (
                       <Text variant="bodySmall" style={styles.historyMetaLine}>
-                        {[safeTrim(step.role), safeTrim(step.goal)].filter(Boolean).join(" · ")}
+                        {safeTrim(step.goal)}
                       </Text>
                     ) : null}
                   </View>
@@ -2855,12 +2862,10 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
           <Text key={`hero-${explanationMode}`} variant="bodyMedium" style={styles.resultBody}>
             {explanationText}
           </Text>
-          <View style={[styles.resultMetaRow, compactLayout && styles.resultMetaColumn]}>
-            <MiniStat label="Score band" value={scoreBandLabel(investigation.overallScore)} />
-            <MiniStat label="Confidence" value={safeUpper(investigation.confidenceLevel ?? "unknown")} />
-            <MiniStat label="Classification" value={investigation.truthClassification || verdict.label} />
-            <MiniStat label="Review" value={depthLabel(investigation.desiredDepth)} />
-            <MiniStat label="Analyzed" value={String(investigation.sources.length)} />
+          <View style={[styles.resultMetaRow, styles.resultMetaColumn]}>
+            <MiniStat label="Assessment" value={investigation.truthClassification || scoreBandLabel(investigation.overallScore)} style={styles.miniStatFullWidth} />
+            <MiniStat label="Confidence" value={safeUpper(investigation.confidenceLevel ?? "unknown")} style={styles.miniStatFullWidth} />
+            <MiniStat label="Review Type" value={depthLabel(investigation.desiredDepth)} style={styles.miniStatFullWidth} />
           </View>
           <Text variant="bodySmall" style={styles.historyMetaLine}>
             Updated {formatTimestamp(investigation.updatedAt)}
@@ -2872,16 +2877,13 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
           {investigation.sentiment ? (
             <>
               <View style={[styles.resultSignalRow, compactSignals ? styles.resultSignalColumn : styles.resultSignalRowWide]}>
-                <SignalPill label="Agreement" value={`${investigation.sentiment.positivePct}%`} icon="check-circle" color={palette.success} background={palette.successSoft} />
-                <SignalPill label="Unsettled" value={`${investigation.sentiment.neutralPct}%`} icon="help-circle" color={palette.warning} background={palette.warningSoft} />
-                <SignalPill label="Pushback" value={`${investigation.sentiment.negativePct}%`} icon="close-circle" color={palette.danger} background={palette.dangerSoft} />
+                <SignalPill label="Supports" value={`${investigation.sentiment.positivePct}%`} icon="check-circle" color={palette.success} background={palette.successSoft} />
+                <SignalPill label="Mixed" value={`${investigation.sentiment.neutralPct}%`} icon="help-circle" color={palette.warning} background={palette.warningSoft} />
+                <SignalPill label="Contradicts" value={`${investigation.sentiment.negativePct}%`} icon="close-circle" color={palette.danger} background={palette.dangerSoft} />
               </View>
               <ConfidenceBreakdownBar investigation={investigation} />
             </>
           ) : null}
-          <Text variant="bodySmall" style={styles.scoreGuideText}>
-            Score guide: 0 to 39 is red, 40 to 79 stays neutral, and 80 to 100 is strong support.
-          </Text>
         </Card.Content>
       </Card>
 
@@ -3036,9 +3038,9 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
             {([
               ["all", "All sentiment"],
-              ["positive", "Support"],
+              ["positive", "Supports"],
               ["neutral", "Mixed"],
-              ["negative", "Contradict"],
+              ["negative", "Contradicts"],
             ] as const).map(([value, label]) => (
               <Chip key={value} selected={sourceSentimentFilter === value} onPress={() => setSourceSentimentFilter(value)} style={styles.segmentChip}>
                 {label}
@@ -3234,24 +3236,33 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
         >
           {investigation.stepSummaries.map((step) => {
             const indicator = statusIcon(step.status);
+            const stepTitle = splitWorkflowTitle(step.title);
             return (
-              <View key={step.key} style={[styles.stepRow, compactLayout && styles.stepRowCompact]}>
+              <View key={step.key} style={styles.stepRow}>
                 <Avatar.Icon size={38} icon={stageIcon(step)} color={palette.primary} style={styles.stepAvatar} />
                 <View style={styles.flexOne}>
                   <View style={[styles.rowBetween, compactLayout && styles.stepHeaderCompact]}>
-                    <Text variant="titleSmall" style={styles.stepTitle}>
-                      {step.title}
-                    </Text>
+                    <View style={styles.flexOne}>
+                      <Text variant="titleSmall" style={styles.stepTitle}>
+                        {stepTitle.purpose}
+                      </Text>
+                      {stepTitle.role ? (
+                        <Text variant="bodySmall" style={styles.stepRoleLine}>
+                          {stepTitle.role}
+                        </Text>
+                      ) : null}
+                    </View>
                     <Chip compact icon={indicator.icon} style={compactLayout ? styles.statusChipCompact : undefined} textStyle={[styles.miniChipText, { color: indicator.color }]}>
                       {statusLabel(step.status)}
                     </Chip>
                   </View>
+                  <View style={styles.stepDivider} />
                   <Text variant="bodySmall" style={styles.stepBody}>
                     {step.summary}
                   </Text>
-                  {safeTrim(step.role) || safeTrim(step.goal) ? (
+                  {safeTrim(step.goal) ? (
                     <Text variant="bodySmall" style={styles.historyMetaLine}>
-                      {[safeTrim(step.role), safeTrim(step.goal)].filter(Boolean).join(" · ")}
+                      {safeTrim(step.goal)}
                     </Text>
                   ) : null}
                   {step.details.slice(0, 3).map((detail) => (
@@ -3294,9 +3305,6 @@ function ConfidenceBreakdownBar({ investigation }: { investigation: Investigatio
         <View style={[styles.confidenceBarSegment, { flex: Math.max(1, investigation.sentiment.neutralPct), backgroundColor: palette.warning }]} />
         <View style={[styles.confidenceBarSegment, { flex: Math.max(1, investigation.sentiment.negativePct), backgroundColor: palette.danger }]} />
       </View>
-      <Text variant="bodySmall" style={styles.sectionBody}>
-        Confidence breakdown: {investigation.sentiment.positivePct}% support, {investigation.sentiment.neutralPct}% mixed, and {investigation.sentiment.negativePct}% contradict.
-      </Text>
     </View>
   );
 }
@@ -3537,6 +3545,16 @@ function ProfileScreen({
               </Card>
             ))}
           </View>
+          <Card mode="contained" style={styles.resultSectionCard}>
+            <Card.Content style={styles.cardStack}>
+              <Text variant="titleMedium" style={styles.linkTitle}>
+                Score guide
+              </Text>
+              <Text variant="bodyMedium" style={styles.sectionBody}>
+                Scores below 40 usually point to strong pushback or weak evidence, 40 to 79 means the evidence is still mixed, and 80+ suggests consistently strong support from better sources.
+              </Text>
+            </Card.Content>
+          </Card>
           <View style={styles.cardStack}>
             {profileSections.map((section) => (
               <Card key={section.title} mode="contained" style={styles.resultSectionCard}>
@@ -3657,7 +3675,7 @@ function HistoryItem({
             <View style={styles.rowBetween}>
               <View style={styles.rowGap}>
                 <HistoryVerdictMark verdict={item.verdict} />
-              <Text variant="titleMedium" style={styles.historyClaim}>
+                <Text variant="titleMedium" style={styles.historyClaim}>
                   {formatClaimForDisplay(item.claim)}
                 </Text>
               </View>
@@ -3709,9 +3727,9 @@ function HistoryItem({
             ) : null}
             {(item.positiveCount > 0 || item.neutralCount > 0 || item.negativeCount > 0) && (
               <View style={[styles.resultSignalRow, compactSignals ? styles.resultSignalColumn : styles.resultSignalRowWide]}>
-                <SignalPill label="Agreement" value={String(item.positiveCount)} icon="check-circle" color={palette.success} background={palette.successSoft} />
-                <SignalPill label="Unsettled" value={String(item.neutralCount)} icon="help-circle" color={palette.warning} background={palette.warningSoft} />
-                <SignalPill label="Pushback" value={String(item.negativeCount)} icon="close-circle" color={palette.danger} background={palette.dangerSoft} />
+                <SignalPill label="Supports" value={String(item.positiveCount)} icon="check-circle" color={palette.success} background={palette.successSoft} />
+                <SignalPill label="Mixed" value={String(item.neutralCount)} icon="help-circle" color={palette.warning} background={palette.warningSoft} />
+                <SignalPill label="Contradicts" value={String(item.negativeCount)} icon="close-circle" color={palette.danger} background={palette.dangerSoft} />
               </View>
             )}
             <View style={styles.historyMetaRow}>
@@ -3721,9 +3739,9 @@ function HistoryItem({
               <Text variant="bodySmall" style={styles.historyMetaDot}>
                 •
               </Text>
-                  <Text variant="bodySmall" style={styles.historyMetaLine}>
-                    {depthLabel(item.desiredDepth)}
-                  </Text>
+              <Text variant="bodySmall" style={styles.historyMetaLine}>
+                {depthLabel(item.desiredDepth)}
+              </Text>
               {isPinned && (
                 <>
                   <Text variant="bodySmall" style={styles.historyMetaDot}>
@@ -4032,8 +4050,8 @@ function HistorySheet({
                       {cancellingIds.includes(investigation.id) ? "Stopping..." : "Stop run"}
                     </Button>
                   ) : (
-                    <Button mode="contained" icon="play-circle-outline" buttonColor={palette.primary} onPress={() => onRestart(investigation)}>
-                      Run again
+                    <Button mode="contained" icon="playlist-edit" buttonColor={palette.primary} onPress={() => onRestart(investigation)}>
+                      Edit and rerun
                     </Button>
                   )}
                   <Button mode="outlined" icon="delete-outline" textColor={palette.danger} onPress={() => onDelete(investigation.id)}>
@@ -4064,7 +4082,7 @@ function BottomTabs({
     { key: "home", label: "Home", icon: "home-heart" },
     { key: "consultant", label: "Consultant", icon: "stethoscope" },
     { key: "nutrition", label: "Nutrition", icon: "silverware-fork-knife" },
-    { key: "supplements", label: "Supplements", icon: "capsule" },
+    { key: "supplements", label: "Supplements", icon: "pill-multiple" },
     { key: "profile", label: "Profile", icon: "account-circle-outline" },
   ];
 
@@ -4150,14 +4168,12 @@ function ExpandableResultSection({
   defaultExpanded?: boolean;
   children: React.ReactNode;
 }) {
-  const { width } = useWindowDimensions();
-  const compact = width < 760;
   const [expanded, setExpanded] = useState(defaultExpanded);
   return (
     <Card mode="contained" style={styles.resultSectionCard}>
       <Card.Content style={styles.cardStack}>
         <TouchableRipple onPress={() => setExpanded((current) => !current)} style={styles.expandableHeader}>
-          <View style={[styles.rowBetween, compact && styles.rowBetweenStacked]}>
+          <View style={styles.rowBetween}>
             <View style={styles.rowGapTop}>
               <View style={styles.expandableIconWrap}>
                 <MaterialCommunityIcons name={icon} size={20} color={palette.primary} />
@@ -4171,7 +4187,7 @@ function ExpandableResultSection({
                 </Text>
               </View>
             </View>
-            <IconButton icon={expanded ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={[styles.dragButton, compact && styles.expandChevron]} />
+            <IconButton icon={expanded ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={styles.dragButton} />
           </View>
         </TouchableRipple>
         {expanded ? <View style={styles.cardStack}>{children}</View> : null}
@@ -4180,9 +4196,9 @@ function ExpandableResultSection({
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
+function MiniStat({ label, value, style }: { label: string; value: string; style?: StyleProp<ViewStyle> }) {
   return (
-    <View style={styles.miniStat}>
+    <View style={[styles.miniStat, style]}>
       <Text variant="labelMedium" style={styles.miniStatLabel}>
         {label}
       </Text>
@@ -4678,11 +4694,8 @@ const styles = StyleSheet.create({
   },
   stepRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 12,
-  },
-  stepRowCompact: {
-    flexDirection: "column",
   },
   stepAvatar: {
     backgroundColor: palette.primarySoft,
@@ -4694,6 +4707,15 @@ const styles = StyleSheet.create({
     color: palette.text,
     fontFamily: "Poppins_600SemiBold",
     flexShrink: 1,
+  },
+  stepRoleLine: {
+    color: palette.primary,
+    lineHeight: 19,
+  },
+  stepDivider: {
+    height: 1,
+    backgroundColor: "rgba(31, 111, 102, 0.12)",
+    marginVertical: 8,
   },
   stepBody: {
     color: palette.muted,
@@ -4737,6 +4759,9 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 10,
   },
+  resultMetaRowWide: {
+    alignItems: "stretch"
+  },
   resultMetaColumn: {
     flexDirection: "column",
   },
@@ -4749,10 +4774,7 @@ const styles = StyleSheet.create({
   },
   resultSignalColumn: {
     flexDirection: "column",
-  },
-  scoreGuideText: {
-    color: palette.muted,
-    lineHeight: 20,
+    alignItems: "stretch",
   },
   miniStat: {
     flexGrow: 1,
@@ -4763,6 +4785,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
     gap: 6,
+  },
+  miniStatFullWidth: {
+    width: "100%",
+    flexBasis: "100%",
+    flexGrow: 0,
   },
   miniStatLabel: {
     color: palette.muted,
@@ -4794,6 +4821,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexBasis: 106,
     minWidth: 96,
+    width: "100%",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -4959,9 +4987,6 @@ const styles = StyleSheet.create({
   },
   dragButton: {
     margin: 0,
-  },
-  expandChevron: {
-    alignSelf: "flex-end",
   },
   dragButtonActive: {
     backgroundColor: palette.primarySoft,

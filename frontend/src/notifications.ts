@@ -28,6 +28,16 @@ function notificationProjectId() {
 }
 
 
+export function notificationsSupportedInCurrentShell() {
+  const appOwnership = Constants.appOwnership;
+  const executionEnvironment = Constants.executionEnvironment;
+  if (appOwnership === "expo" || executionEnvironment === "storeClient") {
+    return false;
+  }
+  return true;
+}
+
+
 export function parseInvestigationUrl(url: string | null | undefined) {
   const trimmed = (url || "").trim();
   if (!trimmed) {
@@ -47,6 +57,9 @@ export function notificationDataUrl(data: Record<string, unknown> | null | undef
 export async function registerForPushNotificationsAsync(requestApi: RequestApi): Promise<NotificationRegistrationResult> {
   if (Platform.OS === "web") {
     return { status: "skipped", reason: "Push registration is only enabled for native devices." };
+  }
+  if (!notificationsSupportedInCurrentShell()) {
+    return { status: "skipped", reason: "Remote push is unavailable in Expo Go. Use a development build instead." };
   }
   if (!Device.isDevice) {
     return { status: "skipped", reason: "Push registration requires a physical device." };

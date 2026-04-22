@@ -63,6 +63,16 @@ def _headers() -> dict[str, str]:
     }
 
 
+def _huggingface_headers() -> dict[str, str]:
+    api_key = settings.huggingface_api_key
+    if not api_key:
+        return {}
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+
 def _endpoint(model: str, route: str) -> str:
     return f"{settings.nlpcloud_api_base_url.rstrip('/')}/{model}/{route.lstrip('/')}"
 
@@ -75,6 +85,19 @@ def _post(model: str, route: str, payload: dict[str, object]) -> dict | list:
         headers=_headers(),
         json=payload,
         timeout=settings.nlpcloud_timeout_seconds,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _huggingface_post(model: str, payload: dict[str, object]) -> dict | list:
+    if not settings.has_huggingface:
+        return {}
+    response = httpx.post(
+        f"{settings.huggingface_api_base_url.rstrip('/')}/{model}",
+        headers=_huggingface_headers(),
+        json=payload,
+        timeout=settings.huggingface_timeout_seconds,
     )
     response.raise_for_status()
     return response.json()
@@ -129,9 +152,87 @@ def _extract_entities(payload: dict | list) -> list[str]:
     return entities[:8]
 
 
+def _huggingface_classify(text: str, labels: list[str]) -> dict[str, float]:
+    if not settings.has_huggingface or not text.strip():
+        return {}
+    payload = _huggingface_post(
+        settings.huggingface_classification_model,
+        {
+            "inputs": text,
+            "parameters": {
+                "candidate_labels": labels,
+                "multi_label": True,
+            },
+        },
+    )
+    if not isinstance(payload, dict):
+        return {}
+    raw_labels = payload.get("labels", []) or []
+    raw_scores = payload.get("scores", []) or []
+    scores: dict[str, float] = {}
+    for label, score in zip(raw_labels, raw_scores, strict=False):
+        try:
+            scores[str(label)] = float(score)
+        except (TypeError, ValueError):
+            continue
+    return scores
+
+
+def _extract_huggingface_entities(claim: str) -> list[str]:
+    if not settings.has_huggingface or not claim.strip():
+        return []
+    payload = _huggingface_post(
+        settings.huggingface_entity_model,
+        {
+            "inputs": claim,
+            "options": {
+                "wait_for_model": True,
+            },
+        },
+    )
+    if not isinstance(payload, list):
+        return []
+    entities: list[str] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("word") or item.get("entity_group") or "").replace("##", "").strip()
+        lowered = text.lower()
+        if text and lowered not in {entity.lower() for entity in entities}:
+            entities.append(text)
+    return entities[:8]
+
+
+def _fallback_claim_signals(claim: str, context: str = "") -> NlpCloudClaimSignals | None:
+    if not settings.has_huggingface:
+        return None
+    try:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            entities_future = executor.submit(_extract_huggingface_entities, claim)
+            relationship_future = executor.submit(_huggingface_classify, f"Claim: {claim}\nContext: {context}".strip(), list(RELATIONSHIP_LABELS))
+            strength_future = executor.submit(_huggingface_classify, claim, list(STRENGTH_LABELS))
+            domain_future = executor.submit(_huggingface_classify, f"Claim: {claim}\nContext: {context}".strip(), list(CLAIM_DOMAIN_LABELS))
+            entities = entities_future.result()
+            relationship_scores = relationship_future.result()
+            strength_scores = strength_future.result()
+            domain_scores = domain_future.result()
+    except Exception:
+        return None
+
+    relationship_label = _best_label(relationship_scores, threshold=0.35)
+    strength_label = _best_label(strength_scores, threshold=0.35)
+    domain_label = _best_label(domain_scores, threshold=0.35)
+    return NlpCloudClaimSignals(
+        entities=entities,
+        relationshipType=RELATIONSHIP_LABELS.get(relationship_label) if relationship_label else None,
+        strength=STRENGTH_LABELS.get(strength_label) if strength_label else None,
+        claimDomain=CLAIM_DOMAIN_LABELS.get(domain_label) if domain_label else None,
+    )
+
+
 def refine_claim_with_nlp_cloud(claim: str, context: str = "") -> NlpCloudClaimSignals | None:
     if not settings.has_nlpcloud:
-        return None
+        return _fallback_claim_signals(claim, context)
 
     try:
         with ThreadPoolExecutor(max_workers=4) as executor:
@@ -163,18 +264,23 @@ def refine_claim_with_nlp_cloud(claim: str, context: str = "") -> NlpCloudClaimS
             strength_scores = strength_future.result()
             domain_scores = domain_future.result()
     except Exception:
-        return None
+        return _fallback_claim_signals(claim, context)
 
     relationship_label = _best_label(relationship_scores)
     strength_label = _best_label(strength_scores)
     domain_label = _best_label(domain_scores)
 
-    return NlpCloudClaimSignals(
+    result = NlpCloudClaimSignals(
         entities=_extract_entities(entities_payload),
         relationshipType=RELATIONSHIP_LABELS.get(relationship_label) if relationship_label else None,
         strength=STRENGTH_LABELS.get(strength_label) if strength_label else None,
         claimDomain=CLAIM_DOMAIN_LABELS.get(domain_label) if domain_label else None,
     )
+    if not result.entities and settings.has_huggingface:
+        fallback = _fallback_claim_signals(claim, context)
+        if fallback is not None:
+            return fallback
+    return result
 
 
 def _ai_claim_signal_primary(claim: str, context: str) -> AiClaimSignalsOutput | None:

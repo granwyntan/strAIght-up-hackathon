@@ -1,4 +1,5 @@
 import httpx
+import re
 
 
 HEALTH_KEYWORDS = {
@@ -78,6 +79,19 @@ NON_HEALTH_KEYWORDS = {
     "election",
 }
 
+NON_ENGLISH_BLOCK_RE = re.compile(r"[\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u0900-\u097F\u0E00-\u0E7F\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]")
+
+
+def is_supported_english_query(claim: str, context: str = "") -> bool:
+    probe = f"{claim} {context}".strip()
+    if not probe:
+        return True
+    ascii_letters = len(re.findall(r"[A-Za-z]", probe))
+    blocked_script_chars = len(NON_ENGLISH_BLOCK_RE.findall(probe))
+    if blocked_script_chars < 2:
+        return True
+    return ascii_letters >= max(8, blocked_script_chars * 3)
+
 
 def is_health_related_query(claim: str, context: str = "") -> bool:
     haystack = f"{claim} {context}".lower()
@@ -93,6 +107,8 @@ def is_health_related_query(claim: str, context: str = "") -> bool:
 async def fetch_claim_suggestions(query: str) -> list[str]:
     cleaned = query.strip()
     if len(cleaned) < 2:
+        return []
+    if not is_supported_english_query(cleaned):
         return []
 
     async with httpx.AsyncClient(timeout=4.0) as client:

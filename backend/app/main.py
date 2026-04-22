@@ -6,7 +6,7 @@ from .ai import stage_target_label
 from .core.orchestrator import queue_investigation, start_investigation_workers
 from .database import init_db
 from .knowledge.base import BOOTSTRAP
-from .services.query_support import fetch_claim_suggestions, is_health_related_query
+from .services.query_support import fetch_claim_suggestions, is_health_related_query, is_supported_english_query
 from .models import (
     BootstrapPayload,
     InvestigationCollection,
@@ -111,6 +111,11 @@ async def get_claim_suggestions(q: str = Query(default="", min_length=0, max_len
 
 @app.post("/api/investigations", response_model=InvestigationDetail)
 def create_investigation(payload: InvestigationCreateRequest) -> InvestigationDetail:
+    if not is_supported_english_query(payload.claim, payload.context):
+        raise HTTPException(
+            status_code=422,
+            detail="GramWIN is temporarily limited to English health claims while the multilingual pipeline is being tightened.",
+        )
     if not is_health_related_query(payload.claim, payload.context):
         raise HTTPException(
             status_code=422,

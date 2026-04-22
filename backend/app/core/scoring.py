@@ -85,7 +85,7 @@ def weighted_consensus_breakdown(sources: list[SourceAssessment]) -> ConsensusBr
             neutral += contribution_weight
 
     normalized = 0.0 if total_weight <= 0 else max(-1.0, min(1.0, weighted_score / total_weight))
-    credibility_score = round(56 + (normalized * 44))
+    credibility_score = round(58 + (normalized * 42))
     support_share = 0.0 if total_weight <= 0 else supporting / total_weight
     contradiction_share = 0.0 if total_weight <= 0 else contradicting / total_weight
     summary = (
@@ -137,18 +137,20 @@ def claim_evidence_fit_score(claim_analysis: ClaimAnalysis, sources: list[Source
     support_strength = _high_quality_support(sources)
 
     fit_score = consensus.credibilityScore
-    if support_strength >= 2.4 and consensus.supportShare >= 0.58:
+    if support_strength >= 2.4 and consensus.supportShare >= 0.56:
         fit_score += 10
-    elif support_strength >= 1.8 and consensus.supportShare >= 0.5:
+    elif support_strength >= 1.8 and consensus.supportShare >= 0.48:
         fit_score += 6
+    elif support_strength >= 1.2 and consensus.supportShare >= 0.42 and consensus.contradictionShare < 0.16:
+        fit_score += 8
     if strongest_subclaim >= 4 and support_strength < 1.5:
-        fit_score -= 16
+        fit_score -= 14
     if strongest_subclaim == 5 and claim_analysis.languageRiskScore >= 45:
         fit_score -= 10
     if consensus.contradictionShare > 0.45:
         fit_score -= 8
     elif consensus.contradictionShare < 0.18 and support_strength >= 1.8:
-        fit_score += 4
+        fit_score += 6
     return max(0, min(100, fit_score))
 
 
@@ -209,15 +211,18 @@ def calibrated_credibility_score(claim_analysis: ClaimAnalysis, sources: list[So
     penalties: list[str] = []
     boosts: list[str] = []
 
-    if high_quality_support >= 2.5 and consensus.supportShare >= 0.58:
+    if high_quality_support >= 2.5 and consensus.supportShare >= 0.56:
+        score += 12
+        boosts.append("Strong verified or high-quality support added a 12-point boost.")
+    elif high_quality_support >= 1.8 and consensus.supportShare >= 0.48:
+        score += 8
+        boosts.append("Consistent high-quality support added an 8-point boost.")
+    elif high_quality_support >= 1.2 and consensus.supportShare >= 0.42 and consensus.contradictionShare < 0.16:
         score += 10
-        boosts.append("Strong verified or high-quality support added a 10-point boost.")
-    elif high_quality_support >= 1.8 and consensus.supportShare >= 0.5:
-        score += 6
-        boosts.append("Consistent high-quality support added a 6-point boost.")
+        boosts.append("Low-contradiction factual support added a 10-point boost.")
     if strongest_claim >= 4 and high_quality_support < 1.5:
-        score -= 14
-        penalties.append("Strong claim without strong supporting evidence triggered a 14-point penalty.")
+        score -= 12
+        penalties.append("Strong claim without strong supporting evidence triggered a 12-point penalty.")
     if strongest_claim >= 4 and claim_analysis.languageRiskScore >= 45:
         score -= 10
         penalties.append("Overstated wording triggered a 10-point penalty.")
@@ -225,8 +230,8 @@ def calibrated_credibility_score(claim_analysis: ClaimAnalysis, sources: list[So
         score -= 8
         penalties.append("Contradicting evidence exceeded 45% of weighted evidence, triggering an 8-point penalty.")
     elif consensus.contradictionShare < 0.18 and high_quality_support >= 1.8:
-        score += 4
-        boosts.append("Low contradiction pressure added a 4-point boost.")
+        score += 6
+        boosts.append("Low contradiction pressure added a 6-point boost.")
 
     return max(0, min(100, score)), [*boosts, *penalties], consensus
 

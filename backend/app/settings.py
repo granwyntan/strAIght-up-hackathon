@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     nlpcloud_classification_model: str = "bart-large-mnli-yahoo-answers"
     nlpcloud_timeout_seconds: float = 8.0
     nlpcloud_max_stance_refinements: int = 16
+    huggingface_api_key: str | None = None
+    huggingface_api_base_url: str = "https://api-inference.huggingface.co/models"
+    huggingface_entity_model: str = "dslim/bert-base-NER"
+    huggingface_classification_model: str = "facebook/bart-large-mnli"
+    huggingface_timeout_seconds: float = 12.0
     sentiment_disagreement_review_limit: int = 24
 
     research_stage_providers: str = "gemini,openai,claude,deepseek,xai"
@@ -155,6 +160,10 @@ class Settings(BaseSettings):
     @property
     def has_nlpcloud(self) -> bool:
         return bool(self.nlpcloud_api_key)
+
+    @property
+    def has_huggingface(self) -> bool:
+        return bool(self.huggingface_api_key)
 
     @property
     def llm_agents_enabled(self) -> bool:
