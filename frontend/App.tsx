@@ -21,7 +21,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import CaloriesPage from "./src/pages/CaloriesPage";
 import ProfilePage from "./src/pages/ProfilePage";
-import SupplementsPage from "./src/pages/SupplementsPage";
+import ScannerPage from "./src/pages/SupplementsPage";
 
 import {
   defaultBootstrap,
@@ -577,8 +577,8 @@ export default function App() {
             <CaloriesPage
               requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000, true)}
             />
-          ) : activeTab === "supplements" ? (
-            <SupplementsPage
+          ) : activeTab === "scanner" ? (
+            <ScannerPage
               requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000, true)}
             />
           ) : (
@@ -605,7 +605,6 @@ function TopBar({ brand, tagline }: { brand: string; tagline: string }) {
   return (
     <View style={styles.topBar}>
       <View style={{ flex: 1 }}>
-        <Text style={styles.topBarLabel}>EVIDENCE REVIEW</Text>
         <Text style={styles.topBarTitle}>{brand}</Text>
         <Text style={styles.topBarSubtitle}>{tagline}</Text>
       </View>
@@ -1646,7 +1645,7 @@ function BottomTabBar({ activeTab, onSelect }: { activeTab: AppTab; onSelect: (t
     { key: "home", label: "Home" },
     { key: "consultant", label: "Consultant" },
     { key: "nutrition", label: "Nutrition" },
-    { key: "supplements", label: "Supplements" },
+    { key: "scanner", label: "Scanner" },
     { key: "profile", label: "Profile" }
   ];
 
@@ -1657,7 +1656,13 @@ function BottomTabBar({ activeTab, onSelect }: { activeTab: AppTab; onSelect: (t
           <View style={[styles.tabIconWrap, activeTab === tab.key && styles.tabIconWrapSelected]}>
             <TabIcon tab={tab.key} selected={activeTab === tab.key} />
           </View>
-          <Text style={[styles.tabBarButtonText, activeTab === tab.key && styles.tabBarButtonTextSelected]}>{tab.label}</Text>
+          <Text
+            style={[styles.tabBarButtonText, activeTab === tab.key && styles.tabBarButtonTextSelected]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {tab.label}
+          </Text>
         </Pressable>
       ))}
     </View>
@@ -1675,7 +1680,7 @@ function TabIcon({ tab, selected }: { tab: AppTab; selected: boolean }) {
   if (tab === "nutrition") {
     return <AppIcon kind="nutrition" color={color} size={20} />;
   }
-  if (tab === "supplements") {
+  if (tab === "scanner") {
     return <AppIcon kind="supplements" color={color} size={20} />;
   }
   if (tab === "profile") {
@@ -1979,7 +1984,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: palette.background,
-    paddingTop: androidStatusInset
   },
   appShell: {
     flex: 1
@@ -1989,7 +1993,7 @@ const styles = StyleSheet.create({
   },
   screenContent: {
     paddingHorizontal: 18,
-    paddingTop: 14,
+    paddingTop: 8,
     paddingBottom: contentBottomPadding,
     width: "100%",
     maxWidth: 960,
@@ -2002,24 +2006,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    marginBottom: 22
-  },
-  topBarLabel: {
-    color: palette.muted,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1.2
+    marginBottom: 14
   },
   topBarTitle: {
     color: palette.ink,
     fontSize: 21,
     fontWeight: "900",
-    marginTop: 4
+    marginTop: 0
   },
   topBarSubtitle: {
     color: palette.muted,
     fontSize: 14,
-    marginTop: 4
+    marginTop: 2
   },
   avatarShell: {
     width: 58,
@@ -3093,6 +3091,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     paddingVertical: 6,
+    paddingHorizontal: 6,
     borderRadius: 20
   },
   tabBarButtonSelected: {
@@ -3110,7 +3109,8 @@ const styles = StyleSheet.create({
   },
   tabBarButtonText: {
     color: "#8b8f99",
-    fontSize: 12,
+    fontSize: 11,
+    textAlign: "center",
     fontWeight: "800"
   },
   tabBarButtonTextSelected: {

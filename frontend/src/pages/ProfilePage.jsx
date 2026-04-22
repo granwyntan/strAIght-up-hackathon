@@ -61,7 +61,7 @@ export default function ProfilePage({ history: _history }) {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.pageStack} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+    <KeyboardAvoidingView style={styles.pageStack} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.heroPanel}>
         <Text style={styles.heroTitle}>Personal health profile</Text>
         <Text style={styles.heroSubtitle}>Add and save your profile details locally so your health context is available whenever you reopen the app.</Text>
@@ -170,6 +170,11 @@ function LabeledInput({ label, multiline = false, ...props }) {
 const styles = StyleSheet.create({
   pageStack: {
     gap: 22
+  },
+  scrollContent: {
+  flexGrow: 1,
+  gap: 22,
+  paddingBottom: 120
   },
   heroPanel: {
     backgroundColor: palette.surface,

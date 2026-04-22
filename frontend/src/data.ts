@@ -1,4 +1,4 @@
-export type AppTab = "home" | "consultant" | "nutrition" | "supplements" | "profile";
+export type AppTab = "home" | "consultant" | "nutrition" | "scanner" | "profile";
 export type InvestigationStatus = "queued" | "running" | "completed" | "failed";
 export type ClaimVerdict = "trustworthy" | "mixed" | "overstated" | "untrustworthy";
 export type SourceSentiment = "positive" | "neutral" | "negative";
