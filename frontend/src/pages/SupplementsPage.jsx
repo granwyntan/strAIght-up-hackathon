@@ -34,6 +34,30 @@ function buildClientActionId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function inferSupplementTitleFromResult(payload, fallback) {
+  const analysisText = typeof payload?.analysisText === "string" ? payload.analysisText : "";
+  const firstAnalysisLine = analysisText.split("\n").find((line) => (line || "").trim());
+  const cleanedFromFirstLine = (firstAnalysisLine || "")
+    .replace(/^[-*]\s*/, "")
+    .replace(/^supplement\s*name[:\s-]*/i, "")
+    .replace(/^supplement(?:\s+identity)?[:\s-]*/i, "")
+    .replace(/^name[:\s-]*/i, "")
+    .trim();
+  if (cleanedFromFirstLine) {
+    return cleanedFromFirstLine.slice(0, 90);
+  }
+
+  const sections = Array.isArray(payload?.sections) ? payload.sections : [];
+  const identitySection = sections.find((section) => /identity|ingredient|supplement/i.test((section?.heading || "").toLowerCase()));
+  const fallbackLine = (identitySection?.content || "").split("\n").find((line) => (line || "").trim());
+  const cleaned = (fallbackLine || "")
+    .replace(/^[-*]\s*/, "")
+    .replace(/^supplement(?:\s+identity)?[:\s-]*/i, "")
+    .replace(/^name[:\s-]*/i, "")
+    .trim();
+  return (cleaned || fallback || "Supplement analysis").slice(0, 90);
+}
+
 async function readApiError(response, fallback) {
   try {
     const contentType = response.headers.get("content-type") || "";
@@ -66,6 +90,8 @@ export default function SupplementsPage({ requestApi }) {
   const [apiCallStartedAt, setApiCallStartedAt] = useState(null);
   const [apiCallElapsedMs, setApiCallElapsedMs] = useState(0);
   const [apiCallInFlight, setApiCallInFlight] = useState(false);
+  const [textGenerationStatus, setTextGenerationStatus] = useState("idle");
+  const [imageGenerationStatus, setImageGenerationStatus] = useState("idle");
   const [error, setError] = useState("");
   const [webcamActive, setWebcamActive] = useState(false);
   const [webcamError, setWebcamError] = useState("");
@@ -96,6 +122,8 @@ export default function SupplementsPage({ requestApi }) {
     setApiCallStartedAt(started);
     setApiCallElapsedMs(0);
     setApiCallInFlight(true);
+    setTextGenerationStatus("generating");
+    setImageGenerationStatus("waiting");
   };
 
   const finishApiCallTimer = () => {
@@ -108,6 +136,65 @@ export default function SupplementsPage({ requestApi }) {
   };
 
   const formatElapsed = (elapsedMs) => `${(elapsedMs / 1000).toFixed(2)}s`;
+
+  const phaseDurationLabel = (startSeconds, endSeconds, prefix) => {
+    if (typeof startSeconds !== "number" || typeof endSeconds !== "number") {
+      return "";
+    }
+    const durationMs = Math.max(0, (endSeconds - startSeconds) * 1000);
+    return `${prefix}: ${(durationMs / 1000).toFixed(2)}s`;
+  };
+
+  const applyGenerationStatusFromPayload = (payload) => {
+    const timing = payload?.generationTiming || {};
+    if (timing?.textCompletedAt) {
+      setTextGenerationStatus("completed");
+    } else if (timing?.textStartedAt) {
+      setTextGenerationStatus("generating");
+    } else {
+      setTextGenerationStatus(payload?.analysisText ? "completed" : "idle");
+    }
+
+    if (timing?.imageCompletedAt) {
+      setImageGenerationStatus("completed");
+      return;
+    }
+    if (timing?.imageStartedAt) {
+      setImageGenerationStatus("generating");
+      return;
+    }
+    if (payload?.infographicImageDataUrl) {
+      setImageGenerationStatus("completed");
+      return;
+    }
+    setImageGenerationStatus("not_available");
+  };
+
+  const textStatusLabel =
+    textGenerationStatus === "generating"
+      ? "Text generation: generating..."
+      : textGenerationStatus === "completed"
+        ? "Text generation: completed"
+        : textGenerationStatus === "failed"
+          ? "Text generation: failed"
+          : "Text generation: waiting";
+
+  const imageStatusLabel =
+    imageGenerationStatus === "waiting"
+      ? "Image generation: waiting for text..."
+      : imageGenerationStatus === "generating"
+        ? "Image generation: generating..."
+        : imageGenerationStatus === "completed"
+          ? "Image generation: completed"
+          : imageGenerationStatus === "failed"
+            ? "Image generation: failed"
+            : imageGenerationStatus === "not_available"
+              ? "Image generation: unavailable"
+              : "Image generation: waiting";
+
+  const generationTiming = result?.generationTiming || null;
+  const textDuration = phaseDurationLabel(generationTiming?.textStartedAt, generationTiming?.textCompletedAt, "Text duration");
+  const imageDuration = phaseDurationLabel(generationTiming?.imageStartedAt, generationTiming?.imageCompletedAt, "Image duration");
 
   const hydrateHistory = async () => {
     try {
@@ -342,17 +429,23 @@ export default function SupplementsPage({ requestApi }) {
 
       const payload = await response.json();
       setResult(payload);
+      applyGenerationStatusFromPayload(payload);
       const queryLabel =
         (selectedAsset?.fileName && selectedAsset.fileName.trim()) ||
         (selectedAsset?.uri ? "Uploaded supplement image" : "Supplement image");
+      const title = inferSupplementTitleFromResult(payload, queryLabel);
       const updatedHistory = await addSupplementHistoryEntry({
         id: `image-${Date.now()}`,
         query: queryLabel,
+        title,
         mode: "image",
-        searchedAt: new Date().toISOString()
+        searchedAt: new Date().toISOString(),
+        result: payload
       });
       setSearchHistory(updatedHistory);
     } catch (fetchError) {
+      setTextGenerationStatus("failed");
+      setImageGenerationStatus("failed");
       setError(fetchError instanceof Error ? fetchError.message : "Unable to analyze the supplement right now.");
     } finally {
       finishApiCallTimer();
@@ -378,7 +471,7 @@ export default function SupplementsPage({ requestApi }) {
     beginApiCallTimer();
     setError("");
     setSelectedAsset(null);
-    setWebcamActive(false);
+    closeWebcam();
 
     try {
       const clientActionId = buildClientActionId("supplement-search");
@@ -399,17 +492,23 @@ export default function SupplementsPage({ requestApi }) {
       }
       const payload = await response.json();
       setResult(payload);
+      applyGenerationStatusFromPayload(payload);
+      const title = inferSupplementTitleFromResult(payload, trimmedQuery);
       const updatedHistory = await addSupplementHistoryEntry({
         id: `text-${Date.now()}`,
         query: trimmedQuery,
+        title,
         mode: "text",
-        searchedAt: new Date().toISOString()
+        searchedAt: new Date().toISOString(),
+        result: payload
       });
       setSearchHistory(updatedHistory);
       if (activeSubPage !== "analyzer") {
         setActiveSubPage("analyzer");
       }
     } catch (fetchError) {
+      setTextGenerationStatus("failed");
+      setImageGenerationStatus("failed");
       setError(fetchError instanceof Error ? fetchError.message : "Unable to search supplement right now.");
     } finally {
       finishApiCallTimer();
@@ -429,6 +528,19 @@ export default function SupplementsPage({ requestApi }) {
 
   const clearSearchInput = () => {
     setSearchQuery("");
+  };
+
+  const openHistoryEntry = (entry) => {
+    if (!entry?.result) {
+      return;
+    }
+    closeWebcam();
+    setSelectedAsset(null);
+    setError("");
+    setSearchQuery("");
+    setResult(entry.result);
+    applyGenerationStatusFromPayload(entry.result);
+    setActiveSubPage("analyzer");
   };
 
   const formatDateTime = (isoValue) => {
@@ -534,6 +646,10 @@ export default function SupplementsPage({ requestApi }) {
                 {apiCallInFlight ? "Elapsed (live): " : "Elapsed: "}
                 {formatElapsed(apiCallElapsedMs)}
               </Text>
+              <Text style={styles.callMetaText}>{textStatusLabel}</Text>
+              <Text style={styles.callMetaText}>{imageStatusLabel}</Text>
+              {textDuration ? <Text style={styles.callMetaTextMuted}>{textDuration}</Text> : null}
+              {imageDuration ? <Text style={styles.callMetaTextMuted}>{imageDuration}</Text> : null}
             </View>
           ) : null}
 
@@ -549,17 +665,23 @@ export default function SupplementsPage({ requestApi }) {
           </View>
           {searchHistory.length === 0 ? <Text style={styles.emptyHistoryText}>No searches yet.</Text> : null}
           {searchHistory.map((entry) => (
-            <View key={entry.id} style={styles.historyItem}>
+            <Pressable key={entry.id} style={styles.historyItem} onPress={() => openHistoryEntry(entry)}>
               <View style={styles.historyTextWrap}>
-                <Text style={styles.historyQuery}>{entry.query || "Unknown supplement"}</Text>
+                <Text style={styles.historyQuery}>{entry.title || entry.query || "Unknown supplement"}</Text>
                 <Text style={styles.historyMeta}>
                   {entry.mode === "image" ? "Image scan" : "Text search"} · {formatDateTime(entry.searchedAt)}
                 </Text>
               </View>
-              <Pressable style={styles.clearOneButton} onPress={() => void clearOneHistoryItem(entry.id)}>
+              <Pressable
+                style={styles.clearOneButton}
+                onPress={(event) => {
+                  event?.stopPropagation?.();
+                  void clearOneHistoryItem(entry.id);
+                }}
+              >
                 <Text style={styles.clearOneButtonText}>Remove</Text>
               </Pressable>
-            </View>
+            </Pressable>
           ))}
         </View>
       )}
@@ -672,6 +794,11 @@ const styles = StyleSheet.create({
   },
   callMetaText: {
     color: palette.ink,
+    fontSize: 12,
+    fontWeight: "600"
+  },
+  callMetaTextMuted: {
+    color: palette.muted,
     fontSize: 12,
     fontWeight: "600"
   },

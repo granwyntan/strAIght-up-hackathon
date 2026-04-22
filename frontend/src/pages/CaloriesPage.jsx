@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import { palette } from "../data";
@@ -54,12 +54,12 @@ export default function CaloriesPage({ requestApi }) {
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [calcStartedAt, setCalcStartedAt] = useState(null);
+  const [calcElapsedMs, setCalcElapsedMs] = useState(null);
   const [error, setError] = useState("");
   const [activeSubPage, setActiveSubPage] = useState("calculator");
   const [webcamActive, setWebcamActive] = useState(false);
   const [webcamError, setWebcamError] = useState("");
-  const [trackerMealName, setTrackerMealName] = useState("");
-  const [trackerCalories, setTrackerCalories] = useState("");
   const [trackerError, setTrackerError] = useState("");
   const [trackerLoading, setTrackerLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -95,6 +95,8 @@ export default function CaloriesPage({ requestApi }) {
   const onChange = (key, value) => {
     setValues((previous) => ({ ...previous, [key]: value }));
   };
+
+  const normalizedEntryKey = (mealName, calories) => `${(mealName || "").trim().toLowerCase()}|${Math.round(Number(calories) || 0)}`;
 
   useEffect(() => {
     const weight = Number(values.weightKg);
@@ -187,6 +189,16 @@ export default function CaloriesPage({ requestApi }) {
       void loadHistory(weekAnchor);
     }
   }, [activeSubPage, weekAnchor]);
+
+  useEffect(() => {
+    if (!loading || !calcStartedAt) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setCalcElapsedMs(Date.now() - calcStartedAt);
+    }, 120);
+    return () => clearInterval(timer);
+  }, [loading, calcStartedAt]);
 
   const pickImage = async () => {
     setError("");
@@ -286,19 +298,35 @@ export default function CaloriesPage({ requestApi }) {
   };
 
   function inferCaloriesFromResult(nextResult) {
-    const raw = typeof nextResult?.analysisText === "string" ? nextResult.analysisText : "";
-    const directMatch = raw.match(/Total Estimated Calories[:\s]*([0-9]{2,5})/i);
-    if (directMatch) {
-      return directMatch[1];
+    if (typeof nextResult?.totalEstimatedCalories === "number" && Number.isFinite(nextResult.totalEstimatedCalories)) {
+      return String(Math.max(0, Math.round(nextResult.totalEstimatedCalories)));
     }
-    const allMatches = [...raw.matchAll(/([0-9]{2,5})\s*kcal/gi)];
-    if (allMatches.length > 0) {
-      return allMatches[allMatches.length - 1][1];
+    const raw = typeof nextResult?.analysisText === "string" ? nextResult.analysisText : "";
+    const lines = raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const finalLine = lines.length > 0 ? lines[lines.length - 1] : "";
+    if (/total estimated calories/i.test(finalLine)) {
+      const finalMatch = finalLine.match(/(-?\d+)/);
+      if (finalMatch) {
+        return String(Math.max(0, Number(finalMatch[1]) || 0));
+      }
     }
     return "";
   }
 
   function inferFoodNameFromResult(nextResult) {
+    const analysisText = typeof nextResult?.analysisText === "string" ? nextResult.analysisText : "";
+    const firstAnalysisLine = analysisText.split("\n").find((line) => line.trim());
+    const cleanedFirstLine = (firstAnalysisLine || "")
+      .replace(/^[-*]\s*/, "")
+      .replace(/^food\s*name[:\s-]*/i, "")
+      .trim();
+    if (cleanedFirstLine) {
+      return cleanedFirstLine.slice(0, 80);
+    }
+
     const sections = Array.isArray(nextResult?.sections) ? nextResult.sections : [];
     const summarySection = sections.find((section) => /meal summary/i.test(section.heading || ""));
     const raw = (summarySection?.content || nextResult?.analysisText || "").split("\n").find((line) => line.trim());
@@ -325,6 +353,9 @@ export default function CaloriesPage({ requestApi }) {
 
     setLoading(true);
     setError("");
+    const startedAt = Date.now();
+    setCalcStartedAt(startedAt);
+    setCalcElapsedMs(null);
 
     try {
       const formData = new FormData();
@@ -358,9 +389,6 @@ export default function CaloriesPage({ requestApi }) {
       setResult(payload);
       const inferred = inferCaloriesFromResult(payload);
       const inferredMealName = inferFoodNameFromResult(payload);
-      if (inferred && !trackerCalories) {
-        setTrackerCalories(inferred);
-      }
       if (inferred) {
         setSuggestedMealName(inferredMealName);
         setSuggestedCalories(inferred);
@@ -369,28 +397,38 @@ export default function CaloriesPage({ requestApi }) {
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to calculate calories right now.");
     } finally {
+      setCalcElapsedMs(Date.now() - startedAt);
       setLoading(false);
     }
   };
 
-  const addToDailyTracker = async () => {
-    return addTrackerEntry({
-      mealName: trackerMealName,
-      calories: trackerCalories,
-      setFields: true,
-      switchToHistory: true
-    });
-  };
-
-  const addTrackerEntry = async ({ mealName, calories, setFields, switchToHistory }) => {
+  const addTrackerEntry = async ({ mealName, calories, entryDate, switchToHistory }) => {
     if (typeof requestApi !== "function") {
       setTrackerError("Calories API is not configured in this screen.");
-      return;
+      return false;
     }
     const parsedCalories = Number(calories);
     if (!Number.isFinite(parsedCalories) || parsedCalories <= 0) {
       setTrackerError("Enter valid calories before adding to tracker.");
-      return;
+      return false;
+    }
+    const normalizedMealName = (mealName || "").trim() || inferFoodNameFromResult(result);
+    const nextEntryKey = normalizedEntryKey(normalizedMealName, parsedCalories);
+    const existingEntries = Array.isArray(historyPayload?.entries) ? historyPayload.entries : [];
+    const duplicateRecent = existingEntries.some((entry) => {
+      const existingEntryKey = normalizedEntryKey(entry.mealName, entry.calories);
+      if (existingEntryKey !== nextEntryKey) {
+        return false;
+      }
+      const createdAtMs = Date.parse(entry.createdAt || "");
+      if (Number.isNaN(createdAtMs)) {
+        return false;
+      }
+      return Date.now() - createdAtMs <= 5000;
+    });
+    if (duplicateRecent) {
+      setTrackerError("This meal was just added. Duplicate entry prevented.");
+      return false;
     }
 
     setTrackerLoading(true);
@@ -400,9 +438,9 @@ export default function CaloriesPage({ requestApi }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mealName: mealName || "",
+          mealName: normalizedMealName,
           calories: Math.round(parsedCalories),
-          date: new Date().toISOString().slice(0, 10)
+          date: entryDate || new Date().toISOString().slice(0, 10)
         })
       });
       if (!response.ok) {
@@ -410,28 +448,41 @@ export default function CaloriesPage({ requestApi }) {
       }
       const payload = await response.json();
       setHistoryPayload(payload.week);
-      if (setFields) {
-        setTrackerMealName("");
-        setTrackerCalories("");
-      }
       if (switchToHistory && activeSubPage !== "history") {
         setActiveSubPage("history");
       }
+      return true;
     } catch (submitError) {
       setTrackerError(submitError instanceof Error ? submitError.message : "Unable to add entry.");
+      return false;
     } finally {
       setTrackerLoading(false);
     }
   };
 
   const confirmAddSuggested = async () => {
-    await addTrackerEntry({
+    const added = await addTrackerEntry({
       mealName: suggestedMealName,
       calories: suggestedCalories,
-      setFields: false,
+      entryDate: new Date().toISOString().slice(0, 10),
       switchToHistory: false
     });
-    setConfirmVisible(false);
+    if (added) {
+      setConfirmVisible(false);
+    }
+  };
+
+  const addTrackerEntryFromHistory = async ({ date, mealName, calories }) => {
+    const added = await addTrackerEntry({
+      mealName,
+      calories,
+      entryDate: date,
+      switchToHistory: false
+    });
+    if (added) {
+      await loadHistory(weekAnchor);
+    }
+    return added;
   };
 
   const editTrackerEntry = async (entryId, updates) => {
@@ -474,6 +525,28 @@ export default function CaloriesPage({ requestApi }) {
       await loadHistory(weekAnchor);
     } catch (actionError) {
       setTrackerError(actionError instanceof Error ? actionError.message : "Unable to delete entry.");
+    } finally {
+      setEntryActionLoading(false);
+    }
+  };
+
+  const clearTrackerDay = async (entryDate) => {
+    if (typeof requestApi !== "function") {
+      return false;
+    }
+    setEntryActionLoading(true);
+    try {
+      const response = await requestApi(`/api/calories/day/${entryDate}`, {
+        method: "DELETE"
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "Unable to clear entries for this day."));
+      }
+      await loadHistory(weekAnchor);
+      return true;
+    } catch (actionError) {
+      setTrackerError(actionError instanceof Error ? actionError.message : "Unable to clear this day.");
+      return false;
     } finally {
       setEntryActionLoading(false);
     }
@@ -533,31 +606,16 @@ export default function CaloriesPage({ requestApi }) {
             onSubmit={submit}
           />
 
+          {calcStartedAt && calcElapsedMs !== null ? (
+            <View style={styles.calcMetaCard}>
+              <Text style={styles.calcMetaText}>Started: {new Date(calcStartedAt).toLocaleTimeString()}</Text>
+              <Text style={styles.calcMetaText}>
+                {loading ? "Time elapsed: " : "Time taken: "}
+                {(calcElapsedMs / 1000).toFixed(1)} seconds
+              </Text>
+            </View>
+          ) : null}
           <CalorieResult result={result} />
-
-          <View style={styles.trackerCard}>
-            <Text style={styles.trackerTitle}>Daily calorie tracker</Text>
-            <Text style={styles.trackerBody}>Log meal calories to build your daily and weekly history.</Text>
-            <TextInput
-              style={styles.trackerInput}
-              value={trackerMealName}
-              onChangeText={setTrackerMealName}
-              placeholder="Meal name (optional)"
-              editable={!trackerLoading}
-            />
-            <TextInput
-              style={styles.trackerInput}
-              value={trackerCalories}
-              onChangeText={setTrackerCalories}
-              placeholder="Calories"
-              keyboardType="numeric"
-              editable={!trackerLoading}
-            />
-            <Pressable style={[styles.trackerButton, trackerLoading && styles.trackerButtonDisabled]} onPress={addToDailyTracker} disabled={trackerLoading}>
-              <Text style={styles.trackerButtonText}>{trackerLoading ? "Adding..." : "Add to Daily Tracker"}</Text>
-            </Pressable>
-            {trackerError ? <Text style={styles.trackerError}>{trackerError}</Text> : null}
-          </View>
         </>
       ) : (
         <CalorieHistoryPage
@@ -565,9 +623,13 @@ export default function CaloriesPage({ requestApi }) {
           loading={historyLoading}
           onPrevWeek={openPrevWeek}
           onNextWeek={openNextWeek}
+          onAddEntry={addTrackerEntryFromHistory}
           onEditEntry={editTrackerEntry}
           onDeleteEntry={deleteTrackerEntry}
+          onClearDayEntries={clearTrackerDay}
           actionLoading={entryActionLoading}
+          trackerLoading={trackerLoading}
+          trackerError={trackerError}
         />
       )}
 
@@ -578,11 +640,12 @@ export default function CaloriesPage({ requestApi }) {
             <Text style={styles.modalBody}>Food: {suggestedMealName || "Meal"}</Text>
             <Text style={styles.modalBody}>Calories: {suggestedCalories || "--"} kcal</Text>
             <Text style={styles.modalPrompt}>Do you want to add this to your daily calorie tracker?</Text>
+            {trackerError ? <Text style={styles.modalError}>{trackerError}</Text> : null}
             <View style={styles.modalActions}>
-              <Pressable style={styles.modalPrimary} onPress={() => void confirmAddSuggested()}>
+              <Pressable style={[styles.modalPrimary, trackerLoading && styles.modalButtonDisabled]} onPress={() => void confirmAddSuggested()} disabled={trackerLoading}>
                 <Text style={styles.modalPrimaryText}>Yes</Text>
               </Pressable>
-              <Pressable style={styles.modalSecondary} onPress={() => setConfirmVisible(false)}>
+              <Pressable style={[styles.modalSecondary, trackerLoading && styles.modalButtonDisabled]} onPress={() => setConfirmVisible(false)} disabled={trackerLoading}>
                 <Text style={styles.modalSecondaryText}>No</Text>
               </Pressable>
             </View>
@@ -649,48 +712,19 @@ const styles = StyleSheet.create({
   segmentTextSelected: {
     color: palette.blue
   },
-  trackerCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
-    padding: 16,
-    gap: 10
-  },
-  trackerTitle: {
-    color: palette.ink,
-    fontWeight: "700",
-    fontSize: 16
-  },
-  trackerBody: {
-    color: palette.muted,
-    lineHeight: 20
-  },
-  trackerInput: {
-    minHeight: 46,
+  calcMetaCard: {
     borderRadius: 12,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: palette.surface,
+    backgroundColor: "#f7f3ec",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 2
+  },
+  calcMetaText: {
     color: palette.ink,
-    paddingHorizontal: 12
-  },
-  trackerButton: {
-    borderRadius: 12,
-    backgroundColor: palette.blue,
-    paddingVertical: 12,
-    alignItems: "center"
-  },
-  trackerButtonDisabled: {
-    opacity: 0.5
-  },
-  trackerButtonText: {
-    color: palette.surface,
-    fontWeight: "700"
-  },
-  trackerError: {
-    color: palette.red,
-    fontSize: 13
+    fontSize: 12,
+    fontWeight: "600"
   },
   modalBackdrop: {
     flex: 1,
@@ -722,6 +756,10 @@ const styles = StyleSheet.create({
     color: palette.muted,
     lineHeight: 20
   },
+  modalError: {
+    color: palette.red,
+    fontSize: 12
+  },
   modalActions: {
     flexDirection: "row",
     gap: 10,
@@ -748,5 +786,8 @@ const styles = StyleSheet.create({
   modalSecondaryText: {
     color: palette.ink,
     fontWeight: "600"
+  },
+  modalButtonDisabled: {
+    opacity: 0.5
   }
 });

@@ -33,6 +33,7 @@ class SupplementAnalysisResponse(BaseModel):
     analysisText: str
     sections: list[SupplementSectionResponse]
     infographicImageDataUrl: str
+    generationTiming: dict[str, float | None]
 
 
 class SupplementSearchRequest(BaseModel):
@@ -145,6 +146,12 @@ async def analyze_supplement_endpoint(
         analysisText=result.analysis_text,
         sections=[_to_section_payload(item) for item in result.sections],
         infographicImageDataUrl=result.infographic_image_data_url,
+        generationTiming={
+            "textStartedAt": result.text_generation_started_at,
+            "textCompletedAt": result.text_generation_completed_at,
+            "imageStartedAt": result.image_generation_started_at,
+            "imageCompletedAt": result.image_generation_completed_at,
+        },
     )
 
 
@@ -194,4 +201,10 @@ def search_supplement_endpoint(
         analysisText=result.analysis_text,
         sections=[_to_section_payload(item) for item in result.sections],
         infographicImageDataUrl=result.infographic_image_data_url,
+        generationTiming={
+            "textStartedAt": result.text_generation_started_at,
+            "textCompletedAt": result.text_generation_completed_at,
+            "imageStartedAt": result.image_generation_started_at,
+            "imageCompletedAt": result.image_generation_completed_at,
+        },
     )

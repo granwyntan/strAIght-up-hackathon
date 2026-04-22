@@ -9,6 +9,7 @@ from ..services.calorie_service import (
     add_calorie_entry,
     calculate_calories,
     delete_calorie_entry,
+    delete_calorie_entries_for_day,
     get_weekly_calorie_history,
     update_calorie_entry,
 )
@@ -43,6 +44,7 @@ class CalorieCalculationResponse(BaseModel):
     analysisText: str
     sections: list[CalorieSectionResponse]
     calorieContext: CalorieContextResponse
+    totalEstimatedCalories: int | None = None
 
 
 class CalorieTrackerEntryResponse(BaseModel):
@@ -85,6 +87,12 @@ class CalorieTrackerUpdateRequest(BaseModel):
 class CalorieTrackerDeleteResponse(BaseModel):
     deleted: bool
     entryId: str
+
+
+class CalorieTrackerDayDeleteResponse(BaseModel):
+    deleted: bool
+    date: str
+    removedEntries: int
 
 
 def _to_section_payload(section: CalorieSection) -> CalorieSectionResponse:
@@ -173,6 +181,7 @@ async def _calculate_calories_response(
         analysisText=result.analysis_text,
         sections=[_to_section_payload(item) for item in result.sections],
         calorieContext=_to_context_payload(result.calorie_context),
+        totalEstimatedCalories=result.total_estimated_calories,
     )
 
 
@@ -254,3 +263,16 @@ def delete_tracker_entry(entry_id: str) -> CalorieTrackerDeleteResponse:
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return CalorieTrackerDeleteResponse(deleted=True, entryId=entry_id)
+
+
+@router.delete("/day/{entry_date}", response_model=CalorieTrackerDayDeleteResponse)
+def delete_tracker_day_entries(entry_date: str) -> CalorieTrackerDayDeleteResponse:
+    try:
+        removed = delete_calorie_entries_for_day(entry_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return CalorieTrackerDayDeleteResponse(
+        deleted=True,
+        date=entry_date,
+        removedEntries=removed,
+    )

@@ -1,5 +1,5 @@
-import React from "react";
-import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { Alert, Image, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 
 import { palette } from "../../data";
 
@@ -71,9 +71,66 @@ function renderMarkdownBlock(content, keyPrefix) {
 }
 
 export default function AnalysisResult({ result, selectedImageUri, selectedImageAspectRatio }) {
+  const [zoom, setZoom] = useState(1);
+  const [infographicLoadFailed, setInfographicLoadFailed] = useState(false);
+  const infographicUri = typeof result?.infographicImageDataUrl === "string" ? result.infographicImageDataUrl : "";
+  const hasInfographic = Boolean(infographicUri) && !infographicLoadFailed;
+  const interactiveWidth = useMemo(() => Math.max(360, Math.round(620 * zoom)), [zoom]);
+  const interactiveHeight = useMemo(() => Math.max(220, Math.round(390 * zoom)), [zoom]);
+
+  useEffect(() => {
+    setInfographicLoadFailed(false);
+    setZoom(1);
+  }, [infographicUri, result?.analysisText]);
+
   if (!result) {
     return null;
   }
+
+  const clampZoom = (value) => Math.max(1, Math.min(3, value));
+  const zoomIn = () => setZoom((previous) => clampZoom(previous + 0.2));
+  const zoomOut = () => setZoom((previous) => clampZoom(previous - 0.2));
+  const resetZoom = () => setZoom(1);
+
+  const downloadText = () => {
+    const text = (result.analysisText || "").trim();
+    if (!text || Platform.OS !== "web") {
+      return;
+    }
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `supplement-analysis-${Date.now()}.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadInfographic = () => {
+    if (!hasInfographic || Platform.OS !== "web") {
+      return;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = infographicUri;
+    anchor.download = `supplement-infographic-${Date.now()}.png`;
+    anchor.click();
+  };
+
+  const shareResult = async () => {
+    const summary = (result.analysisText || "").slice(0, 1200);
+    try {
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({
+          title: "Supplement analysis",
+          text: summary
+        });
+        return;
+      }
+      await Share.share({ message: summary });
+    } catch {
+      Alert.alert("Share unavailable", "Sharing is not available on this device right now.");
+    }
+  };
 
   return (
     <View style={styles.card}>
@@ -95,12 +152,50 @@ export default function AnalysisResult({ result, selectedImageUri, selectedImage
         )}
       </ScrollView>
 
-      {result.infographicImageDataUrl ? (
+      <View style={styles.actionRow}>
+        <Pressable style={styles.actionButton} onPress={() => void shareResult()}>
+          <Text style={styles.actionButtonText}>Share</Text>
+        </Pressable>
+        <Pressable style={styles.actionButton} onPress={downloadText} disabled={Platform.OS !== "web"}>
+          <Text style={styles.actionButtonText}>Download Text</Text>
+        </Pressable>
+        <Pressable style={styles.actionButton} onPress={downloadInfographic} disabled={!hasInfographic || Platform.OS !== "web"}>
+          <Text style={styles.actionButtonText}>Download Image</Text>
+        </Pressable>
+      </View>
+
+      {hasInfographic ? (
         <View style={styles.infographicPanel}>
           <Text style={styles.sectionHeading}>Visual infographic</Text>
-          <Image source={{ uri: result.infographicImageDataUrl }} style={styles.infographicImage} resizeMode="contain" />
+          <View style={styles.zoomControls}>
+            <Pressable style={styles.zoomButton} onPress={zoomOut}>
+              <Text style={styles.zoomButtonText}>-</Text>
+            </Pressable>
+            <Text style={styles.zoomLabel}>{Math.round(zoom * 100)}%</Text>
+            <Pressable style={styles.zoomButton} onPress={zoomIn}>
+              <Text style={styles.zoomButtonText}>+</Text>
+            </Pressable>
+            <Pressable style={styles.zoomResetButton} onPress={resetZoom}>
+              <Text style={styles.zoomResetText}>Reset</Text>
+            </Pressable>
+          </View>
+          <ScrollView horizontal style={styles.infographicScroll}>
+            <ScrollView style={styles.infographicScrollInner}>
+              <Image
+                source={{ uri: infographicUri }}
+                style={[styles.infographicImage, { width: interactiveWidth, height: interactiveHeight }]}
+                resizeMode="contain"
+                onError={() => setInfographicLoadFailed(true)}
+              />
+            </ScrollView>
+          </ScrollView>
         </View>
-      ) : null}
+      ) : (
+        <View style={styles.infographicPanel}>
+          <Text style={styles.sectionHeading}>Visual infographic</Text>
+          <Text style={styles.emptyInfographicText}>Infographic is unavailable for this result.</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -183,12 +278,79 @@ const styles = StyleSheet.create({
   infographicPanel: {
     gap: 8
   },
-  infographicImage: {
-    width: "100%",
-    aspectRatio: 1.6,
+  actionRow: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap"
+  },
+  actionButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingVertical: 8,
+    paddingHorizontal: 10
+  },
+  actionButtonText: {
+    color: palette.ink,
+    fontWeight: "700",
+    fontSize: 12
+  },
+  zoomControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  zoomButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  zoomButtonText: {
+    color: palette.ink,
+    fontWeight: "700",
+    fontSize: 16
+  },
+  zoomLabel: {
+    color: palette.muted,
+    fontWeight: "600"
+  },
+  zoomResetButton: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingHorizontal: 8,
+    paddingVertical: 6
+  },
+  zoomResetText: {
+    color: palette.ink,
+    fontWeight: "700",
+    fontSize: 12
+  },
+  infographicScroll: {
+    maxHeight: 420,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: "#f8f4ee"
+  },
+  infographicScrollInner: {
+    maxHeight: 420
+  },
+  infographicImage: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#f8f4ee"
+  },
+  emptyInfographicText: {
+    color: palette.muted,
+    lineHeight: 20
   }
 });

@@ -23,6 +23,7 @@ DEFAULT_GOALS = "Reduce belly fat, Improve cognitive power"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 SUPPLEMENT_ANALYSIS_MODEL = "gpt-5.4-mini"
 SUPPLEMENT_INFOGRAPHIC_MODEL = "gpt-image-1"
+SUPPLEMENT_INFOGRAPHIC_TIMEOUT_SECONDS = 60.0
 OPENAI_RETRY_ATTEMPTS = 3
 OPENAI_RETRY_BASE_SECONDS = 0.8
 
@@ -199,6 +200,10 @@ class SupplementAnalysisResult:
     analysis_text: str
     sections: list[SupplementSection]
     infographic_image_data_url: str
+    text_generation_started_at: float | None = None
+    text_generation_completed_at: float | None = None
+    image_generation_started_at: float | None = None
+    image_generation_completed_at: float | None = None
 
 
 def _build_analysis_prompt(conditions: str, goals: str) -> str:
@@ -207,6 +212,8 @@ def _build_analysis_prompt(conditions: str, goals: str) -> str:
 
     return (
         "You are a pharmacist deciding if this patient should consume this supplement. "
+        "The FIRST LINE of your response must be exactly: 'Supplement Name: <name>'. "
+        "Do not add any text before that first line. "
         "Return clear markdown with exactly 4 top-level sections using H2 headings. "
         "Section 1: Supplement Identity and Ingredients. "
         "Section 2: Potential Benefits and Mechanisms. "
@@ -226,6 +233,8 @@ def _build_text_analysis_prompt(supplement_name: str, conditions: str, goals: st
     return (
         "You are a pharmacist deciding if this patient should consume this supplement. "
         f"The supplement to evaluate is: {normalized_name}. "
+        "The FIRST LINE of your response must be exactly: 'Supplement Name: <name>'. "
+        "Use the supplement name you are evaluating. Do not add any text before that first line. "
         "Do not claim to have read a label image. "
         "Use generally known ingredient profiles when possible, and clearly label uncertainty when product-specific details are unknown. "
         "Return clear markdown with exactly 4 top-level sections using H2 headings. "
@@ -318,14 +327,30 @@ def _generate_infographic_data_url(client: OpenAI, analysis_text: str, condition
             "supplement_infographic",
             request_id,
         )
-        result = client.images.generate(
+        image_client = client.with_options(timeout=SUPPLEMENT_INFOGRAPHIC_TIMEOUT_SECONDS)
+        result = image_client.images.generate(
             model=SUPPLEMENT_INFOGRAPHIC_MODEL,
             prompt=_build_infographic_prompt(analysis_text, conditions, goals),
             size="1024x1024",
         )
-        image_base64 = result.data[0].b64_json
-        return f"data:image/png;base64,{image_base64}"
-    except Exception:
+        data_items = getattr(result, "data", None) or []
+        if not data_items:
+            logger.warning("Infographic generation returned no data payload.")
+            return ""
+
+        first = data_items[0]
+        image_base64 = getattr(first, "b64_json", None)
+        image_url = getattr(first, "url", None)
+
+        if isinstance(image_base64, str) and image_base64.strip():
+            return f"data:image/png;base64,{image_base64}"
+        if isinstance(image_url, str) and image_url.strip():
+            return image_url
+
+        logger.warning("Infographic generation payload missing both b64_json and url fields.")
+        return ""
+    except Exception as exc:
+        logger.warning("Infographic generation failed: %s", exc)
         # Keep supplement analysis successful even if image generation fails.
         return ""
 
@@ -365,7 +390,16 @@ def analyze_supplement(
     cache_key = _cache_key(image_bytes, normalized_conditions, normalized_goals)
     cached = _analysis_cache.get(cache_key)
     if cached is not None:
-        return cached
+        now = time.time()
+        return SupplementAnalysisResult(
+            analysis_text=cached.analysis_text,
+            sections=cached.sections,
+            infographic_image_data_url=cached.infographic_image_data_url,
+            text_generation_started_at=now,
+            text_generation_completed_at=now,
+            image_generation_started_at=now if cached.infographic_image_data_url else None,
+            image_generation_completed_at=now if cached.infographic_image_data_url else None,
+        )
 
     optimized_bytes, optimized_content_type = optimize_image_for_openai(
         image_bytes,
@@ -380,6 +414,7 @@ def analyze_supplement(
         max_retries=0,
     )
     image_data = base64.b64encode(optimized_bytes).decode("utf-8")
+    text_started_at = time.time()
     try:
         response = _response_with_rate_limit_retry(
             client,
@@ -408,21 +443,35 @@ def analyze_supplement(
     analysis_text = response.output_text.strip()
     if not analysis_text:
         raise RuntimeError("The model returned an empty analysis response.")
+    text_completed_at = time.time()
+
     infographic_key = _infographic_cache_key(analysis_text, normalized_conditions, normalized_goals)
     infographic_image_data_url = _infographic_cache.get(infographic_key)
+    image_started_at: float | None = None
+    image_completed_at: float | None = None
     if infographic_image_data_url is None:
+        image_started_at = time.time()
         infographic_image_data_url = _generate_infographic_data_url(
             client=client,
             analysis_text=analysis_text,
             conditions=normalized_conditions,
             goals=normalized_goals,
         )
+        image_completed_at = time.time()
         _infographic_cache[infographic_key] = infographic_image_data_url
+    elif infographic_image_data_url:
+        now = time.time()
+        image_started_at = now
+        image_completed_at = now
 
     result = SupplementAnalysisResult(
         analysis_text=analysis_text,
         sections=_parse_sections(analysis_text),
         infographic_image_data_url=infographic_image_data_url,
+        text_generation_started_at=text_started_at,
+        text_generation_completed_at=text_completed_at,
+        image_generation_started_at=image_started_at,
+        image_generation_completed_at=image_completed_at,
     )
     _analysis_cache[cache_key] = result
     return result
@@ -460,7 +509,16 @@ def analyze_supplement_by_name(
     cache_key = hashlib.sha256(cache_payload.encode("utf-8")).hexdigest()
     cached = _analysis_cache.get(cache_key)
     if cached is not None:
-        return cached
+        now = time.time()
+        return SupplementAnalysisResult(
+            analysis_text=cached.analysis_text,
+            sections=cached.sections,
+            infographic_image_data_url=cached.infographic_image_data_url,
+            text_generation_started_at=now,
+            text_generation_completed_at=now,
+            image_generation_started_at=now if cached.infographic_image_data_url else None,
+            image_generation_completed_at=now if cached.infographic_image_data_url else None,
+        )
 
     client = OpenAI(
         api_key=settings.openai_api_key,
@@ -468,6 +526,7 @@ def analyze_supplement_by_name(
         timeout=settings.llm_timeout_seconds,
         max_retries=0,
     )
+    text_started_at = time.time()
     try:
         response = _response_with_rate_limit_retry(
             client,
@@ -489,11 +548,35 @@ def analyze_supplement_by_name(
     analysis_text = response.output_text.strip()
     if not analysis_text:
         raise RuntimeError("The model returned an empty analysis response.")
+    text_completed_at = time.time()
+
+    infographic_key = _infographic_cache_key(analysis_text, normalized_conditions, normalized_goals)
+    infographic_image_data_url = _infographic_cache.get(infographic_key)
+    image_started_at: float | None = None
+    image_completed_at: float | None = None
+    if infographic_image_data_url is None:
+        image_started_at = time.time()
+        infographic_image_data_url = _generate_infographic_data_url(
+            client=client,
+            analysis_text=analysis_text,
+            conditions=normalized_conditions,
+            goals=normalized_goals,
+        )
+        image_completed_at = time.time()
+        _infographic_cache[infographic_key] = infographic_image_data_url
+    elif infographic_image_data_url:
+        now = time.time()
+        image_started_at = now
+        image_completed_at = now
 
     result = SupplementAnalysisResult(
         analysis_text=analysis_text,
         sections=_parse_sections(analysis_text),
-        infographic_image_data_url="",
+        infographic_image_data_url=infographic_image_data_url,
+        text_generation_started_at=text_started_at,
+        text_generation_completed_at=text_completed_at,
+        image_generation_started_at=image_started_at,
+        image_generation_completed_at=image_completed_at,
     )
     _analysis_cache[cache_key] = result
     return result

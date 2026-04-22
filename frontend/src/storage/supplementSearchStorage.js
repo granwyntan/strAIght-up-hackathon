@@ -8,8 +8,10 @@ function normalizeEntry(input) {
   return {
     id: typeof source.id === "string" ? source.id : String(Date.now()),
     query: typeof source.query === "string" ? source.query : "",
+    title: typeof source.title === "string" ? source.title : typeof source.query === "string" ? source.query : "",
     mode: source.mode === "image" ? "image" : "text",
-    searchedAt: typeof source.searchedAt === "string" ? source.searchedAt : new Date().toISOString()
+    searchedAt: typeof source.searchedAt === "string" ? source.searchedAt : new Date().toISOString(),
+    result: source.result && typeof source.result === "object" ? source.result : null
   };
 }
 

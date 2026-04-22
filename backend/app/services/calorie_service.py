@@ -169,6 +169,7 @@ class CalorieCalculationResult:
     analysis_text: str
     sections: list[CalorieSection]
     calorie_context: CalorieContext
+    total_estimated_calories: int | None
 
 
 @dataclass(slots=True)
@@ -320,6 +321,8 @@ def _build_calorie_context(
 def _build_prompt(context: CalorieContext) -> str:
     return (
         "You are a nutrition assistant and calorie estimator. "
+        "The FIRST LINE of your response must be exactly: 'Food Name: <name>'. "
+        "Use the most likely dish name from the image and do not add any text before that first line. "
         "Look carefully at the food image and identify the main dish and visible ingredients. "
         "Estimate realistic mass in grams for each item, then estimate calories per item. "
         "Provide concise markdown with these H2 sections: "
@@ -378,6 +381,23 @@ def _parse_sections(markdown: str) -> list[CalorieSection]:
     if sections:
         return sections
     return [CalorieSection(heading="Summary", content=markdown.strip())]
+
+
+def _extract_total_estimated_calories_from_final_line(analysis_text: str) -> int | None:
+    lines = [line.strip() for line in analysis_text.splitlines() if line.strip()]
+    if not lines:
+        return None
+    final_line = lines[-1]
+    if "total estimated calories" not in final_line.lower():
+        return None
+    match = re.search(r"(-?\d+)", final_line)
+    if not match:
+        return None
+    try:
+        parsed = int(match.group(1))
+    except ValueError:
+        return None
+    return max(0, parsed)
 
 
 def _utc_now_iso() -> str:
@@ -514,6 +534,7 @@ def calculate_calories(
         analysis_text=analysis_text,
         sections=_parse_sections(analysis_text),
         calorie_context=context,
+        total_estimated_calories=_extract_total_estimated_calories_from_final_line(analysis_text),
     )
     _analysis_cache[cache_key] = result
     return result
@@ -648,3 +669,13 @@ def delete_calorie_entry(entry_id: str) -> str:
         entry_date = row["entry_date"]
         connection.execute("DELETE FROM calorie_entries WHERE id = ?", (entry_id,))
     return entry_date
+
+
+def delete_calorie_entries_for_day(entry_date: str) -> int:
+    parsed_date = _parse_entry_date(entry_date).isoformat()
+    with get_connection() as connection:
+        cursor = connection.execute(
+            "DELETE FROM calorie_entries WHERE entry_date = ?",
+            (parsed_date,),
+        )
+    return int(cursor.rowcount or 0)
