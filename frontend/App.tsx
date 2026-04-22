@@ -59,6 +59,7 @@ import {
   type PipelineStepSummary,
   type SourceAssessment,
   type SourceQualityLabel,
+  type SingaporeAuthorityReview,
 } from "./src/data";
 import { notificationDataUrl, parseInvestigationUrl, registerForPushNotificationsAsync } from "./src/notifications";
 import SupplementsPage from "./src/pages/SupplementsPage";
@@ -77,7 +78,7 @@ function createPaperTheme(typeScale: number) {
 
   return {
     ...MD3LightTheme,
-    roundness: 18,
+    roundness: 14,
     colors: {
       ...MD3LightTheme.colors,
       primary: palette.primary,
@@ -222,12 +223,33 @@ const profileSections = [
   },
 ];
 
-type HistorySort = "manual" | "recent" | "score";
-type HistoryFilter = "all" | "trustworthy" | "uncertain" | "untrustworthy" | "pinned";
+type HistorySort = "manual" | "recent" | "oldest" | "score";
+type HistoryFilter = "all" | "trustworthy" | "uncertain" | "untrustworthy" | "pinned" | "running" | "completed" | "deep" | "highConfidence";
 type ConsultantView = "investigate" | "history";
 type ProfileView = "overview" | "settings";
 type MaterialIconName = string;
 type ReviewDepth = "quick" | "standard" | "deep";
+type SnackbarAction = "retry" | "undoDelete";
+type InvestigationComparison = {
+  compatible: boolean;
+  similarityScore: number;
+  sameClaim: boolean;
+  summary: string;
+  shortSnippet: string;
+  detail: string;
+  axes: Array<{ label: string; summary: string }>;
+  notableDifferences: string[];
+};
+
+type ClaimSuggestionCollection = {
+  items: string[];
+};
+
+type LocalHealthGuard = {
+  allowed: boolean;
+  title: string;
+  body: string;
+};
 
 function safeText(value: unknown) {
   return typeof value === "string" ? value : "";
@@ -297,7 +319,7 @@ function scoreBandLabel(score: number | null | undefined) {
   if (score < 40) {
     return "Untrustworthy";
   }
-  return "Needs nuance";
+  return "Mixed evidence";
 }
 
 function scoreTone(score: number | null | undefined) {
@@ -445,7 +467,7 @@ function verdictMeta(verdict: InvestigationSummary["verdict"] | InvestigationDet
   if (verdict === "untrustworthy") {
     return { label: "Untrustworthy", icon: "close-circle", color: palette.danger, background: palette.dangerSoft };
   }
-  return { label: "Needs nuance", icon: "help-circle", color: palette.warning, background: palette.warningSoft };
+  return { label: "Mixed evidence", icon: "help-circle", color: palette.warning, background: palette.warningSoft };
 }
 
 function sourceTone(source: SourceAssessment) {
@@ -480,6 +502,7 @@ function stageIcon(step: PipelineStepSummary) {
   if (key.includes("relevance")) return "filter-check-outline";
   if (key.includes("citation") || key.includes("study")) return "book-open-page-variant-outline";
   if (key.includes("quote") || key.includes("sentiment")) return "format-quote-close";
+  if (key.includes("singapore")) return "map-marker-radius-outline";
   if (key.includes("hoax")) return "alert-decagram-outline";
   if (key.includes("decision")) return "scale-balance";
   if (key.includes("cross") || key.includes("panel") || key.includes("model")) return "account-group-outline";
@@ -524,6 +547,19 @@ function riskTone(level: "low" | "moderate" | "high" | null | undefined) {
   return { color: palette.success, background: palette.successSoft, icon: "shield-check" };
 }
 
+function singaporeAgreementMeta(label: SingaporeAuthorityReview["agreementLabel"] | null | undefined) {
+  if (label === "supportive") {
+    return { label: "Singapore sources support", color: palette.success, background: palette.successSoft, icon: "check-circle" };
+  }
+  if (label === "contradictory") {
+    return { label: "Singapore sources push back", color: palette.danger, background: palette.dangerSoft, icon: "close-circle" };
+  }
+  if (label === "mixed") {
+    return { label: "Singapore sources are mixed", color: palette.warning, background: palette.warningSoft, icon: "help-circle" };
+  }
+  return { label: "Singapore sources insufficient", color: palette.muted, background: palette.surfaceSoft, icon: "minus-circle-outline" };
+}
+
 function quoteStanceMeta(stance: SourceAssessment["quoteStance"]) {
   if (stance === "supportive") {
     return { label: "Quote supports", color: palette.success, background: palette.successSoft };
@@ -546,10 +582,106 @@ function historySortLabel(sort: HistorySort) {
   if (sort === "manual") {
     return "Custom Order";
   }
+  if (sort === "oldest") {
+    return "Oldest First";
+  }
   if (sort === "score") {
     return "Highest Score";
   }
   return "Sorted by Latest";
+}
+
+const HEALTH_KEYWORDS = [
+  "health",
+  "healthy",
+  "wellness",
+  "wellbeing",
+  "medical",
+  "medicine",
+  "doctor",
+  "clinical",
+  "hospital",
+  "research",
+  "study",
+  "sleep",
+  "insomnia",
+  "eczema",
+  "supplement",
+  "nutrition",
+  "diet",
+  "mental",
+  "anxiety",
+  "depression",
+  "virus",
+  "vaccine",
+  "disease",
+  "symptom",
+  "treatment",
+  "therapy",
+  "cancer",
+  "clinic",
+  "cholesterol",
+  "diabetes",
+  "blood",
+  "heart",
+  "brain",
+  "skin",
+  "weight",
+];
+
+const NON_HEALTH_KEYWORDS = [
+  "movie",
+  "movies",
+  "film",
+  "series",
+  "tv",
+  "anime",
+  "stock",
+  "crypto",
+  "bitcoin",
+  "restaurant",
+  "travel",
+  "vacation",
+  "game",
+  "games",
+  "football",
+  "soccer",
+  "basketball",
+  "song",
+  "music",
+  "celebrity",
+];
+
+function assessHealthClaimLocally(claim: string, context = ""): LocalHealthGuard {
+  const haystack = safeLower(`${claim} ${context}`);
+  if (!safeTrim(haystack)) {
+    return { allowed: true, title: "", body: "" };
+  }
+  if (HEALTH_KEYWORDS.some((keyword) => haystack.includes(keyword))) {
+    return { allowed: true, title: "", body: "" };
+  }
+  if (NON_HEALTH_KEYWORDS.some((keyword) => haystack.includes(keyword))) {
+    return {
+      allowed: false,
+      title: "This looks outside GramWIN's scope",
+      body: "GramWIN only runs health, medicine, wellness, clinical, and research-related investigations. The run is paused and no evidence APIs will be called for this query.",
+    };
+  }
+  return { allowed: true, title: "", body: "" };
+}
+
+function formatClaimForDisplay(claim: string) {
+  const trimmed = safeTrim(claim);
+  if (!trimmed) {
+    return "";
+  }
+  const normalized = trimmed
+    .replace(/\bcovid\b/gi, "COVID")
+    .replace(/\badhd\b/gi, "ADHD")
+    .replace(/\bptsd\b/gi, "PTSD")
+    .replace(/\bssri\b/gi, "SSRI")
+    .replace(/\bsg\b/g, "SG");
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
 function recencyBucket(publishedAt: string | null | undefined) {
@@ -572,9 +704,39 @@ function normalizedClaimKey(claim: string) {
   return safeLower(claim).replace(/\s+/g, " ").trim();
 }
 
+function claimComparisonSimilarity(left: string, right: string) {
+  const leftKey = normalizedClaimKey(left);
+  const rightKey = normalizedClaimKey(right);
+  if (leftKey === rightKey) {
+    return 100;
+  }
+  const tokenize = (value: string) =>
+    new Set(
+      normalizedClaimKey(value)
+        .split(/[^a-z0-9]+/)
+        .filter((token) => token.length > 2 && !["the", "and", "for", "with", "from", "that"].includes(token))
+    );
+  const leftTokens = tokenize(left);
+  const rightTokens = tokenize(right);
+  const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  const union = new Set([...leftTokens, ...rightTokens]).size || 1;
+  return Math.round((overlap / union) * 100);
+}
+
+function canCompareClaims(left: InvestigationSummary, right: InvestigationSummary) {
+  const similarity = claimComparisonSimilarity(left.claim, right.claim);
+  const leftDomain = safeLower(left.truthClassification);
+  const rightDomain = safeLower(right.truthClassification);
+  const sameNature = normalizedClaimKey(left.claim) === normalizedClaimKey(right.claim) || similarity >= 55 || leftDomain === rightDomain;
+  return { allowed: sameNature, similarity };
+}
+
 function statusIcon(status: PipelineStepSummary["status"] | InvestigationStatus) {
   if (status === "completed") {
     return { icon: "check-circle", color: palette.success };
+  }
+  if (status === "cancelled") {
+    return { icon: "stop-circle", color: palette.warning };
   }
   if (status === "failed") {
     return { icon: "close-circle", color: palette.danger };
@@ -590,6 +752,7 @@ function statusIcon(status: PipelineStepSummary["status"] | InvestigationStatus)
 
 function statusLabel(status: PipelineStepSummary["status"] | InvestigationStatus) {
   if (status === "completed") return "Done";
+  if (status === "cancelled") return "Stopped";
   if (status === "failed") return "Needs attention";
   if (status === "running") return "In progress";
   if (status === "queued") return "Queued";
@@ -642,7 +805,7 @@ function GramwinApp() {
   const insets = useSafeAreaInsets();
   const [apiBaseUrl, setApiBaseUrl] = useState(resolveApiBaseUrl);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [snackbar, setSnackbar] = useState<{ visible: boolean; message: string; action?: "retry" }>({
+  const [snackbar, setSnackbar] = useState<{ visible: boolean; message: string; action?: SnackbarAction }>({
     visible: false,
     message: "",
   });
@@ -654,6 +817,11 @@ function GramwinApp() {
   const [history, setHistory] = useState<InvestigationSummary[]>(defaultHistory);
   const [historyOrder, setHistoryOrder] = useState<string[]>([]);
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  const [comparisonResult, setComparisonResult] = useState<InvestigationComparison | null>(null);
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [claimSuggestions, setClaimSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [cancellingIds, setCancellingIds] = useState<string[]>([]);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [liveInvestigation, setLiveInvestigation] = useState<InvestigationDetail | null>(null);
   const [historyQuery, setHistoryQuery] = useState("");
@@ -672,6 +840,15 @@ function GramwinApp() {
   const [focusDraft, setFocusDraft] = useState("");
   const [sourceUrlDraft, setSourceUrlDraft] = useState("");
   const [depth, setDepth] = useState<ReviewDepth>("deep");
+  const pendingDeleteRef = useRef<{
+    item: InvestigationSummary;
+    index: number;
+    pinned: boolean;
+    compared: boolean;
+    liveInvestigation: InvestigationDetail | null;
+    historySheetDetail: InvestigationDetail | null;
+    timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
 
   useEffect(() => {
     void warmApiConnection();
@@ -737,6 +914,18 @@ function GramwinApp() {
       if (historyFilter === "uncertain") {
         return item.verdict !== "trustworthy" && item.verdict !== "untrustworthy";
       }
+      if (historyFilter === "running") {
+        return isRunning(item.status);
+      }
+      if (historyFilter === "completed") {
+        return item.status === "completed";
+      }
+      if (historyFilter === "deep") {
+        return item.desiredDepth === "deep";
+      }
+      if (historyFilter === "highConfidence") {
+        return item.confidenceLevel === "high";
+      }
       return true;
     });
 
@@ -750,6 +939,9 @@ function GramwinApp() {
       }
       if (historySort === "recent") {
         return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
+      }
+      if (historySort === "oldest") {
+        return new Date(a.updatedAt || a.createdAt).getTime() - new Date(b.updatedAt || b.createdAt).getTime();
       }
       if (historySort === "score") {
         return (b.overallScore ?? -1) - (a.overallScore ?? -1);
@@ -768,6 +960,52 @@ function GramwinApp() {
     () => comparisonIds.map((id) => history.find((item) => item.id === id)).filter(Boolean) as InvestigationSummary[],
     [comparisonIds, history]
   );
+  const localHealthGuard = useMemo(
+    () =>
+      assessHealthClaimLocally(
+        claimDraft,
+        composeInvestigationContext({
+          notes: contextDraft,
+          sourceContext: claimSourceDraft,
+          population: populationDraft,
+          focus: focusDraft,
+        })
+      ),
+    [claimDraft, claimSourceDraft, contextDraft, focusDraft, populationDraft]
+  );
+
+  useEffect(() => {
+    setComparisonResult(null);
+  }, [comparisonIds]);
+
+  useEffect(() => {
+    const query = safeTrim(claimDraft);
+    if (query.length < 2 || !localHealthGuard.allowed) {
+      setClaimSuggestions([]);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    const handle = setTimeout(() => {
+      setSuggestionsLoading(true);
+      void (async () => {
+        try {
+          const response = await requestApi(`/api/claim-suggestions?q=${encodeURIComponent(query)}`, undefined, 3500);
+          if (!response.ok) {
+            throw new Error("Suggestion request failed");
+          }
+          const payload = (await response.json()) as ClaimSuggestionCollection;
+          setClaimSuggestions(payload.items ?? []);
+        } catch {
+          setClaimSuggestions([]);
+        } finally {
+          setSuggestionsLoading(false);
+        }
+      })();
+    }, 280);
+
+    return () => clearTimeout(handle);
+  }, [claimDraft, localHealthGuard.allowed]);
 
   async function requestApi(path: string, init?: RequestInit, timeoutMsOverride?: number) {
     const candidates = buildApiBaseUrls(apiBaseUrl);
@@ -880,7 +1118,7 @@ function GramwinApp() {
       setComparisonIds((current) => current.filter((id) => payload.items.some((item) => item.id === id)));
     } catch {
       if (showSpinner) {
-        setHistory(defaultHistory);
+        setHistory([]);
       }
     } finally {
       if (showSpinner) {
@@ -970,6 +1208,10 @@ function GramwinApp() {
       setSnackbar({ visible: true, message: "Add a fuller claim before starting the review." });
       return;
     }
+    if (!localHealthGuard.allowed) {
+      setSnackbar({ visible: true, message: "This query is outside GramWIN's health scope." });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -1028,26 +1270,145 @@ function GramwinApp() {
     }
   }
 
-  async function deleteHistoryItem(id: string) {
+  async function commitPendingDeletion() {
+    const pending = pendingDeleteRef.current;
+    if (!pending) {
+      return;
+    }
+    pendingDeleteRef.current = null;
     try {
-      const response = await requestApi(`/api/investigations/${id}`, { method: "DELETE" });
+      const response = await requestApi(`/api/investigations/${pending.item.id}`, { method: "DELETE" });
       if (!response.ok) {
         throw new Error(await readApiError(response, "Delete failed."));
       }
-      setHistory((current) => current.filter((item) => item.id !== id));
-      setHistoryOrder((current) => current.filter((itemId) => itemId !== id));
-      setPinnedIds((current) => current.filter((itemId) => itemId !== id));
-      setComparisonIds((current) => current.filter((itemId) => itemId !== id));
+    } catch {
+      setHistory((current) => {
+        const next = [...current];
+        next.splice(Math.min(pending.index, next.length), 0, pending.item);
+        return next;
+      });
+      setHistoryOrder((current) => {
+        const next = current.filter((itemId) => itemId !== pending.item.id);
+        next.splice(Math.min(pending.index, next.length), 0, pending.item.id);
+        return next;
+      });
+      if (pending.pinned) {
+        setPinnedIds((current) => (current.includes(pending.item.id) ? current : [pending.item.id, ...current]));
+      }
+      if (pending.compared) {
+        setComparisonIds((current) => (current.includes(pending.item.id) ? current : [...current, pending.item.id].slice(-2)));
+      }
+      if (pending.liveInvestigation) {
+        setLiveInvestigation(pending.liveInvestigation);
+      }
+      if (pending.historySheetDetail) {
+        setHistorySheetDetail(pending.historySheetDetail);
+        setHistorySheetVisible(true);
+      }
+      setSnackbar({ visible: true, message: "Delete failed" });
+    }
+  }
+
+  function undoDeleteHistoryItem() {
+    const pending = pendingDeleteRef.current;
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timer);
+    pendingDeleteRef.current = null;
+    setHistory((current) => {
+      const next = [...current];
+      next.splice(Math.min(pending.index, next.length), 0, pending.item);
+      return next;
+    });
+    setHistoryOrder((current) => {
+      const next = current.filter((itemId) => itemId !== pending.item.id);
+      next.splice(Math.min(pending.index, next.length), 0, pending.item.id);
+      return next;
+    });
+    if (pending.pinned) {
+      setPinnedIds((current) => (current.includes(pending.item.id) ? current : [pending.item.id, ...current]));
+    }
+    if (pending.compared) {
+      setComparisonIds((current) => (current.includes(pending.item.id) ? current : [...current, pending.item.id].slice(-2)));
+    }
+    if (pending.liveInvestigation) {
+      setLiveInvestigation(pending.liveInvestigation);
+    }
+    if (pending.historySheetDetail) {
+      setHistorySheetDetail(pending.historySheetDetail);
+      setHistorySheetVisible(true);
+    }
+    setSnackbar({ visible: true, message: "Deletion undone" });
+  }
+
+  async function deleteHistoryItem(id: string) {
+    const target = history.find((item) => item.id === id);
+    if (!target) {
+      return;
+    }
+    await commitPendingDeletion();
+    const nextIndex = history.findIndex((item) => item.id === id);
+    const pending = {
+      item: target,
+      index: nextIndex === -1 ? history.length : nextIndex,
+      pinned: pinnedIds.includes(id),
+      compared: comparisonIds.includes(id),
+      liveInvestigation: liveInvestigation?.id === id ? liveInvestigation : null,
+      historySheetDetail: historySheetDetail?.id === id ? historySheetDetail : null,
+      timer: setTimeout(() => {
+        void commitPendingDeletion();
+      }, 4500),
+    };
+    pendingDeleteRef.current = pending;
+    setHistory((current) => current.filter((item) => item.id !== id));
+    setHistoryOrder((current) => current.filter((itemId) => itemId !== id));
+    setPinnedIds((current) => current.filter((itemId) => itemId !== id));
+    setComparisonIds((current) => current.filter((itemId) => itemId !== id));
+    if (liveInvestigation?.id === id) {
+      setLiveInvestigation(null);
+    }
+    if (historySheetDetail?.id === id) {
+      setHistorySheetVisible(false);
+      setHistorySheetDetail(null);
+    }
+    setSnackbar({ visible: true, message: "Investigation deleted", action: "undoDelete" });
+  }
+
+  async function cancelInvestigation(id: string) {
+    setCancellingIds((current) => (current.includes(id) ? current : [...current, id]));
+    try {
+      const response = await requestApi(`/api/investigations/${id}/cancel`, { method: "POST" });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "Could not stop the investigation."));
+      }
+      setHistory((current) =>
+        current.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                summary: "Stop requested. The current step will finish safely before the run closes.",
+              }
+            : item
+        )
+      );
       if (liveInvestigation?.id === id) {
-        setLiveInvestigation(null);
+        setLiveInvestigation({
+          ...liveInvestigation,
+          summary: "Stop requested. The current step will finish safely before the run closes.",
+        });
       }
       if (historySheetDetail?.id === id) {
-        setHistorySheetVisible(false);
-        setHistorySheetDetail(null);
+        setHistorySheetDetail({
+          ...historySheetDetail,
+          summary: "Stop requested. The current step will finish safely before the run closes.",
+        });
       }
-      setSnackbar({ visible: true, message: "Investigation deleted" });
-    } catch {
-      setSnackbar({ visible: true, message: "Delete failed" });
+      setSnackbar({ visible: true, message: "Stopping the current investigation..." });
+    } catch (error) {
+      setSnackbar({ visible: true, message: error instanceof Error ? error.message : "Could not stop the investigation." });
+    } finally {
+      setCancellingIds((current) => current.filter((itemId) => itemId !== id));
     }
   }
 
@@ -1098,11 +1459,64 @@ function GramwinApp() {
       if (current.includes(id)) {
         return current.filter((itemId) => itemId !== id);
       }
+      if (current.length === 1) {
+        const existing = history.find((item) => item.id === current[0]);
+        const incoming = history.find((item) => item.id === id);
+        if (existing && incoming) {
+          const comparisonCheck = canCompareClaims(existing, incoming);
+          if (!comparisonCheck.allowed) {
+            setSnackbar({ visible: true, message: "Pick two runs about the same claim or a closely related variation." });
+            return current;
+          }
+        }
+      }
       if (current.length >= 2) {
+        const preserved = history.find((item) => item.id === current[1]);
+        const incoming = history.find((item) => item.id === id);
+        if (preserved && incoming) {
+          const comparisonCheck = canCompareClaims(preserved, incoming);
+          if (!comparisonCheck.allowed) {
+            setSnackbar({ visible: true, message: "Those two runs are too different to compare fairly." });
+            return current;
+          }
+        }
         return [current[1], id];
       }
       return [...current, id];
     });
+  }
+
+  async function runComparison() {
+    if (comparisonItems.length !== 2) {
+      return;
+    }
+    const localCheck = canCompareClaims(comparisonItems[0], comparisonItems[1]);
+    if (!localCheck.allowed) {
+      setSnackbar({ visible: true, message: "Choose two runs that cover the same claim or a very similar health question." });
+      return;
+    }
+    setComparisonLoading(true);
+    try {
+      const response = await requestApi("/api/investigations/compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ investigationIds: comparisonItems.map((item) => item.id) }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "Could not compare those saved investigations."));
+      }
+      const payload = (await response.json()) as InvestigationComparison;
+      if (!payload.compatible) {
+        setComparisonResult(payload);
+        setSnackbar({ visible: true, message: "Those runs are not close enough in topic for a fair side-by-side comparison." });
+        return;
+      }
+      setComparisonResult(payload);
+    } catch (error) {
+      setSnackbar({ visible: true, message: error instanceof Error ? error.message : "Could not compare those runs." });
+    } finally {
+      setComparisonLoading(false);
+    }
   }
 
   function applyFeaturedClaim(item: FeaturedClaim) {
@@ -1141,12 +1555,44 @@ function GramwinApp() {
         contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 12, paddingBottom: bottomInset + 104 }]}
         showsVerticalScrollIndicator={false}
       >
-        <Header brand={bootstrap.brand.name} tagline={bootstrap.brand.tagline} onRetry={retryBackendConnection} apiError={apiError} />
+        {activeTab === "home" ? (
+          <Header brand={bootstrap.brand.name} tagline={bootstrap.brand.tagline} onRetry={retryBackendConnection} apiError={apiError} />
+        ) : (
+          <ToolHeader
+            title={
+              activeTab === "consultant"
+                ? consultantView === "history"
+                  ? "Saved investigations"
+                  : "Claim consultant"
+                : activeTab === "nutrition"
+                ? "Nutrition insights"
+                : activeTab === "supplements"
+                ? "Supplement analyzer"
+                : "Profile and settings"
+            }
+            body={
+              activeTab === "consultant"
+                ? consultantView === "history"
+                  ? "Review saved reports, compare close reruns, and keep the history list tidy."
+                  : "Check health claims with cleaner evidence summaries, stronger source integrity, and calmer presentation."
+                : activeTab === "nutrition"
+                ? "Meal and diet planning in the same calmer, lower-clutter visual system."
+                : activeTab === "supplements"
+                ? "Scan labels and review supplement fit without leaving the shared GramWIN theme."
+                : "Manage your health context, saved presets, and investigation preferences."
+            }
+            apiError={apiError}
+            onRetry={retryBackendConnection}
+          />
+        )}
 
         {activeTab === "home" && (
           <HomeScreen
             history={history}
-            onOpenInvestigate={() => setActiveTab("consultant")}
+            onOpenInvestigate={() => {
+              setConsultantView("investigate");
+              setActiveTab("consultant");
+            }}
             onOpenHistory={(id) => void openHistorySheet(id)}
             onOpenTab={setActiveTab}
           />
@@ -1163,6 +1609,9 @@ function GramwinApp() {
             focusDraft={focusDraft}
             sourceUrlDraft={sourceUrlDraft}
             depth={depth}
+            claimSuggestions={claimSuggestions}
+            suggestionsLoading={suggestionsLoading}
+            healthGuard={localHealthGuard}
             submitting={submitting}
             loadingHistory={loadingHistory}
             loadingSelected={loadingSelected}
@@ -1173,6 +1622,9 @@ function GramwinApp() {
             historyQuery={historyQuery}
             comparisonIds={comparisonIds}
             comparisonItems={comparisonItems}
+            comparisonResult={comparisonResult}
+            comparisonLoading={comparisonLoading}
+            cancellingIds={cancellingIds}
             liveInvestigation={liveInvestigation}
             onClaimChange={setClaimDraft}
             onContextChange={setContextDraft}
@@ -1184,8 +1636,10 @@ function GramwinApp() {
             onSubmit={() => void submitInvestigation()}
             onOpenHistory={(id) => void openHistorySheet(id)}
             onDeleteHistory={(id) => void deleteHistoryItem(id)}
+            onCancelInvestigation={(id) => void cancelInvestigation(id)}
             onTogglePin={togglePinHistory}
             onToggleCompare={toggleCompareHistory}
+            onRunComparison={() => void runComparison()}
             onMoveUp={(id) => moveHistoryItem(id, -1)}
             onMoveDown={(id) => moveHistoryItem(id, 1)}
             onSortChange={setHistorySort}
@@ -1216,14 +1670,16 @@ function GramwinApp() {
 
       <BottomTabs activeTab={activeTab} onSelect={setActiveTab} bottomInset={bottomInset} />
 
-      <HistorySheet
-        visible={historySheetVisible}
-        investigation={historySheetDetail}
-        loading={historySheetLoading}
-        onClose={() => setHistorySheetVisible(false)}
-        onRestart={(investigation) => void restartInvestigation(investigation)}
-        onDelete={(id) => void deleteHistoryItem(id)}
-      />
+        <HistorySheet
+          visible={historySheetVisible}
+          investigation={historySheetDetail}
+          loading={historySheetLoading}
+          onClose={() => setHistorySheetVisible(false)}
+          onRestart={(investigation) => void restartInvestigation(investigation)}
+          onDelete={(id) => void deleteHistoryItem(id)}
+          onCancel={(id) => void cancelInvestigation(id)}
+          cancellingIds={cancellingIds}
+        />
 
       <Snackbar
         visible={snackbar.visible}
@@ -1231,8 +1687,13 @@ function GramwinApp() {
         action={
           snackbar.action === "retry"
             ? {
-                label: "Retry",
+                label: reconnecting ? "Loading..." : "Reconnect",
                 onPress: () => void retryBackendConnection(),
+              }
+            : snackbar.action === "undoDelete"
+            ? {
+                label: "Undo",
+                onPress: undoDeleteHistoryItem,
               }
             : undefined
         }
@@ -1283,6 +1744,42 @@ function Header({
   );
 }
 
+function ToolHeader({
+  title,
+  body,
+  apiError,
+  onRetry,
+}: {
+  title: string;
+  body: string;
+  apiError: string | null;
+  onRetry: () => void;
+}) {
+  return (
+    <Surface style={styles.toolHeaderSurface} elevation={0}>
+      <View style={styles.headerTop}>
+        <View style={styles.headerBrandWrap}>
+          <Text variant="headlineSmall" style={styles.headerTitle}>
+            {title}
+          </Text>
+          <Text variant="bodyMedium" style={styles.headerSubtitle}>
+            {body}
+          </Text>
+        </View>
+        <Chip
+          compact
+          icon={apiError ? "wifi-strength-alert-outline" : "wifi-strength-4"}
+          style={[styles.headerChip, apiError ? styles.headerChipError : styles.headerChipOkay]}
+          textStyle={[styles.headerChipText, apiError ? styles.headerChipTextError : styles.headerChipTextOkay]}
+          onPress={onRetry}
+        >
+          {apiError ? "Offline" : "Live"}
+        </Chip>
+      </View>
+    </Surface>
+  );
+}
+
 function HomeScreen({
   history,
   onOpenInvestigate,
@@ -1297,6 +1794,9 @@ function HomeScreen({
   const latest = history
     .slice()
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  const completedRuns = history.filter((item) => item.status === "completed").length;
+  const runningRuns = history.filter((item) => isRunning(item.status)).length;
+  const pinnedRuns = history.filter((item) => item.verdict && item.verdict !== "mixed").length;
   return (
     <View style={styles.screenStack}>
       <LinearGradient colors={["#F8FCF9", "#E7F0EB", "#DDEBE3"]} style={styles.heroCard}>
@@ -1322,6 +1822,31 @@ function HomeScreen({
       <SectionTitle eyebrow="Dashboard" title="Today at a glance" body="Regular health data for now, with cards that stay readable and tap-friendly." />
       <View style={styles.metricGrid}>
         {dashboardMetrics.map((metric) => (
+          <Card key={metric.label} mode="contained" style={styles.metricCard}>
+            <Card.Content style={styles.metricContent}>
+              <Avatar.Icon size={42} icon={metric.icon} color={palette.primary} style={styles.metricAvatar} />
+              <Text variant="titleLarge" style={styles.metricValue}>
+                {metric.value}
+              </Text>
+              <Text variant="labelLarge" style={styles.metricLabel}>
+                {metric.label}
+              </Text>
+              <Text variant="bodySmall" style={styles.metricDetail}>
+                {metric.detail}
+              </Text>
+            </Card.Content>
+          </Card>
+        ))}
+      </View>
+
+      <SectionTitle eyebrow="Investigations" title="Review activity" body="A quicker read on what the claim-checking side of the app is doing right now." />
+      <View style={styles.metricGrid}>
+        {[
+          { label: "Saved runs", value: String(history.length), detail: "Across quick, standard, and deep reviews", icon: "history" },
+          { label: "Completed", value: String(completedRuns), detail: "Reports ready to reopen anytime", icon: "check-decagram" },
+          { label: "Running", value: String(runningRuns), detail: "Live investigations still processing", icon: "progress-clock" },
+          { label: "Scored", value: String(pinnedRuns), detail: "Runs with a settled verdict band", icon: "chart-box-outline" },
+        ].map((metric) => (
           <Card key={metric.label} mode="contained" style={styles.metricCard}>
             <Card.Content style={styles.metricContent}>
               <Avatar.Icon size={42} icon={metric.icon} color={palette.primary} style={styles.metricAvatar} />
@@ -1391,7 +1916,7 @@ function HomeScreen({
           <View>
             <View style={styles.rowBetween}>
               <Text variant="titleMedium" style={styles.historyClaim}>
-                {latest.claim}
+                {formatClaimForDisplay(latest.claim)}
               </Text>
               <VerdictPill verdict={latest.verdict} />
             </View>
@@ -1447,6 +1972,9 @@ type ConsultantScreenProps = {
   focusDraft: string;
   sourceUrlDraft: string;
   depth: ReviewDepth;
+  claimSuggestions: string[];
+  suggestionsLoading: boolean;
+  healthGuard: LocalHealthGuard;
   submitting: boolean;
   loadingHistory: boolean;
   loadingSelected: boolean;
@@ -1457,6 +1985,9 @@ type ConsultantScreenProps = {
   historyQuery: string;
   comparisonIds: string[];
   comparisonItems: InvestigationSummary[];
+  comparisonResult: InvestigationComparison | null;
+  comparisonLoading: boolean;
+  cancellingIds: string[];
   liveInvestigation: InvestigationDetail | null;
   onClaimChange: (value: string) => void;
   onContextChange: (value: string) => void;
@@ -1468,8 +1999,10 @@ type ConsultantScreenProps = {
   onSubmit: () => void;
   onOpenHistory: (id: string) => void;
   onDeleteHistory: (id: string) => void;
+  onCancelInvestigation: (id: string) => void;
   onTogglePin: (id: string) => void;
   onToggleCompare: (id: string) => void;
+  onRunComparison: () => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
   onSortChange: (value: HistorySort) => void;
@@ -1494,6 +2027,9 @@ function ConsultantScreen(props: ConsultantScreenProps) {
     focusDraft,
     sourceUrlDraft,
     depth,
+    claimSuggestions,
+    suggestionsLoading,
+    healthGuard,
     submitting,
     loadingHistory,
     loadingSelected,
@@ -1504,6 +2040,9 @@ function ConsultantScreen(props: ConsultantScreenProps) {
     historyQuery,
     comparisonIds,
     comparisonItems,
+    comparisonResult,
+    comparisonLoading,
+    cancellingIds,
     liveInvestigation,
     onClaimChange,
     onContextChange,
@@ -1515,8 +2054,10 @@ function ConsultantScreen(props: ConsultantScreenProps) {
     onSubmit,
     onOpenHistory,
     onDeleteHistory,
+    onCancelInvestigation,
     onTogglePin,
     onToggleCompare,
+    onRunComparison,
     onMoveUp,
     onMoveDown,
     onSortChange,
@@ -1554,6 +2095,25 @@ function ConsultantScreen(props: ConsultantScreenProps) {
     return recentSuggestions.filter((item) => normalizedClaimKey(item.claim).includes(query)).slice(0, 5);
   }, [claimDraft, recentSuggestions]);
 
+  const liveQueryMatches = useMemo(() => {
+    const seen = new Set(recentQueryMatches.map((item) => normalizedClaimKey(item.claim)));
+    return claimSuggestions
+      .map((claim, index) => ({
+        id: `suggestion-${index}-${normalizedClaimKey(claim)}`,
+        claim,
+        whyItIsInteresting: "Suggested live search phrasing",
+      }))
+      .filter((item) => {
+        const key = normalizedClaimKey(item.claim);
+        if (!key || seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 5);
+  }, [claimSuggestions, recentQueryMatches]);
+
   const starterClaims = useMemo(() => {
     const combined = [...recentSuggestions, ...bootstrap.featuredClaims];
     const seen = new Set<string>();
@@ -1575,12 +2135,6 @@ function ConsultantScreen(props: ConsultantScreenProps) {
 
   return (
     <View style={styles.screenStack}>
-      <SectionTitle
-        eyebrow="Consultant"
-        title="Investigate health claims without the clutter"
-        body="Use Investigate for a fresh review and History for saved reports. Settings and workflow details now live on the Profile screen."
-      />
-
       <Card mode="contained" style={styles.segmentedCard}>
         <Card.Content>
           <SegmentedButtons
@@ -1621,6 +2175,25 @@ function ConsultantScreen(props: ConsultantScreenProps) {
                   style={styles.paperInput}
                   contentStyle={styles.inputContent}
                 />
+                {!healthGuard.allowed ? (
+                  <Card mode="contained" style={styles.scopeWarningCard}>
+                    <Card.Content style={styles.cardStack}>
+                      <View style={styles.rowGapTop}>
+                        <View style={styles.scopeWarningIcon}>
+                          <MaterialCommunityIcons name="shield-off-outline" size={20} color={palette.warning} />
+                        </View>
+                        <View style={styles.flexOne}>
+                          <Text variant="titleMedium" style={styles.linkTitle}>
+                            {healthGuard.title}
+                          </Text>
+                          <Text variant="bodySmall" style={styles.sectionBody}>
+                            {healthGuard.body}
+                          </Text>
+                        </View>
+                      </View>
+                    </Card.Content>
+                  </Card>
+                ) : null}
                 {recentQueryMatches.length > 0 ? (
                   <Card mode="contained" style={styles.recentQueryCard}>
                     <Card.Content style={styles.cardStack}>
@@ -1632,6 +2205,30 @@ function ConsultantScreen(props: ConsultantScreenProps) {
                           <View style={styles.cardStack}>
                             <Text variant="bodyMedium" style={styles.linkTitle}>
                               {item.claim}
+                            </Text>
+                            <Text variant="bodySmall" style={styles.historyMetaLine}>
+                              {item.whyItIsInteresting}
+                            </Text>
+                          </View>
+                        </TouchableRipple>
+                      ))}
+                    </Card.Content>
+                  </Card>
+                ) : null}
+                {liveQueryMatches.length > 0 ? (
+                  <Card mode="contained" style={styles.recentQueryCard}>
+                    <Card.Content style={styles.cardStack}>
+                      <View style={styles.rowBetween}>
+                        <Text variant="labelLarge" style={styles.linkTitle}>
+                          Search suggestions
+                        </Text>
+                        {suggestionsLoading ? <ActivityIndicator size="small" color={palette.primary} /> : null}
+                      </View>
+                      {liveQueryMatches.map((item) => (
+                        <TouchableRipple key={item.id} style={styles.recentQueryRow} onPress={() => onUseClaim(item)}>
+                          <View style={styles.cardStack}>
+                            <Text variant="bodyMedium" style={styles.linkTitle}>
+                              {formatClaimForDisplay(item.claim)}
                             </Text>
                             <Text variant="bodySmall" style={styles.historyMetaLine}>
                               {item.whyItIsInteresting}
@@ -1729,7 +2326,7 @@ function ConsultantScreen(props: ConsultantScreenProps) {
                 {depthDescription(depth)}
               </Text>
 
-              <Button mode="contained" icon="magnify" onPress={onSubmit} loading={submitting} disabled={submitting} buttonColor={palette.primary}>
+              <Button mode="contained" icon="magnify" onPress={onSubmit} loading={submitting} disabled={submitting || !healthGuard.allowed} buttonColor={palette.primary}>
                 Start investigation
               </Button>
                 </Card.Content>
@@ -1742,10 +2339,16 @@ function ConsultantScreen(props: ConsultantScreenProps) {
                 <LoadingCard text="Loading investigation..." />
               ) : liveInvestigation ? (
                 isRunning(liveInvestigation.status) ? (
-                  <ProcessingCard investigation={liveInvestigation} />
+                  <ProcessingCard
+                    investigation={liveInvestigation}
+                    onCancel={() => onCancelInvestigation(liveInvestigation.id)}
+                    cancelling={cancellingIds.includes(liveInvestigation.id)}
+                  />
                 ) : (
                   <InvestigationResult investigation={liveInvestigation} />
                 )
+              ) : !healthGuard.allowed && safeTrim(claimDraft) ? (
+                <EmptyState title={healthGuard.title} body={healthGuard.body} />
               ) : (
                 <EmptyState
                   title="No active investigation"
@@ -1767,10 +2370,14 @@ function ConsultantScreen(props: ConsultantScreenProps) {
           historyQuery={historyQuery}
           comparisonIds={comparisonIds}
           comparisonItems={comparisonItems}
+          comparisonResult={comparisonResult}
+          comparisonLoading={comparisonLoading}
           onOpenHistory={onOpenHistory}
           onDeleteHistory={onDeleteHistory}
+          onCancelInvestigation={onCancelInvestigation}
           onTogglePin={onTogglePin}
           onToggleCompare={onToggleCompare}
+          onRunComparison={onRunComparison}
           onMoveUp={onMoveUp}
           onMoveDown={onMoveDown}
           onSortChange={onSortChange}
@@ -1792,10 +2399,14 @@ function HistoryPanel({
   historyQuery,
   comparisonIds,
   comparisonItems,
+  comparisonResult,
+  comparisonLoading,
   onOpenHistory,
   onDeleteHistory,
+  onCancelInvestigation,
   onTogglePin,
   onToggleCompare,
+  onRunComparison,
   onMoveUp,
   onMoveDown,
   onSortChange,
@@ -1811,10 +2422,14 @@ function HistoryPanel({
   historyQuery: string;
   comparisonIds: string[];
   comparisonItems: InvestigationSummary[];
+  comparisonResult: InvestigationComparison | null;
+  comparisonLoading: boolean;
   onOpenHistory: (id: string) => void;
   onDeleteHistory: (id: string) => void;
+  onCancelInvestigation: (id: string) => void;
   onTogglePin: (id: string) => void;
   onToggleCompare: (id: string) => void;
+  onRunComparison: () => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
   onSortChange: (value: HistorySort) => void;
@@ -1833,11 +2448,6 @@ function HistoryPanel({
 
   return (
     <View style={styles.cardStack}>
-      <SectionTitle
-        eyebrow="History"
-        title="Saved investigations"
-        body="A dedicated history page with cleaner cards, fast filters, and gesture actions that stay out of the live report."
-      />
       <View style={[styles.cardStack, isWide && styles.historyWideGrid]}>
         <View style={styles.historySidebarColumn}>
           <Card mode="contained" style={styles.resultSectionCard}>
@@ -1874,6 +2484,7 @@ function HistoryPanel({
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
                 {([
                   ["recent", "Newest"],
+                  ["oldest", "Oldest"],
                   ["manual", "Custom"],
                   ["score", "Highest score"],
                 ] as const).map(([value, label]) => (
@@ -1886,8 +2497,12 @@ function HistoryPanel({
                 {([
                   ["all", "All"],
                   ["pinned", "Pinned"],
+                  ["running", "Running"],
+                  ["completed", "Completed"],
+                  ["deep", "Deep"],
+                  ["highConfidence", "High confidence"],
                   ["trustworthy", "Trustworthy"],
-                  ["uncertain", "Needs nuance"],
+                  ["uncertain", "Mixed evidence"],
                   ["untrustworthy", "Untrustworthy"],
                 ] as const).map(([value, label]) => (
                   <Chip key={value} selected={historyFilter === value} onPress={() => onFilterChange(value)} style={styles.segmentChip}>
@@ -1901,7 +2516,16 @@ function HistoryPanel({
             </Card.Content>
           </Card>
 
-          {comparisonItems.length > 0 ? <ComparisonBoard items={comparisonItems} onOpenHistory={onOpenHistory} /> : null}
+          {comparisonItems.length > 0 ? (
+            <ComparisonBoard
+              items={comparisonItems}
+              result={comparisonResult}
+              loading={comparisonLoading}
+              onRunComparison={onRunComparison}
+              onOpenHistory={onOpenHistory}
+              onRemove={onToggleCompare}
+            />
+          ) : null}
         </View>
 
         <View style={styles.historyMainColumn}>
@@ -1918,6 +2542,7 @@ function HistoryPanel({
                   canMoveDown={index < history.length - 1}
                   onOpen={() => onOpenHistory(item.id)}
                   onDelete={() => onDeleteHistory(item.id)}
+                  onCancel={() => onCancelInvestigation(item.id)}
                   onPin={() => onTogglePin(item.id)}
                   onCompare={() => onToggleCompare(item.id)}
                   isCompared={comparisonIds.includes(item.id)}
@@ -2012,7 +2637,15 @@ function ProfileSettingsPanel({
   );
 }
 
-function ProcessingCard({ investigation }: { investigation: InvestigationDetail }) {
+function ProcessingCard({
+  investigation,
+  onCancel,
+  cancelling,
+}: {
+  investigation: InvestigationDetail;
+  onCancel: () => void;
+  cancelling: boolean;
+}) {
   const steps = investigation.stepSummaries.length > 0 ? investigation.stepSummaries : [];
   const recentEvents = investigation.progressEvents.slice(-5).reverse();
   return (
@@ -2024,7 +2657,7 @@ function ProcessingCard({ investigation }: { investigation: InvestigationDetail 
               Review in progress
             </Text>
             <Text variant="bodyMedium" style={styles.sectionBody}>
-              {investigation.claim}
+              {formatClaimForDisplay(investigation.claim)}
             </Text>
           </View>
           <Chip style={styles.progressChip} textStyle={styles.progressChipText}>
@@ -2033,6 +2666,11 @@ function ProcessingCard({ investigation }: { investigation: InvestigationDetail 
         </View>
 
         <ProgressBar progress={Math.max(0.04, investigation.progressPercent / 100)} color={palette.primary} style={styles.progressBar} />
+        <View style={styles.resultActionRow}>
+          <Button mode="outlined" icon="stop-circle-outline" onPress={onCancel} loading={cancelling} disabled={cancelling} textColor={palette.warning}>
+            {cancelling ? "Stopping..." : "Stop current run"}
+          </Button>
+        </View>
 
         {steps.length > 0 ? (
           <View style={styles.cardStack}>
@@ -2169,6 +2807,15 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
       source.cacheStatus === "fallback" ||
       source.notes.some((note) => safeLower(note).includes("limited-access evidence"))
   ).length;
+  const singaporeAuthoritySources = useMemo(
+    () =>
+      investigation.sources.filter((source) => {
+        const domain = safeLower(source.domain);
+        return domain.endsWith(".sg") || ["moh.gov.sg", "hsa.gov.sg", "healthhub.sg", "healthiersg.gov.sg", "ncid.sg"].some((item) => domain.includes(item));
+      }),
+    [investigation.sources]
+  );
+  const singaporeReviewMeta = singaporeAgreementMeta(investigation.singaporeAuthorityReview?.agreementLabel);
   const fullSourceLog = useMemo(
     () =>
       [...investigation.sources].sort((left, right) => {
@@ -2202,9 +2849,9 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
             </Chip>
           </View>
           <Text variant="headlineSmall" style={styles.resultTitle}>
-            {investigation.claim}
+            {formatClaimForDisplay(investigation.claim)}
           </Text>
-          <Text variant="bodyMedium" style={styles.resultBody}>
+          <Text key={`hero-${explanationMode}`} variant="bodyMedium" style={styles.resultBody}>
             {explanationText}
           </Text>
           <View style={styles.resultMetaRow}>
@@ -2241,6 +2888,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
         title="Summary and conclusion"
         body={explanationText}
         icon="text-box-check-outline"
+        bodyKey={explanationMode}
         defaultExpanded
       >
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -2254,7 +2902,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
             </Chip>
           ))}
         </ScrollView>
-        <Text variant="bodyMedium" style={styles.resultBody}>
+        <Text key={`detail-${explanationMode}`} variant="bodyMedium" style={styles.resultBody}>
           {explanationText}
         </Text>
         {limitedAccessCount > 0 ? (
@@ -2269,13 +2917,47 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
 
       {investigation.keyFindings.length > 0 && (
         <ExpandableResultSection
-          title="Key findings"
+          title="What matters most"
           body={investigation.keyFindings[0]}
           icon="star-four-points-circle-outline"
           defaultExpanded={false}
         >
           {investigation.keyFindings.map((item) => (
             <Bullet key={item} text={item} />
+          ))}
+        </ExpandableResultSection>
+      )}
+
+      {(investigation.singaporeAuthorityReview || singaporeAuthoritySources.length > 0) && (
+        <ExpandableResultSection
+          title="Singapore authority view"
+          body={
+            investigation.singaporeAuthorityReview?.summary ||
+            `${singaporeAuthoritySources.length} Singapore-linked health or research sources were found in this review.`
+          }
+          icon="map-marker-radius-outline"
+        >
+          <View style={styles.historyMetaRow}>
+            <Chip compact icon={singaporeReviewMeta.icon} style={{ backgroundColor: singaporeReviewMeta.background }} textStyle={{ color: singaporeReviewMeta.color, fontFamily: "Poppins_600SemiBold" }}>
+              {singaporeReviewMeta.label}
+            </Chip>
+            {investigation.singaporeAuthorityReview ? (
+              <>
+                <Chip compact style={styles.segmentChip}>{`${investigation.singaporeAuthorityReview.totalSources} sources`}</Chip>
+                <Chip compact style={styles.segmentChip}>{`${investigation.singaporeAuthorityReview.supportiveCount} support`}</Chip>
+                <Chip compact style={styles.segmentChip}>{`${investigation.singaporeAuthorityReview.neutralCount} mixed`}</Chip>
+                <Chip compact style={styles.segmentChip}>{`${investigation.singaporeAuthorityReview.contradictoryCount} contradict`}</Chip>
+              </>
+            ) : null}
+          </View>
+          <Text variant="bodySmall" style={styles.sectionBody}>
+            This section isolates what Singapore authorities, Singapore institutional research groups, and Singapore health-system sources suggest about the claim.
+          </Text>
+          {(investigation.singaporeAuthorityReview?.keyPoints || []).map((item) => (
+            <Bullet key={`sg-point-${item}`} text={item} />
+          ))}
+          {singaporeAuthoritySources.slice(0, 10).map((source) => (
+            <EvidenceBlock key={`sg-${source.id}`} source={source} />
           ))}
         </ExpandableResultSection>
       )}
@@ -2702,7 +3384,6 @@ function EvidenceBlock({ source }: { source: SourceAssessment }) {
 function NutritionScreen({ onOpenHome }: { onOpenHome: () => void }) {
   return (
     <View style={styles.screenStack}>
-      <SectionTitle eyebrow="Nutrition" title="Diet and meal insights" body="This stays UI-focused for now, with lightweight planning cards and no backend workflow changes." />
       <View style={styles.linkGrid}>
         {nutritionHighlights.map((item) => (
           <Card key={item.title} mode="contained" style={styles.linkCard}>
@@ -2734,11 +3415,6 @@ function SupplementsScreen({
 }) {
   return (
     <View style={styles.screenStack}>
-      <SectionTitle
-        eyebrow="Supplements"
-        title="Medicine and supplement analyzer"
-        body="Review supplement labels, ingredient fit, and medication context in the same calmer theme as the rest of the app."
-      />
       <Card mode="contained" style={styles.resultSectionCard}>
         <Card.Content style={styles.cardStack}>
           <Text variant="bodyMedium" style={styles.sectionBody}>
@@ -2773,7 +3449,6 @@ function ProfileScreen({
   const latestScore = history.find((item) => item.overallScore !== null)?.overallScore;
   return (
     <View style={styles.screenStack}>
-      <SectionTitle eyebrow="Profile" title="Health profile and app settings" body="Your health context stays here, alongside prompt presets and workflow details for the investigation engine." />
       <Card mode="contained" style={styles.segmentedCard}>
         <Card.Content>
           <SegmentedButtons
@@ -2848,6 +3523,7 @@ function HistoryItem({
   canMoveDown,
   onOpen,
   onDelete,
+  onCancel,
   onPin,
   onCompare,
   isCompared,
@@ -2860,6 +3536,7 @@ function HistoryItem({
   canMoveDown: boolean;
   onOpen: () => void;
   onDelete: () => void;
+  onCancel: () => void;
   onPin: () => void;
   onCompare: () => void;
   isCompared: boolean;
@@ -2935,8 +3612,8 @@ function HistoryItem({
             <View style={styles.rowBetween}>
               <View style={styles.rowGap}>
                 <HistoryVerdictMark verdict={item.verdict} />
-                <Text variant="titleMedium" style={styles.historyClaim}>
-                  {item.claim}
+              <Text variant="titleMedium" style={styles.historyClaim}>
+                  {formatClaimForDisplay(item.claim)}
                 </Text>
               </View>
               <View style={styles.historyHeaderActions}>
@@ -3036,7 +3713,24 @@ function HistoryItem({
               >
                 {isCompared ? "Selected" : "Compare"}
               </Button>
+              {isRunning(item.status) ? (
+                <Button mode="outlined" compact icon="stop-circle-outline" onPress={onCancel} textColor={palette.warning}>
+                  Stop
+                </Button>
+              ) : null}
+              {dragMode ? (
+                <>
+                  <IconButton icon="arrow-up" size={18} style={styles.webActionButton} onPress={onMoveUp} disabled={!canMoveUp} />
+                  <IconButton icon="arrow-down" size={18} style={styles.webActionButton} onPress={onMoveDown} disabled={!canMoveDown} />
+                </>
+              ) : null}
             </View>
+            {Platform.OS === "web" ? (
+              <View style={styles.historyCardWebActions}>
+                <IconButton icon={isPinned ? "pin-off-outline" : "pin-outline"} size={16} iconColor={palette.pin} style={[styles.webActionButton, styles.webPinButton]} onPress={onPin} />
+                <IconButton icon="delete-outline" size={16} iconColor={palette.danger} style={[styles.webActionButton, styles.webDeleteButton]} onPress={onDelete} />
+              </View>
+            ) : null}
           </View>
         </TouchableRipple>
       </Animated.View>
@@ -3046,11 +3740,22 @@ function HistoryItem({
 
 function ComparisonBoard({
   items,
+  result,
+  loading,
+  onRunComparison,
   onOpenHistory,
+  onRemove,
 }: {
   items: InvestigationSummary[];
+  result: InvestigationComparison | null;
+  loading: boolean;
+  onRunComparison: () => void;
   onOpenHistory: (id: string) => void;
+  onRemove: (id: string) => void;
 }) {
+  const { width } = useWindowDimensions();
+  const lastTapRef = useRef<Record<string, number>>({});
+  const openTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   if (items.length === 0) {
     return null;
   }
@@ -3061,6 +3766,8 @@ function ComparisonBoard({
     groupedByClaim.set(key, [...(groupedByClaim.get(key) ?? []), item]);
   }
   const sameClaim = [...groupedByClaim.values()].some((group) => group.length > 1);
+  const localCompatibility = items.length === 2 ? canCompareClaims(items[0], items[1]) : { allowed: false, similarity: 0 };
+  const stackedCards = width < 760;
 
   return (
     <Card mode="contained" style={styles.resultSectionCard}>
@@ -3073,19 +3780,42 @@ function ComparisonBoard({
             <Text variant="bodySmall" style={styles.sectionBody}>
               {sameClaim
                 ? "These runs share the same claim, so you can compare reruns side by side."
-                : "Compare two saved runs side by side to spot score or confidence changes."}
+                : "Compare two closely related runs to spot score, confidence, and evidence shifts."}
             </Text>
           </View>
-          <Chip compact style={styles.segmentChip}>
-            {items.length}/2 selected
-          </Chip>
+          <View style={styles.historyMetaRow}>
+            <Chip compact style={styles.segmentChip}>{items.length}/2 selected</Chip>
+            {items.length === 2 ? <Chip compact style={styles.segmentChip}>{`Similarity ${localCompatibility.similarity}/100`}</Chip> : null}
+          </View>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.linkGrid}>
+        <View style={[styles.comparisonCardGrid, stackedCards && styles.comparisonCardGridStacked]}>
           {items.map((item) => {
             const meta = verdictMeta(item.verdict);
             const tone = scoreTone(item.overallScore);
             return (
-              <Pressable key={item.id} onPress={() => onOpenHistory(item.id)} style={styles.comparisonCard}>
+              <Pressable
+                key={item.id}
+                onPress={() => {
+                  const now = Date.now();
+                  const lastTap = lastTapRef.current[item.id] ?? 0;
+                  if (now - lastTap < 280) {
+                    const pendingOpen = openTimerRef.current[item.id];
+                    if (pendingOpen) {
+                      clearTimeout(pendingOpen);
+                      delete openTimerRef.current[item.id];
+                    }
+                    onRemove(item.id);
+                    lastTapRef.current[item.id] = 0;
+                    return;
+                  }
+                  lastTapRef.current[item.id] = now;
+                  openTimerRef.current[item.id] = setTimeout(() => {
+                    onOpenHistory(item.id);
+                    delete openTimerRef.current[item.id];
+                  }, 260);
+                }}
+                style={[styles.comparisonCard, stackedCards && styles.comparisonCardStacked]}
+              >
                 <View style={styles.cardStack}>
                   <View style={styles.rowBetween}>
                     <Chip compact style={{ backgroundColor: meta.background }} textStyle={{ color: meta.color, fontFamily: "Poppins_600SemiBold" }}>
@@ -3096,7 +3826,7 @@ function ComparisonBoard({
                     </Chip>
                   </View>
                   <Text variant="titleSmall" style={styles.linkTitle}>
-                    {item.claim}
+                    {formatClaimForDisplay(item.claim)}
                   </Text>
                   <Text variant="bodySmall" style={styles.sectionBody}>
                     {item.summary}
@@ -3104,11 +3834,59 @@ function ComparisonBoard({
                   <Text variant="bodySmall" style={styles.historyMetaLine}>
                     Updated {formatTimestamp(item.updatedAt)}
                   </Text>
+                  <Text variant="bodySmall" style={styles.historyMetaLine}>
+                    Double-tap to remove from comparison.
+                  </Text>
                 </View>
               </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
+        <View style={styles.resultActionRow}>
+          <Button
+            mode="contained"
+            icon="compare-horizontal"
+            onPress={onRunComparison}
+            loading={loading}
+            disabled={items.length !== 2 || !localCompatibility.allowed || loading}
+            buttonColor={palette.primary}
+          >
+            Compare selected runs
+          </Button>
+        </View>
+        {items.length === 2 && !localCompatibility.allowed ? (
+          <Text variant="bodySmall" style={styles.historyMetaLine}>
+            These two claims are too different in wording or topic for a fair direct comparison.
+          </Text>
+        ) : null}
+        {result ? (
+          <Card mode="contained" style={styles.comparisonInsightCard}>
+            <Card.Content style={styles.cardStack}>
+              <Text variant="titleMedium" style={styles.linkTitle}>
+                Comparison snapshot
+              </Text>
+              <Text variant="bodyMedium" style={styles.resultBody}>
+                {result.shortSnippet || result.summary}
+              </Text>
+              <Text variant="bodySmall" style={styles.sectionBody}>
+                {result.detail}
+              </Text>
+              {result.axes.map((axis) => (
+                <View key={`${axis.label}-${axis.summary}`} style={styles.miniStat}>
+                  <Text variant="labelMedium" style={styles.miniStatLabel}>
+                    {axis.label}
+                  </Text>
+                  <Text variant="bodyMedium" style={styles.miniStatValue}>
+                    {axis.summary}
+                  </Text>
+                </View>
+              ))}
+              {result.notableDifferences.map((item) => (
+                <Bullet key={item} text={item} />
+              ))}
+            </Card.Content>
+          </Card>
+        ) : null}
       </Card.Content>
     </Card>
   );
@@ -3121,6 +3899,8 @@ function HistorySheet({
   onClose,
   onRestart,
   onDelete,
+  onCancel,
+  cancellingIds,
 }: {
   visible: boolean;
   investigation: InvestigationDetail | null;
@@ -3128,6 +3908,8 @@ function HistorySheet({
   onClose: () => void;
   onRestart: (investigation: InvestigationDetail) => void;
   onDelete: (id: string) => void;
+  onCancel: (id: string) => void;
+  cancellingIds: string[];
 }) {
   const translateY = useRef(new Animated.Value(360)).current;
 
@@ -3193,9 +3975,22 @@ function HistorySheet({
                 ) : null}
                 <InvestigationResult investigation={investigation} />
                 <View style={styles.resultActionRow}>
-                  <Button mode="contained" icon="play-circle-outline" buttonColor={palette.primary} onPress={() => onRestart(investigation)}>
-                    Run again
-                  </Button>
+                  {isRunning(investigation.status) ? (
+                    <Button
+                      mode="outlined"
+                      icon="stop-circle-outline"
+                      textColor={palette.warning}
+                      onPress={() => onCancel(investigation.id)}
+                      loading={cancellingIds.includes(investigation.id)}
+                      disabled={cancellingIds.includes(investigation.id)}
+                    >
+                      {cancellingIds.includes(investigation.id) ? "Stopping..." : "Stop run"}
+                    </Button>
+                  ) : (
+                    <Button mode="contained" icon="play-circle-outline" buttonColor={palette.primary} onPress={() => onRestart(investigation)}>
+                      Run again
+                    </Button>
+                  )}
                   <Button mode="outlined" icon="delete-outline" textColor={palette.danger} onPress={() => onDelete(investigation.id)}>
                     Delete this investigation
                   </Button>
@@ -3298,12 +4093,14 @@ function SignalPill({
 function ExpandableResultSection({
   title,
   body,
+  bodyKey,
   icon,
   defaultExpanded = false,
   children,
 }: {
   title: string;
   body: string;
+  bodyKey?: string;
   icon: MaterialIconName;
   defaultExpanded?: boolean;
   children: React.ReactNode;
@@ -3322,7 +4119,7 @@ function ExpandableResultSection({
                 <Text variant="titleMedium" style={styles.linkTitle}>
                   {title}
                 </Text>
-                <Text numberOfLines={expanded ? undefined : 2} variant="bodySmall" style={styles.sectionBody}>
+                <Text key={bodyKey} numberOfLines={expanded ? undefined : 2} variant="bodySmall" style={styles.sectionBody}>
                   {body}
                 </Text>
               </View>
@@ -3415,18 +4212,18 @@ export default function App() {
 
 const cardShadow = {
   shadowColor: "#0F172A",
-  shadowOpacity: 0.08,
-  shadowRadius: 22,
-  shadowOffset: { width: 0, height: 12 },
-  elevation: 4,
+  shadowOpacity: 0.05,
+  shadowRadius: 16,
+  shadowOffset: { width: 0, height: 8 },
+  elevation: 2,
 };
 
 const floatingShadow = {
   shadowColor: "#0F172A",
-  shadowOpacity: 0.1,
-  shadowRadius: 30,
-  shadowOffset: { width: 0, height: 16 },
-  elevation: 6,
+  shadowOpacity: 0.08,
+  shadowRadius: 22,
+  shadowOffset: { width: 0, height: 12 },
+  elevation: 4,
 };
 
 const softBorderWidth = StyleSheet.hairlineWidth;
@@ -3450,11 +4247,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    gap: 24,
+    paddingHorizontal: 22,
+    paddingTop: 8,
+    paddingBottom: 124,
+    gap: 28,
   },
   screenStack: {
-    gap: 20,
+    gap: 24,
   },
   consultantWideGrid: {
     flexDirection: "row",
@@ -3486,9 +4285,19 @@ const styles = StyleSheet.create({
   },
   headerSurface: {
     ...cardShadow,
-    borderRadius: 22,
-    paddingHorizontal: 22,
-    paddingVertical: 20,
+    borderRadius: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 22,
+    backgroundColor: palette.surface,
+    borderWidth: softBorderWidth,
+    borderColor: palette.border,
+  },
+  toolHeaderSurface: {
+    ...cardShadow,
+    borderRadius: 14,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 24,
     backgroundColor: palette.surface,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
@@ -3537,9 +4346,9 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     ...cardShadow,
-    borderRadius: 22,
+    borderRadius: 16,
     padding: 24,
-    gap: 14,
+    gap: 16,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
   },
@@ -3566,7 +4375,8 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   sectionHeader: {
-    gap: 6,
+    gap: 8,
+    paddingTop: 8,
   },
   eyebrow: {
     color: palette.primary,
@@ -3614,7 +4424,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   cardStack: {
-    gap: 12,
+    gap: 14,
   },
   logCard: {
     ...cardShadow,
@@ -3670,7 +4480,7 @@ const styles = StyleSheet.create({
   },
   scenarioCard: {
     ...cardShadow,
-    borderRadius: 18,
+    borderRadius: 16,
     backgroundColor: palette.surface,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
@@ -3688,7 +4498,7 @@ const styles = StyleSheet.create({
   },
   recentCard: {
     ...cardShadow,
-    borderRadius: 18,
+    borderRadius: 14,
     backgroundColor: palette.surface,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
@@ -3734,15 +4544,15 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surfaceSoft,
   },
   formCardContent: {
-    gap: 16,
+    gap: 18,
   },
   optionalContextCard: {
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
   },
   formTitle: {
     color: palette.text,
@@ -3853,7 +4663,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 22,
+    borderRadius: 16,
   },
   resultTitle: {
     color: palette.text,
@@ -3881,10 +4691,10 @@ const styles = StyleSheet.create({
   miniStat: {
     flexGrow: 1,
     flexBasis: 105,
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: palette.surfaceSoft,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     gap: 6,
   },
   miniStatLabel: {
@@ -3900,15 +4710,15 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
-    borderRadius: 20,
+    borderRadius: 16,
   },
   expandableHeader: {
-    borderRadius: 14,
+    borderRadius: 12,
   },
   expandableIconWrap: {
     width: 38,
     height: 38,
-    borderRadius: 14,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: palette.primarySoft,
@@ -3940,7 +4750,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
-    borderRadius: 18,
+    borderRadius: 16,
   },
   evidenceTitle: {
     color: palette.text,
@@ -3954,7 +4764,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   quoteBox: {
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: palette.surface,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
@@ -4046,11 +4856,32 @@ const styles = StyleSheet.create({
   },
   historyCard: {
     ...cardShadow,
-    borderRadius: 18,
+    borderRadius: 14,
     backgroundColor: palette.surface,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
-    padding: 18,
+    padding: 20,
+    position: "relative",
+  },
+  historyCardWebActions: {
+    position: "absolute",
+    right: 14,
+    bottom: 12,
+    flexDirection: "row",
+    gap: 4,
+  },
+  webActionButton: {
+    margin: 0,
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    backgroundColor: palette.surfaceSoft,
+  },
+  webPinButton: {
+    backgroundColor: palette.pinSoft,
+  },
+  webDeleteButton: {
+    backgroundColor: palette.dangerSoft,
   },
   historyCardPinned: {
     borderColor: "#E2C46C",
@@ -4110,7 +4941,7 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
   },
   loadingCardContent: {
-    minHeight: 180,
+    minHeight: 168,
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
@@ -4124,16 +4955,16 @@ const styles = StyleSheet.create({
     ...floatingShadow,
     maxHeight: "86%",
     width: "100%",
-    maxWidth: 920,
+    maxWidth: 900,
     alignSelf: "center",
     backgroundColor: palette.surface,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 36,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 40,
   },
   sheetHandle: {
     alignSelf: "center",
@@ -4152,13 +4983,13 @@ const styles = StyleSheet.create({
   bottomTabs: {
     ...floatingShadow,
     position: "absolute",
-    left: 16,
-    right: 16,
-    borderRadius: 18,
+    left: 20,
+    right: 20,
+    borderRadius: 16,
     backgroundColor: "rgba(255,255,255,0.98)",
     borderWidth: 1,
     borderColor: palette.border,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 8,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -4213,11 +5044,43 @@ const styles = StyleSheet.create({
   comparisonCard: {
     ...cardShadow,
     width: clampNumber(Dimensions.get("window").width - 96, 220, 320),
-    borderRadius: 18,
+    borderRadius: 14,
     backgroundColor: palette.surfaceSoft,
     padding: 16,
     borderWidth: 1,
     borderColor: palette.border,
+  },
+  comparisonCardGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  comparisonCardGridStacked: {
+    flexDirection: "column",
+  },
+  comparisonCardStacked: {
+    width: "100%",
+  },
+  comparisonInsightCard: {
+    ...cardShadow,
+    backgroundColor: palette.surfaceSoft,
+    borderWidth: softBorderWidth,
+    borderColor: palette.border,
+    borderRadius: 16,
+  },
+  scopeWarningCard: {
+    backgroundColor: palette.surfaceSoft,
+    borderWidth: softBorderWidth,
+    borderColor: palette.border,
+    borderRadius: 14,
+  },
+  scopeWarningIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.warningSoft,
   },
   recentQueryCard: {
     backgroundColor: palette.surfaceSoft,

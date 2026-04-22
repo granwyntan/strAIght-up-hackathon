@@ -85,7 +85,7 @@ def weighted_consensus_breakdown(sources: list[SourceAssessment]) -> ConsensusBr
             neutral += contribution_weight
 
     normalized = 0.0 if total_weight <= 0 else max(-1.0, min(1.0, weighted_score / total_weight))
-    credibility_score = round(50 + (normalized * 50))
+    credibility_score = round(56 + (normalized * 44))
     support_share = 0.0 if total_weight <= 0 else supporting / total_weight
     contradiction_share = 0.0 if total_weight <= 0 else contradicting / total_weight
     summary = (
@@ -112,7 +112,7 @@ def agreement_score(sources: list[SourceAssessment]) -> int:
     if not sources:
         return 25
     agreement = round((sum(source.agreementFactor for source in sources) / len(sources)) * 100)
-    contradiction_drag = round(weighted_consensus_breakdown(sources).contradictionShare * 25)
+    contradiction_drag = round(weighted_consensus_breakdown(sources).contradictionShare * 18)
     return max(0, min(100, agreement - contradiction_drag))
 
 
@@ -138,11 +138,11 @@ def claim_evidence_fit_score(claim_analysis: ClaimAnalysis, sources: list[Source
 
     fit_score = consensus.credibilityScore
     if strongest_subclaim >= 4 and support_strength < 1.5:
-        fit_score -= 25
+        fit_score -= 16
     if strongest_subclaim == 5 and claim_analysis.languageRiskScore >= 45:
-        fit_score -= 15
-    if consensus.contradictionShare > 0.4:
         fit_score -= 10
+    if consensus.contradictionShare > 0.45:
+        fit_score -= 8
     return max(0, min(100, fit_score))
 
 
@@ -177,7 +177,7 @@ def build_matrix(claim_analysis: ClaimAnalysis, sources: list[SourceAssessment])
             name="Model agreement",
             score=agreement_score(sources),
             weight=0.12,
-            rationale="Dual-model agreement raises confidence while disagreement reduces the effective signal.",
+            rationale="Multi-model agreement raises confidence while disagreement reduces the effective signal.",
         ),
         DecisionMatrixFactor(
             name="Claim-evidence fit",
@@ -203,14 +203,14 @@ def calibrated_credibility_score(claim_analysis: ClaimAnalysis, sources: list[So
     penalties: list[str] = []
 
     if strongest_claim >= 4 and high_quality_support < 1.5:
-        score -= 20
-        penalties.append("Strong claim without strong supporting evidence triggered a 20-point penalty.")
+        score -= 14
+        penalties.append("Strong claim without strong supporting evidence triggered a 14-point penalty.")
     if strongest_claim >= 4 and claim_analysis.languageRiskScore >= 45:
-        score -= 15
-        penalties.append("Overstated wording triggered a 15-point penalty.")
-    if consensus.contradictionShare > 0.4:
         score -= 10
-        penalties.append("Contradicting evidence exceeded 40% of weighted evidence, triggering a 10-point penalty.")
+        penalties.append("Overstated wording triggered a 10-point penalty.")
+    if consensus.contradictionShare > 0.45:
+        score -= 8
+        penalties.append("Contradicting evidence exceeded 45% of weighted evidence, triggering an 8-point penalty.")
 
     return max(0, min(100, score)), penalties, consensus
 

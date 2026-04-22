@@ -1,5 +1,5 @@
 export type AppTab = "home" | "consultant" | "nutrition" | "supplements" | "profile";
-export type InvestigationStatus = "queued" | "running" | "completed" | "failed";
+export type InvestigationStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type ClaimVerdict = "trustworthy" | "mixed" | "overstated" | "untrustworthy";
 export type SourceSentiment = "positive" | "neutral" | "negative";
 export type ConfidenceLevel = "low" | "medium" | "high";
@@ -204,7 +204,7 @@ export interface AgentRun {
   id: string;
   agentKey: string;
   title: string;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
   summary: string;
   startedAt: string;
   finishedAt: string | null;
@@ -223,7 +223,7 @@ export interface PipelineStepSummary {
   title: string;
   role: string;
   goal: string;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
   summary: string;
   details: string[];
 }
@@ -245,6 +245,18 @@ export interface HoaxSignal {
   label: string;
   severity: "low" | "moderate" | "high";
   rationale: string;
+}
+
+export interface SingaporeAuthorityReview {
+  totalSources: number;
+  supportiveCount: number;
+  neutralCount: number;
+  contradictoryCount: number;
+  agreementLabel: "supportive" | "mixed" | "contradictory" | "insufficient";
+  summary: string;
+  keyPoints: string[];
+  domains: string[];
+  sourceIds: string[];
 }
 
 export interface SentimentDistribution {
@@ -309,6 +321,7 @@ export interface InvestigationDetail extends InvestigationSummary {
   stepSummaries: PipelineStepSummary[];
   providerReviews: ProviderReviewSummary[];
   hoaxSignals: HoaxSignal[];
+  singaporeAuthorityReview: SingaporeAuthorityReview | null;
   sentiment: SentimentDistribution | null;
   consensus: ConsensusBreakdown | null;
   matrix: DecisionMatrixFactor[];

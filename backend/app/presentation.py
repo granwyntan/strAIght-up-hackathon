@@ -63,6 +63,13 @@ APPROVED_GENERAL_HEALTH_DOMAIN_MARKERS = (
     "aad.org",
     "aap.org",
     "aasm.org",
+    "healthhub.sg",
+    "healthxchange.sg",
+    "mindline.sg",
+    "healthiersg.gov.sg",
+    "ncid.sg",
+    "moh.gov.sg",
+    "hsa.gov.sg",
 )
 
 
@@ -91,6 +98,16 @@ def _source_name(domain: str) -> str:
         "clevelandclinic.org": "Cleveland Clinic",
         "medicalnewstoday.com": "Medical News Today",
         "webmd.com": "WebMD",
+        "moh.gov.sg": "MOH Singapore",
+        "hsa.gov.sg": "HSA Singapore",
+        "hpb.gov.sg": "Health Promotion Board",
+        "aic.sg": "Agency for Integrated Care",
+        "healthhub.sg": "HealthHub",
+        "healthxchange.sg": "HealthXchange",
+        "mindline.sg": "mindline.sg",
+        "healthiersg.gov.sg": "Healthier SG",
+        "ncid.sg": "NCID",
+        "ace-hta.gov.sg": "ACE Singapore",
     }
     if cleaned in known_names:
         return known_names[cleaned]
@@ -458,9 +475,9 @@ def infer_confidence_level(
         )
         - (variance * 30)
     )
-    if confidence_score >= 75:
+    if confidence_score >= 80:
         return "high"
-    if confidence_score >= 50:
+    if confidence_score >= 52:
         return "medium"
     return "low"
 
@@ -491,13 +508,18 @@ def build_sections(
         )
     )
 
+    support_count = sum(1 for source in selected_sources if source.sentiment == "positive")
+    contradiction_count = sum(1 for source in selected_sources if source.sentiment == "negative")
+    authority_count = sum(1 for source in selected_sources if source.sourceQualityLabel == "verified")
+
     key_findings = list(
         dict.fromkeys(
             [
+                f"{authority_count} verified-authority sources remained in the scored evidence pool.",
+                f"{support_count} sources leaned supportive while {contradiction_count} pushed back or narrowed the claim.",
+                *(source.evidence.conclusion for source in groups[0].sources[:3] if source.evidence and source.evidence.conclusion),
+                *(source.evidence.expertAnalysis for source in groups[0].sources[:3] if source.evidence and source.evidence.expertAnalysis),
                 *strengths,
-                *(source.evidence.expertAnalysis for source in groups[0].sources[:4] if source.evidence),
-                *(source.relevanceSummary for source in groups[0].sources[:5]),
-                *(source.evidence.conclusion for source in groups[0].sources[:3] if source.evidence),
             ]
         )
     )[:8]

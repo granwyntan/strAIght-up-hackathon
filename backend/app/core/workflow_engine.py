@@ -84,6 +84,13 @@ WORKFLOW_STAGES: tuple[WorkflowStageDefinition, ...] = (
         goal="Keep quote highlights exact and make each source's direction explicit.",
     ),
     WorkflowStageDefinition(
+        key="singapore_authority_review",
+        title="Singapore Authority Review",
+        role="Regional Health Authority Analyst",
+        summary="Waiting to isolate what Singapore public-health and institutional sources say about the claim.",
+        goal="Summarize whether Singapore authority and Singapore institutional sources support, contradict, or stay mixed on the claim.",
+    ),
+    WorkflowStageDefinition(
         key="hoax_detection",
         title="Hoax Detection",
         role="Misinformation Analyst",

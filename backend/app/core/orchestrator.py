@@ -18,6 +18,7 @@ from ..agents.relevance_filter import filter_relevant_sources
 from ..agents.reasoning_panel import reconcile_reasoning_panel
 from ..agents.report_writer import draft_report
 from ..agents.sentiment_consensus import apply_sentiment_consensus
+from ..agents.singapore_authority_agent import review_singapore_authorities
 from ..agents.source_credibility_agent import assess_source_credibility
 from ..agents.source_scout import scout_sources
 from ..agents.source_validator import validate_sources
@@ -49,6 +50,10 @@ DEPTH_SOURCE_WINDOWS: dict[str, tuple[int, int]] = {
     "standard": (70, 84),
     "deep": (100, 132),
 }
+
+
+class InvestigationCancelled(Exception):
+    pass
 
 
 def _default_step_summaries() -> list[PipelineStepSummary]:
@@ -149,6 +154,35 @@ def _fail_active_step(investigation_id: str, summary: str) -> None:
     repository.update_state(investigation_id, mutate)
 
 
+def _cancel_active_step(investigation_id: str, summary: str) -> None:
+    def mutate(state: InvestigationState) -> InvestigationState:
+        summaries = state.stepSummaries or _default_step_summaries()
+        cancelled = False
+        next_steps: list[PipelineStepSummary] = []
+        for step in summaries:
+            if not cancelled and step.status == "running":
+                next_steps.append(step.model_copy(update={"status": "failed", "summary": summary}))
+                cancelled = True
+            else:
+                next_steps.append(step)
+        if not cancelled:
+            next_steps = _merge_step_summaries(
+                next_steps,
+                step_key="finalizing_results",
+                status="failed",
+                summary=summary,
+            )
+        return state.model_copy(update={"stepSummaries": next_steps, "progressPercent": min(state.progressPercent, 96)})
+
+    repository.update_state(investigation_id, mutate)
+
+
+def _ensure_not_cancelled(investigation_id: str) -> None:
+    state = repository.get_investigation_state(investigation_id)
+    if state.cancellationRequested:
+        raise InvestigationCancelled("The investigation was stopped before completion.")
+
+
 def _worker_loop() -> None:
     while True:
         investigation_id, request = _JOB_QUEUE.get()
@@ -177,9 +211,14 @@ def queue_investigation(investigation_id: str, request: InvestigationCreateReque
 async def _run_stage(investigation_id: str, agent_key: str, title: str, fn):
     run_id = repository.start_agent_run(investigation_id, agent_key, title)
     try:
+        _ensure_not_cancelled(investigation_id)
         result, summary = await fn()
+        _ensure_not_cancelled(investigation_id)
         repository.finish_agent_run(run_id, "completed", summary)
         return result
+    except InvestigationCancelled as exc:
+        repository.finish_agent_run(run_id, "cancelled", str(exc))
+        raise
     except Exception as exc:
         repository.finish_agent_run(run_id, "failed", str(exc))
         raise
@@ -380,7 +419,7 @@ def _truth_classification(verdict: str | None) -> str:
         return "Likely fact pattern"
     if verdict == "untrustworthy":
         return "Likely falsehood or hoax"
-    return "Needs nuance"
+    return "Mixed evidence"
 
 
 def _max_misinformation_risk(*risks: str | None) -> str | None:
@@ -421,6 +460,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
     )
 
     try:
+        _ensure_not_cancelled(investigation_id)
         resolved_mode = _resolved_mode(request)
         context = build_context(request)
         tracker.info("orchestrator", "Context assembled for the investigation run.")
@@ -471,6 +511,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             details=briefing_details,
             progress=8,
         )
+        _ensure_not_cancelled(investigation_id)
 
         _set_step_state(
             investigation_id,
@@ -515,6 +556,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             details=nlp_details,
             progress=14,
         )
+        _ensure_not_cancelled(investigation_id)
 
         _set_step_state(
             investigation_id,
@@ -548,6 +590,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             ],
             progress=20,
         )
+        _ensure_not_cancelled(investigation_id)
 
         _set_step_state(
             investigation_id,
@@ -579,6 +622,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             details=claim_analysis.generatedQueries[:8],
             progress=26,
         )
+        _ensure_not_cancelled(investigation_id)
 
         repository.update_state(
             investigation_id,
@@ -655,6 +699,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             ],
             progress=36,
         )
+        _ensure_not_cancelled(investigation_id)
 
         _set_step_state(
             investigation_id,
@@ -703,6 +748,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             ],
             progress=44,
         )
+        _ensure_not_cancelled(investigation_id)
 
         _set_step_state(
             investigation_id,
@@ -915,10 +961,52 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
 
         _set_step_state(
             investigation_id,
+            "singapore_authority_review",
+            "running",
+            "Summarizing what Singapore authority and Singapore institutional sources say about the claim.",
+            progress=85,
+        )
+        singapore_authority_review = await _run_stage(
+            investigation_id,
+            "singapore_authorities",
+            "Singapore authority reviewer",
+            lambda: asyncio.to_thread(
+                lambda: (
+                    review_singapore_authorities(request.claim, sentiment_sources),
+                    "Reviewed the retained Singapore authority and Singapore institutional sources as a separate agreement layer.",
+                )
+            ),
+        )
+        repository.update_state(
+            investigation_id,
+            lambda state: state.model_copy(
+                update={
+                    "singaporeAuthorityReview": singapore_authority_review,
+                    "progressPercent": 86,
+                }
+            ),
+        )
+        _set_step_state(
+            investigation_id,
+            "singapore_authority_review",
+            "completed",
+            singapore_authority_review.summary or "Singapore authority review completed.",
+            details=[
+                f"Singapore authority sources retained: {singapore_authority_review.totalSources}.",
+                f"Supportive: {singapore_authority_review.supportiveCount}.",
+                f"Mixed or uncertain: {singapore_authority_review.neutralCount}.",
+                f"Contradictory: {singapore_authority_review.contradictoryCount}.",
+                *(singapore_authority_review.keyPoints[:4]),
+            ],
+            progress=86,
+        )
+
+        _set_step_state(
+            investigation_id,
             "hoax_detection",
             "running",
             "Scanning for hoax-style framing, evidence mismatch, and overclaim risk.",
-            progress=86,
+            progress=87,
         )
         hoax_assessment = await _run_stage(
             investigation_id,
@@ -1242,6 +1330,7 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
             stepSummaries=step_summaries,
             providerReviews=panel_result.reviews,
             hoaxSignals=hoax_assessment.signals,
+            singaporeAuthorityReview=singapore_authority_review,
             sentiment=sentiment,
             consensus=consensus_breakdown,
             matrix=matrix,
@@ -1302,6 +1391,10 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
         except Exception as notification_exc:
             tracker.warning("notifications", f"Investigation completed, but push delivery failed: {notification_exc}")
         tracker.info("orchestrator", f"Investigation completed using mode {resolved_mode} at depth {context['desiredDepth']}.")
+    except InvestigationCancelled as exc:
+        repository.set_investigation_status(investigation_id, "cancelled", summary=str(exc))
+        _cancel_active_step(investigation_id, str(exc))
+        tracker.warning("orchestrator", str(exc))
     except Exception as exc:
         repository.set_investigation_status(investigation_id, "failed", summary=str(exc))
         _fail_active_step(investigation_id, str(exc))

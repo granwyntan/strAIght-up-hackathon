@@ -30,11 +30,11 @@ def _baseline_signals(claim_analysis: ClaimAnalysis, sources: list[SourceAssessm
         for source in sources
         if source.sentiment == "positive" and source.sourceScore == 3 and source.evidenceScore >= 4
     ]
-    if claim_analysis.languageRiskScore >= 45:
+    if claim_analysis.languageRiskScore >= 55:
         signals.append(
             HoaxSignal(
                 label="Aggressive wording",
-                severity="high" if claim_analysis.languageRiskScore >= 70 else "moderate",
+                severity="high" if claim_analysis.languageRiskScore >= 78 else "moderate",
                 rationale="The claim uses strong wording that normally needs unusually strong evidence to be trustworthy.",
             )
         )
@@ -54,7 +54,7 @@ def _baseline_signals(claim_analysis: ClaimAnalysis, sources: list[SourceAssessm
                 rationale="Stronger sources materially push back on the claim or narrow it substantially.",
             )
         )
-    if not verified_support:
+    if not verified_support and consensus.supportShare < 0.42:
         signals.append(
             HoaxSignal(
                 label="No strong verified support",
@@ -75,15 +75,15 @@ def _baseline_signals(claim_analysis: ClaimAnalysis, sources: list[SourceAssessm
         100,
         round(
             claim_analysis.languageRiskScore * 0.35
-            + (len(weak_supportive) * 6)
+            + (len(weak_supportive) * 4)
             + (len(strong_contradictions) * 8)
-            + (max(0.0, consensus.contradictionShare) * 32)
-            + (12 if not verified_support else 0)
+            + (max(0.0, consensus.contradictionShare) * 26)
+            + (8 if not verified_support and consensus.supportShare < 0.42 else 0)
         ),
     )
-    if risk_score >= 70:
+    if risk_score >= 76:
         classification: MisinformationRisk = "high"
-    elif risk_score >= 40:
+    elif risk_score >= 48:
         classification = "moderate"
     else:
         classification = "low"
@@ -128,8 +128,8 @@ def detect_hoax_risk(claim: str, claim_analysis: ClaimAnalysis, sources: list[So
                 for source in sources[:18]
             ],
             "instructions": [
-                "Flag hoax-style or falsehood-style patterns when strong wording outruns the evidence.",
-                "Do not confuse normal scientific uncertainty with deliberate hoax behavior.",
+                "Flag hoax-style or falsehood-style patterns when strong wording clearly outruns the evidence.",
+                "Do not confuse normal scientific uncertainty or mixed findings with deliberate hoax behavior.",
                 "Prefer high hoax risk when support is weak, citations are poor, and credible contradiction evidence is substantial.",
             ],
         },
@@ -142,9 +142,9 @@ def detect_hoax_risk(claim: str, claim_analysis: ClaimAnalysis, sources: list[So
     merged_signals = list(dict.fromkeys([signal.model_dump_json() for signal in [*baseline.signals, *llm_result.signals]]))
     signals = [HoaxSignal.model_validate_json(item) for item in merged_signals][:8]
     risk_score = round((baseline.riskScore + llm_result.riskScore) / 2)
-    if risk_score >= 70:
+    if risk_score >= 76:
         classification: MisinformationRisk = "high"
-    elif risk_score >= 40:
+    elif risk_score >= 48:
         classification = "moderate"
     else:
         classification = "low"

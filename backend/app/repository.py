@@ -159,6 +159,39 @@ def delete_investigation(investigation_id: str) -> bool:
     return True
 
 
+def request_cancellation(investigation_id: str) -> bool:
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT id, status, state_json FROM investigations WHERE id = ?",
+            (investigation_id,),
+        ).fetchone()
+        if row is None:
+            return False
+
+        status = row["status"]
+        if status not in {"queued", "running"}:
+            return False
+
+        state = _parse_state(row["state_json"])
+        next_state = state.model_copy(update={"cancellationRequested": True})
+        now = utc_now_iso()
+        next_status = "cancelled" if status == "queued" else status
+        next_summary = "Stopped before the review started." if status == "queued" else "Stop requested. The current step will finish safely before the run closes."
+
+        connection.execute(
+            """
+            UPDATE investigations
+            SET status = ?,
+                updated_at = ?,
+                summary = ?,
+                state_json = ?
+            WHERE id = ?
+            """,
+            (next_status, now, next_summary, next_state.model_dump_json(), investigation_id),
+        )
+    return True
+
+
 def clear_investigations() -> int:
     with get_connection() as connection:
         count_row = connection.execute("SELECT COUNT(*) AS count FROM investigations").fetchone()
@@ -249,6 +282,7 @@ def get_investigation_detail(investigation_id: str) -> InvestigationDetail | Non
         stepSummaries=state.stepSummaries,
         providerReviews=state.providerReviews,
         hoaxSignals=state.hoaxSignals,
+        singaporeAuthorityReview=state.singaporeAuthorityReview,
         sentiment=state.sentiment,
         consensus=state.consensus,
         matrix=state.matrix,

@@ -119,6 +119,33 @@ def _supplemental_deep_queries(claim: str, queries: list[str]) -> list[str]:
     return deduped
 
 
+def _singapore_authority_queries(claim: str, queries: list[str]) -> list[str]:
+    source_text = " ".join([claim, *queries]).lower()
+    singapore_markers = ("singapore", "sg", "hsa", "moh", "healthhub", "ncid", "healthier sg")
+    if not any(marker in source_text for marker in singapore_markers):
+        return []
+    claim_text = " ".join(claim.strip().split())
+    candidates = [
+        f"site:moh.gov.sg {claim_text}",
+        f"site:hsa.gov.sg {claim_text}",
+        f"site:hpb.gov.sg {claim_text}",
+        f"site:healthhub.sg {claim_text}",
+        f"site:healthiersg.gov.sg {claim_text}",
+        f"site:ncid.sg {claim_text}",
+        f"site:ace-hta.gov.sg {claim_text}",
+        f"site:healthxchange.sg {claim_text}",
+    ]
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in candidates:
+        normalized = item.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(item)
+    return deduped
+
+
 def _emergency_live_queries(claim: str, queries: list[str], desired_depth: str) -> list[str]:
     claim_text = " ".join(claim.strip().split())
     seed = queries[0] if queries else claim_text
@@ -262,6 +289,16 @@ async def scout_sources(
         emergency_queries = _emergency_live_queries(claim, effective_queries, desired_depth)
         emergency_batches = await load_emergency_batches(emergency_queries)
         for batch in emergency_batches:
+            for result in batch:
+                if result.url in seen_urls:
+                    continue
+                    seen_urls.add(result.url)
+                    discovered.append(result)
+
+    singapore_queries = _singapore_authority_queries(claim, effective_queries)
+    if live_search_available and singapore_queries:
+        singapore_batches = await load_emergency_batches(singapore_queries)
+        for batch in singapore_batches:
             for result in batch:
                 if result.url in seen_urls:
                     continue

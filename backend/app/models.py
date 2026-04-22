@@ -3,8 +3,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-InvestigationStatus = Literal["queued", "running", "completed", "failed"]
-AgentStatus = Literal["pending", "running", "completed", "failed"]
+InvestigationStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
+AgentStatus = Literal["pending", "running", "completed", "failed", "cancelled"]
 InvestigationMode = Literal["auto", "offline", "live"]
 DesiredDepth = Literal["quick", "standard", "deep"]
 ClaimVerdict = Literal["trustworthy", "mixed", "overstated", "untrustworthy"]
@@ -292,6 +292,18 @@ class HoaxSignal(BaseModel):
     rationale: str = ""
 
 
+class SingaporeAuthorityReview(BaseModel):
+    totalSources: int = 0
+    supportiveCount: int = 0
+    neutralCount: int = 0
+    contradictoryCount: int = 0
+    agreementLabel: Literal["supportive", "mixed", "contradictory", "insufficient"] = "insufficient"
+    summary: str = ""
+    keyPoints: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    sourceIds: list[str] = Field(default_factory=list)
+
+
 class InvestigationState(BaseModel):
     claimAnalysis: ClaimAnalysis | None = None
     claimGraph: list[ClaimGraphNode] = Field(default_factory=list)
@@ -303,6 +315,7 @@ class InvestigationState(BaseModel):
     stepSummaries: list[PipelineStepSummary] = Field(default_factory=list)
     providerReviews: list[ProviderReviewSummary] = Field(default_factory=list)
     hoaxSignals: list[HoaxSignal] = Field(default_factory=list)
+    singaporeAuthorityReview: SingaporeAuthorityReview | None = None
     sentiment: SentimentDistribution | None = None
     consensus: ConsensusBreakdown | None = None
     matrix: list[DecisionMatrixFactor] = Field(default_factory=list)
@@ -310,6 +323,7 @@ class InvestigationState(BaseModel):
     llmAgreementScore: int | None = Field(default=None, ge=0, le=100)
     misinformationRisk: MisinformationRisk | None = None
     progressPercent: int = Field(default=0, ge=0, le=100)
+    cancellationRequested: bool = False
     resolvedMode: InvestigationMode | None = None
     cacheStatus: CacheStatus = "live"
     truthClassification: str = ""
@@ -359,6 +373,7 @@ class InvestigationDetail(InvestigationSummary):
     stepSummaries: list[PipelineStepSummary] = Field(default_factory=list)
     providerReviews: list[ProviderReviewSummary] = Field(default_factory=list)
     hoaxSignals: list[HoaxSignal] = Field(default_factory=list)
+    singaporeAuthorityReview: SingaporeAuthorityReview | None = None
     sentiment: SentimentDistribution | None = None
     consensus: ConsensusBreakdown | None = None
     matrix: list[DecisionMatrixFactor] = Field(default_factory=list)
@@ -398,3 +413,23 @@ class NotificationRegistrationRequest(BaseModel):
 class NotificationRegistrationResponse(BaseModel):
     success: bool = True
     registeredAt: str
+
+
+class InvestigationComparisonRequest(BaseModel):
+    investigationIds: list[str] = Field(min_length=2, max_length=2)
+
+
+class InvestigationComparisonAxis(BaseModel):
+    label: str
+    summary: str
+
+
+class InvestigationComparisonResponse(BaseModel):
+    compatible: bool = False
+    similarityScore: int = Field(default=0, ge=0, le=100)
+    sameClaim: bool = False
+    summary: str = ""
+    shortSnippet: str = ""
+    detail: str = ""
+    axes: list[InvestigationComparisonAxis] = Field(default_factory=list)
+    notableDifferences: list[str] = Field(default_factory=list)

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import repository
@@ -6,14 +6,18 @@ from .ai import stage_target_label
 from .core.orchestrator import queue_investigation, start_investigation_workers
 from .database import init_db
 from .knowledge.base import BOOTSTRAP
+from .services.query_support import fetch_claim_suggestions, is_health_related_query
 from .models import (
     BootstrapPayload,
     InvestigationCollection,
+    InvestigationComparisonRequest,
+    InvestigationComparisonResponse,
     InvestigationCreateRequest,
     InvestigationDetail,
     NotificationRegistrationRequest,
     NotificationRegistrationResponse,
 )
+from .agents.comparison_agent import compare_investigations
 from .routes.supplements import router as supplements_router
 from .settings import settings
 
@@ -97,8 +101,21 @@ def get_investigations() -> InvestigationCollection:
     return InvestigationCollection(items=repository.list_investigations())
 
 
+@app.get("/api/claim-suggestions")
+async def get_claim_suggestions(q: str = Query(default="", min_length=0, max_length=160)) -> dict[str, list[str]]:
+    try:
+        return {"items": await fetch_claim_suggestions(q)}
+    except Exception:
+        return {"items": []}
+
+
 @app.post("/api/investigations", response_model=InvestigationDetail)
 def create_investigation(payload: InvestigationCreateRequest) -> InvestigationDetail:
+    if not is_health_related_query(payload.claim, payload.context):
+        raise HTTPException(
+            status_code=422,
+            detail="This tool is currently limited to health, medical, clinical, wellness, and research-related claims.",
+        )
     summary = repository.create_investigation(
         claim=payload.claim,
         context=payload.context,
@@ -118,6 +135,23 @@ def get_investigation(investigation_id: str) -> InvestigationDetail:
     if detail is None:
         raise HTTPException(status_code=404, detail="Investigation not found")
     return detail
+
+
+@app.post("/api/investigations/{investigation_id}/cancel")
+def cancel_investigation(investigation_id: str) -> dict[str, bool]:
+    cancelled = repository.request_cancellation(investigation_id)
+    if not cancelled:
+        raise HTTPException(status_code=404, detail="Investigation is not running or could not be stopped")
+    return {"cancelled": True}
+
+
+@app.post("/api/investigations/compare", response_model=InvestigationComparisonResponse)
+def compare_saved_investigations(payload: InvestigationComparisonRequest) -> InvestigationComparisonResponse:
+    left = repository.get_investigation_detail(payload.investigationIds[0])
+    right = repository.get_investigation_detail(payload.investigationIds[1])
+    if left is None or right is None:
+        raise HTTPException(status_code=404, detail="One or both investigations could not be found")
+    return compare_investigations(left, right)
 
 
 @app.delete("/api/investigations/{investigation_id}")
