@@ -1,7 +1,11 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut
+} from "firebase/auth";
 
-const ACCOUNTS_KEY = "gramwin.accounts.v1";
-const ACTIVE_SESSION_KEY = "gramwin.session.v1";
+import { firebaseAuth } from "../lib/firebaseClient";
 
 function normalizeEmail(value) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -11,34 +15,38 @@ function normalizePassword(value) {
   return typeof value === "string" ? value : "";
 }
 
-function normalizeAccount(input) {
-  const source = input && typeof input === "object" ? input : {};
+function mapAuthError(error) {
+  const code = typeof error?.code === "string" ? error.code : "";
+  if (code === "auth/invalid-email") {
+    return "Please enter a valid email address.";
+  }
+  if (code === "auth/missing-password" || code === "auth/invalid-password") {
+    return "Please enter a valid password.";
+  }
+  if (code === "auth/weak-password") {
+    return "Password should be at least 6 characters.";
+  }
+  if (code === "auth/email-already-in-use") {
+    return "This email is already in use.";
+  }
+  if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
+    return "Incorrect email or password.";
+  }
+  if (code === "auth/network-request-failed") {
+    return "Network error. Check your internet connection and try again.";
+  }
+  return "Unable to continue with account authentication.";
+}
+
+function toSessionAccount(user) {
+  if (!user) {
+    return null;
+  }
   return {
-    id: typeof source.id === "string" && source.id ? source.id : `acct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    email: normalizeEmail(source.email),
-    password: normalizePassword(source.password),
-    createdAt: typeof source.createdAt === "string" ? source.createdAt : new Date().toISOString()
+    id: user.uid,
+    email: normalizeEmail(user.email),
+    createdAt: user.metadata?.creationTime || undefined
   };
-}
-
-async function loadAccounts() {
-  const raw = await AsyncStorage.getItem(ACCOUNTS_KEY);
-  if (!raw) {
-    return [];
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed.map(normalizeAccount).filter((account) => account.email);
-  } catch {
-    return [];
-  }
-}
-
-async function saveAccounts(accounts) {
-  await AsyncStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts.map(normalizeAccount)));
 }
 
 export async function loginOrRegisterAccount(email, password) {
@@ -48,37 +56,34 @@ export async function loginOrRegisterAccount(email, password) {
     throw new Error("Email and password are required.");
   }
 
-  const accounts = await loadAccounts();
-  const existing = accounts.find((account) => account.email === normalizedEmail);
-  if (existing) {
-    if (existing.password !== normalizedPassword) {
-      throw new Error("Incorrect password for this email.");
+  try {
+    const created = await createUserWithEmailAndPassword(firebaseAuth, normalizedEmail, normalizedPassword);
+    return toSessionAccount(created.user);
+  } catch (createError) {
+    const createCode = typeof createError?.code === "string" ? createError.code : "";
+    if (createCode !== "auth/email-already-in-use") {
+      throw new Error(mapAuthError(createError));
     }
-    await AsyncStorage.setItem(ACTIVE_SESSION_KEY, existing.id);
-    return { id: existing.id, email: existing.email, createdAt: existing.createdAt };
   }
 
-  const next = normalizeAccount({ email: normalizedEmail, password: normalizedPassword });
-  const updated = [next, ...accounts];
-  await saveAccounts(updated);
-  await AsyncStorage.setItem(ACTIVE_SESSION_KEY, next.id);
-  return { id: next.id, email: next.email, createdAt: next.createdAt };
+  try {
+    const loggedIn = await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, normalizedPassword);
+    return toSessionAccount(loggedIn.user);
+  } catch (signInError) {
+    throw new Error(mapAuthError(signInError));
+  }
 }
 
 export async function getActiveSessionAccount() {
-  const sessionAccountId = await AsyncStorage.getItem(ACTIVE_SESSION_KEY);
-  if (!sessionAccountId) {
-    return null;
-  }
-  const accounts = await loadAccounts();
-  const match = accounts.find((account) => account.id === sessionAccountId);
-  if (!match) {
-    await AsyncStorage.removeItem(ACTIVE_SESSION_KEY);
-    return null;
-  }
-  return { id: match.id, email: match.email, createdAt: match.createdAt };
+  return toSessionAccount(firebaseAuth.currentUser);
+}
+
+export function subscribeToActiveSession(onChange) {
+  return onAuthStateChanged(firebaseAuth, (user) => {
+    onChange?.(toSessionAccount(user));
+  });
 }
 
 export async function logoutActiveSession() {
-  await AsyncStorage.removeItem(ACTIVE_SESSION_KEY);
+  await signOut(firebaseAuth);
 }

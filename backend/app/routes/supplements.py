@@ -40,6 +40,7 @@ class SupplementSearchRequest(BaseModel):
     supplementName: str
     conditions: str = DEFAULT_CONDITIONS
     goals: str = DEFAULT_GOALS
+    generateInfographic: bool = True
 
 
 def _to_section_payload(section: SupplementSection) -> SupplementSectionResponse:
@@ -91,6 +92,7 @@ async def analyze_supplement_endpoint(
     photo: UploadFile = File(...),
     conditions: str = Form(DEFAULT_CONDITIONS),
     goals: str = Form(DEFAULT_GOALS),
+    generateInfographic: bool = Form(True),
     x_client_action_id: str | None = Header(default=None, alias="X-Client-Action-Id"),
 ) -> SupplementAnalysisResponse:
     endpoint_request_id = str(uuid.uuid4())
@@ -121,6 +123,7 @@ async def analyze_supplement_endpoint(
             content_type=content_type,
             conditions=conditions,
             goals=goals,
+            generate_infographic=generateInfographic,
             request_id=endpoint_request_id,
         )
     except RateLimitError as exc:
@@ -176,6 +179,7 @@ def search_supplement_endpoint(
             supplement_name=payload.supplementName,
             conditions=payload.conditions,
             goals=payload.goals,
+            generate_infographic=payload.generateInfographic,
             request_id=endpoint_request_id,
         )
     except RateLimitError as exc:

@@ -22,7 +22,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import CaloriesPage from "./src/pages/CaloriesPage";
 import ProfilePage from "./src/pages/ProfilePage";
 import ScannerPage from "./src/pages/SupplementsPage";
-import { getActiveSessionAccount, loginOrRegisterAccount, logoutActiveSession } from "./src/storage/accountStorage";
+import { loginOrRegisterAccount, logoutActiveSession, subscribeToActiveSession } from "./src/storage/accountStorage";
 
 import {
   defaultBootstrap,
@@ -249,17 +249,10 @@ export default function App() {
   const [depth, setDepth] = useState<"standard" | "deep">("deep");
 
   useEffect(() => {
-    let mounted = true;
-    const hydrateSession = async () => {
-      const session = await getActiveSessionAccount();
-      if (mounted) {
-        setActiveAccount(session);
-      }
-    };
-    void hydrateSession();
-    return () => {
-      mounted = false;
-    };
+    const unsubscribe = subscribeToActiveSession((session: { id: string; email: string; createdAt?: string } | null) => {
+      setActiveAccount(session);
+    });
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -619,16 +612,19 @@ export default function App() {
             <CaloriesPage
               requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000, true)}
               accountId={activeAccount?.id}
+              accountEmail={activeAccount?.email}
             />
           ) : activeTab === "scanner" ? (
             <ScannerPage
               requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000, true)}
               accountId={activeAccount?.id}
+              accountEmail={activeAccount?.email}
             />
           ) : (
             <ProfilePage
               history={history}
               accountId={activeAccount?.id}
+              accountEmail={activeAccount?.email}
               activeAccount={activeAccount}
               authLoading={authLoading}
               onAuthenticate={handleAuthenticate}

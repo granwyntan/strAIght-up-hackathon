@@ -360,6 +360,7 @@ def analyze_supplement(
     content_type: str,
     conditions: str,
     goals: str,
+    generate_infographic: bool = True,
     request_id: str | None = None,
 ) -> SupplementAnalysisResult:
     request_id = request_id or str(uuid.uuid4())
@@ -446,10 +447,10 @@ def analyze_supplement(
     text_completed_at = time.time()
 
     infographic_key = _infographic_cache_key(analysis_text, normalized_conditions, normalized_goals)
-    infographic_image_data_url = _infographic_cache.get(infographic_key)
+    infographic_image_data_url = _infographic_cache.get(infographic_key) if generate_infographic else ""
     image_started_at: float | None = None
     image_completed_at: float | None = None
-    if infographic_image_data_url is None:
+    if generate_infographic and infographic_image_data_url is None:
         image_started_at = time.time()
         infographic_image_data_url = _generate_infographic_data_url(
             client=client,
@@ -459,7 +460,7 @@ def analyze_supplement(
         )
         image_completed_at = time.time()
         _infographic_cache[infographic_key] = infographic_image_data_url
-    elif infographic_image_data_url:
+    elif generate_infographic and infographic_image_data_url:
         now = time.time()
         image_started_at = now
         image_completed_at = now
@@ -481,6 +482,7 @@ def analyze_supplement_by_name(
     supplement_name: str,
     conditions: str,
     goals: str,
+    generate_infographic: bool = True,
     request_id: str | None = None,
 ) -> SupplementAnalysisResult:
     request_id = request_id or str(uuid.uuid4())
@@ -551,10 +553,10 @@ def analyze_supplement_by_name(
     text_completed_at = time.time()
 
     infographic_key = _infographic_cache_key(analysis_text, normalized_conditions, normalized_goals)
-    infographic_image_data_url = _infographic_cache.get(infographic_key)
+    infographic_image_data_url = _infographic_cache.get(infographic_key) if generate_infographic else ""
     image_started_at: float | None = None
     image_completed_at: float | None = None
-    if infographic_image_data_url is None:
+    if generate_infographic and infographic_image_data_url is None:
         image_started_at = time.time()
         infographic_image_data_url = _generate_infographic_data_url(
             client=client,
@@ -564,7 +566,7 @@ def analyze_supplement_by_name(
         )
         image_completed_at = time.time()
         _infographic_cache[infographic_key] = infographic_image_data_url
-    elif infographic_image_data_url:
+    elif generate_infographic and infographic_image_data_url:
         now = time.time()
         image_started_at = now
         image_completed_at = now

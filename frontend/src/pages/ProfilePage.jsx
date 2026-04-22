@@ -1,20 +1,24 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import { palette } from "../data";
-import { emptyProfile, loadProfile, saveProfile } from "../storage/profileStorage";
+import { emptyProfile, loadProfile, loadProfileLastSynced, saveProfile } from "../storage/profileStorage";
 import AuthGate from "../components/auth/AuthGate";
 
 const GENDER_OPTIONS = ["Male", "Female", "Other", "Prefer not to say"];
 const TABS = ["overview", "settings"];
 
-export default function ProfilePage({ history: _history, accountId, activeAccount, authLoading, onAuthenticate, onLogout }) {
+export default function ProfilePage({ history: _history, accountId, accountEmail, activeAccount, authLoading, onAuthenticate, onLogout }) {
   const [profile, setProfile] = useState(emptyProfile);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
+  const [webcamVisible, setWebcamVisible] = useState(false);
+  const [webcamError, setWebcamError] = useState("");
+  const [webcamStream, setWebcamStream] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -25,14 +29,17 @@ export default function ProfilePage({ history: _history, accountId, activeAccoun
       if (!accountId) {
         if (mounted) {
           setProfile({ ...emptyProfile });
+          setLastSyncedAt("");
           setLoadingProfile(false);
         }
         return;
       }
       try {
-        const saved = await loadProfile(accountId);
+        const saved = await loadProfile(accountId, accountEmail);
+        const syncedAt = await loadProfileLastSynced(accountId, accountEmail);
         if (mounted) {
           setProfile(saved);
+          setLastSyncedAt(syncedAt);
         }
       } catch (error) {
         console.warn("Unable to load profile from local storage", error);
@@ -46,7 +53,7 @@ export default function ProfilePage({ history: _history, accountId, activeAccoun
     return () => {
       mounted = false;
     };
-  }, [accountId]);
+  }, [accountId, accountEmail]);
 
   const updateField = (field, value) => {
     setProfile((current) => ({ ...current, [field]: value }));
@@ -79,6 +86,27 @@ export default function ProfilePage({ history: _history, accountId, activeAccoun
     if (savingProfile || loadingProfile) {
       return;
     }
+    if (Platform.OS === "web") {
+      setWebcamError("");
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        setWebcamError("Webcam is not available in this browser.");
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        setWebcamStream(stream);
+        setWebcamVisible(true);
+        setTimeout(() => {
+          const videoElement = document.getElementById("profile-webcam-video");
+          if (videoElement) {
+            videoElement.srcObject = stream;
+          }
+        }, 0);
+      } catch {
+        setWebcamError("Could not access webcam. Please allow camera permission.");
+      }
+      return;
+    }
     if (Platform.OS !== "web") {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
@@ -98,6 +126,45 @@ export default function ProfilePage({ history: _history, accountId, activeAccoun
     updateField("profilePicture", cameraResult.assets[0].uri || "");
   };
 
+  const closeWebcamModal = () => {
+    if (webcamStream) {
+      for (const track of webcamStream.getTracks()) {
+        track.stop();
+      }
+    }
+    setWebcamStream(null);
+    setWebcamVisible(false);
+  };
+
+  const captureWebcamPhoto = async () => {
+    const videoElement = document.getElementById("profile-webcam-video");
+    if (!videoElement) {
+      setWebcamError("Unable to access webcam preview.");
+      return;
+    }
+    const width = videoElement.videoWidth || 640;
+    const height = videoElement.videoHeight || 640;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      setWebcamError("Unable to capture webcam image.");
+      return;
+    }
+    context.drawImage(videoElement, 0, 0, width, height);
+    const blob = await new Promise((resolve) => {
+      canvas.toBlob((nextBlob) => resolve(nextBlob), "image/jpeg", 0.9);
+    });
+    if (!blob) {
+      setWebcamError("Unable to capture webcam image.");
+      return;
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    updateField("profilePicture", objectUrl);
+    closeWebcamModal();
+  };
+
   const openPhotoSourcePicker = () => {
     Alert.alert("Profile picture", "Choose a photo source", [
       { text: "Use camera", onPress: () => void takeProfileImage() },
@@ -105,6 +172,16 @@ export default function ProfilePage({ history: _history, accountId, activeAccoun
       { text: "Cancel", style: "cancel" }
     ]);
   };
+
+  useEffect(() => {
+    return () => {
+      if (webcamStream) {
+        for (const track of webcamStream.getTracks()) {
+          track.stop();
+        }
+      }
+    };
+  }, [webcamStream]);
 
   const onSave = async () => {
     if (!accountId) {
@@ -117,8 +194,10 @@ export default function ProfilePage({ history: _history, accountId, activeAccoun
     setSavingProfile(true);
     setSaveSuccess(false);
     try {
-      const saved = await saveProfile(profile, accountId);
+      const saved = await saveProfile(profile, accountId, accountEmail);
+      const syncedAt = await loadProfileLastSynced(accountId, accountEmail);
       setProfile(saved);
+      setLastSyncedAt(syncedAt);
       setSaveSuccess(true);
       Alert.alert("Saved", "Your profile has been saved on this device.");
       setTimeout(() => {
@@ -134,6 +213,7 @@ export default function ProfilePage({ history: _history, accountId, activeAccoun
 
   const displayName = profile.name.trim() || "Your name";
   const displayGoals = profile.goals.trim() || "Add your health goals in Settings so they appear here.";
+  const lastSyncedLabel = lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "Not synced yet";
   const initials = displayName
     .split(/\s+/)
     .filter(Boolean)
@@ -159,6 +239,10 @@ export default function ProfilePage({ history: _history, accountId, activeAccoun
               <Pressable style={styles.accountLogoutButton} onPress={onLogout}>
                 <Text style={styles.accountLogoutText}>Logout</Text>
               </Pressable>
+            </View>
+            <View style={styles.syncMetaRow}>
+              <Text style={styles.syncMetaLabel}>Last synced</Text>
+              <Text style={styles.syncMetaValue}>{lastSyncedLabel}</Text>
             </View>
           </View>
         ) : null}
@@ -329,6 +413,26 @@ export default function ProfilePage({ history: _history, accountId, activeAccoun
           </View>
         )}
       </View>
+
+      {Platform.OS === "web" ? (
+        <Modal visible={webcamVisible} transparent animationType="fade" onRequestClose={closeWebcamModal}>
+          <View style={styles.webcamBackdrop}>
+            <View style={styles.webcamCard}>
+              <Text style={styles.webcamTitle}>Webcam capture</Text>
+              <video id="profile-webcam-video" autoPlay playsInline muted style={StyleSheet.flatten(styles.webcamVideo)} />
+              {webcamError ? <Text style={styles.webcamError}>{webcamError}</Text> : null}
+              <View style={styles.webcamActions}>
+                <Pressable style={styles.webcamPrimary} onPress={() => void captureWebcamPhoto()}>
+                  <Text style={styles.webcamPrimaryText}>Capture</Text>
+                </Pressable>
+                <Pressable style={styles.webcamSecondary} onPress={closeWebcamModal}>
+                  <Text style={styles.webcamSecondaryText}>Close</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -421,6 +525,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700"
   },
+  syncMetaRow: {
+    borderWidth: 1,
+    borderColor: palette.border,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: "#fffdf9"
+  },
+  syncMetaLabel: {
+    color: palette.muted,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.25
+  },
+  syncMetaValue: {
+    marginTop: 2,
+    color: palette.ink,
+    fontSize: 13,
+    fontWeight: "600"
+  },
   lockedCard: {
     paddingTop: 2,
     gap: 4
@@ -434,6 +559,70 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontSize: 13,
     lineHeight: 19
+  },
+  webcamBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20
+  },
+  webcamCard: {
+    width: "100%",
+    maxWidth: 460,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    padding: 14,
+    gap: 10
+  },
+  webcamTitle: {
+    color: palette.ink,
+    fontSize: 16,
+    fontWeight: "700"
+  },
+  webcamVideo: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 12,
+    backgroundColor: "#111"
+  },
+  webcamError: {
+    color: palette.red,
+    fontSize: 13
+  },
+  webcamActions: {
+    flexDirection: "row",
+    gap: 10
+  },
+  webcamPrimary: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 10,
+    backgroundColor: palette.blue,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  webcamPrimaryText: {
+    color: "#fffdfa",
+    fontSize: 14,
+    fontWeight: "700"
+  },
+  webcamSecondary: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#f8f4ed",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  webcamSecondaryText: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: "700"
   },
   cardTitle: {
     color: palette.ink,

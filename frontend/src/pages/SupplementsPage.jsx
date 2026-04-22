@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import { palette } from "../data";
@@ -78,7 +78,7 @@ async function readApiError(response, fallback) {
   return fallback;
 }
 
-export default function SupplementsPage({ requestApi, accountId }) {
+export default function SupplementsPage({ requestApi, accountId, accountEmail }) {
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [conditions, setConditions] = useState(DEFAULT_CONDITIONS);
   const [goals, setGoals] = useState(DEFAULT_GOALS);
@@ -95,6 +95,7 @@ export default function SupplementsPage({ requestApi, accountId }) {
   const [error, setError] = useState("");
   const [webcamActive, setWebcamActive] = useState(false);
   const [webcamError, setWebcamError] = useState("");
+  const [infographicEnabled, setInfographicEnabled] = useState(true);
   const canCallApi = useMemo(() => typeof requestApi === "function", [requestApi]);
   const selectedImageAspectRatio = selectedAsset?.width && selectedAsset?.height ? selectedAsset.width / selectedAsset.height : 1.4;
   const streamRef = useRef(null);
@@ -198,7 +199,7 @@ export default function SupplementsPage({ requestApi, accountId }) {
 
   const hydrateHistory = async () => {
     try {
-      const entries = await loadSupplementHistory(accountId);
+      const entries = await loadSupplementHistory(accountId, accountEmail);
       setSearchHistory(entries);
     } catch (storageError) {
       console.warn("Unable to load supplement history", storageError);
@@ -230,7 +231,7 @@ export default function SupplementsPage({ requestApi, accountId }) {
     let mounted = true;
     const hydrateFromProfile = async () => {
       try {
-        const profile = await loadProfile(accountId);
+        const profile = await loadProfile(accountId, accountEmail);
         if (!mounted) {
           return;
         }
@@ -249,11 +250,11 @@ export default function SupplementsPage({ requestApi, accountId }) {
     return () => {
       mounted = false;
     };
-  }, [accountId]);
+  }, [accountId, accountEmail]);
 
   useEffect(() => {
     void hydrateHistory();
-  }, [accountId]);
+  }, [accountId, accountEmail]);
 
   const pickImage = async () => {
     if (imageOptionsDisabled) {
@@ -417,6 +418,7 @@ export default function SupplementsPage({ requestApi, accountId }) {
 
       formData.append("conditions", conditions || DEFAULT_CONDITIONS);
       formData.append("goals", goals || DEFAULT_GOALS);
+      formData.append("generateInfographic", infographicEnabled ? "true" : "false");
 
       const response = await requestApi("/api/supplements/analyze", {
         method: "POST",
@@ -434,14 +436,17 @@ export default function SupplementsPage({ requestApi, accountId }) {
         (selectedAsset?.fileName && selectedAsset.fileName.trim()) ||
         (selectedAsset?.uri ? "Uploaded supplement image" : "Supplement image");
       const title = inferSupplementTitleFromResult(payload, queryLabel);
+      const nowIso = new Date().toISOString();
       const updatedHistory = await addSupplementHistoryEntry({
-        id: `image-${Date.now()}`,
+        id: nowIso.replace(/[-:.TZ]/g, "").slice(0, 17),
         query: queryLabel,
         title,
         mode: "image",
-        searchedAt: new Date().toISOString(),
+        searchedAt: nowIso,
+        inputImage: selectedAsset?.uri || selectedAsset?.fileName || queryLabel,
+        infographic: payload?.infographicImageDataUrl || "",
         result: payload
-      }, accountId);
+      }, accountId, accountEmail);
       setSearchHistory(updatedHistory);
     } catch (fetchError) {
       setTextGenerationStatus("failed");
@@ -484,7 +489,8 @@ export default function SupplementsPage({ requestApi, accountId }) {
         body: JSON.stringify({
           supplementName: trimmedQuery,
           conditions: conditions || DEFAULT_CONDITIONS,
-          goals: goals || DEFAULT_GOALS
+          goals: goals || DEFAULT_GOALS,
+          generateInfographic: infographicEnabled
         })
       });
       if (!response.ok) {
@@ -494,14 +500,17 @@ export default function SupplementsPage({ requestApi, accountId }) {
       setResult(payload);
       applyGenerationStatusFromPayload(payload);
       const title = inferSupplementTitleFromResult(payload, trimmedQuery);
+      const nowIso = new Date().toISOString();
       const updatedHistory = await addSupplementHistoryEntry({
-        id: `text-${Date.now()}`,
+        id: nowIso.replace(/[-:.TZ]/g, "").slice(0, 17),
         query: trimmedQuery,
         title,
         mode: "text",
-        searchedAt: new Date().toISOString(),
+        searchedAt: nowIso,
+        inputImage: "",
+        infographic: payload?.infographicImageDataUrl || "",
         result: payload
-      }, accountId);
+      }, accountId, accountEmail);
       setSearchHistory(updatedHistory);
       if (activeSubPage !== "analyzer") {
         setActiveSubPage("analyzer");
@@ -517,12 +526,12 @@ export default function SupplementsPage({ requestApi, accountId }) {
   };
 
   const clearOneHistoryItem = async (entryId) => {
-    const updated = await removeSupplementHistoryEntry(entryId, accountId);
+    const updated = await removeSupplementHistoryEntry(entryId, accountId, accountEmail);
     setSearchHistory(updated);
   };
 
   const clearAllHistoryItems = async () => {
-    const updated = await clearSupplementHistory(accountId);
+    const updated = await clearSupplementHistory(accountId, accountEmail);
     setSearchHistory(updated);
   };
 
@@ -622,13 +631,20 @@ export default function SupplementsPage({ requestApi, accountId }) {
             onChangeGoals={setGoals}
             loading={loading}
             error={error}
-            showCameraButton={Platform.OS !== "web"}
+            showCameraButton
             disableImageOptions={imageOptionsDisabled}
             onClearImageSelection={clearImageSelection}
             clearImageSelectionLabel="Clear image"
             onCaptureImage={captureImage}
             onPickImage={pickImage}
           />
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleTextWrap}>
+              <Text style={styles.toggleTitle}>Generate infographic</Text>
+              <Text style={styles.toggleBody}>Disable to speed up supplement analysis.</Text>
+            </View>
+            <Switch value={infographicEnabled} onValueChange={setInfographicEnabled} disabled={loading} />
+          </View>
 
           <Pressable
             style={[styles.searchButton, (loading || selectedMode === "none") && styles.searchButtonDisabled]}
@@ -782,6 +798,32 @@ const styles = StyleSheet.create({
   searchButtonText: {
     color: "#ffffff",
     fontWeight: "700"
+  },
+  toggleRow: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#fffdf9",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  toggleTextWrap: {
+    flex: 1,
+    gap: 2
+  },
+  toggleTitle: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: "700"
+  },
+  toggleBody: {
+    color: palette.muted,
+    fontSize: 12,
+    lineHeight: 18
   },
   callMetaCard: {
     borderRadius: 12,

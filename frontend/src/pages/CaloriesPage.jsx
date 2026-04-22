@@ -56,7 +56,14 @@ async function readApiError(response, fallback) {
   return fallback;
 }
 
-export default function CaloriesPage({ requestApi, accountId }) {
+function formatLocalIsoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
   const [values, setValues] = useState(DEFAULT_VALUES);
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [result, setResult] = useState(null);
@@ -123,7 +130,7 @@ export default function CaloriesPage({ requestApi, accountId }) {
     let mounted = true;
     const hydrateFromProfile = async () => {
       try {
-        const profile = await loadProfile(accountId);
+        const profile = await loadProfile(accountId, accountEmail);
         if (!mounted) {
           return;
         }
@@ -143,7 +150,7 @@ export default function CaloriesPage({ requestApi, accountId }) {
     return () => {
       mounted = false;
     };
-  }, [accountId]);
+  }, [accountId, accountEmail]);
 
   useEffect(() => {
     if (Platform.OS === "web" && webcamActive && videoRef.current && streamRef.current) {
@@ -169,13 +176,13 @@ export default function CaloriesPage({ requestApi, accountId }) {
     const jsDay = normalized.getDay();
     const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
     normalized.setDate(normalized.getDate() + mondayOffset);
-    return normalized.toISOString().slice(0, 10);
+    return formatLocalIsoDate(normalized);
   }
 
   async function loadHistory(anchorDate = weekAnchor) {
     setHistoryLoading(true);
     try {
-      const payload = await loadCalorieWeek(accountId, weekStartIso(anchorDate));
+      const payload = await loadCalorieWeek(accountId, weekStartIso(anchorDate), accountEmail);
       setHistoryPayload(payload);
     } catch (loadError) {
       setTrackerError(loadError instanceof Error ? loadError.message : "Unable to load calorie history.");
@@ -433,8 +440,8 @@ export default function CaloriesPage({ requestApi, accountId }) {
       await addCalorieEntry(accountId, {
         mealName: normalizedMealName,
         calories: Math.round(parsedCalories),
-        date: entryDate || new Date().toISOString().slice(0, 10)
-      });
+        date: entryDate || formatLocalIsoDate(new Date())
+      }, accountEmail);
       await loadHistory(weekAnchor);
       if (switchToHistory && activeSubPage !== "history") {
         setActiveSubPage("history");
@@ -452,7 +459,7 @@ export default function CaloriesPage({ requestApi, accountId }) {
     const added = await addTrackerEntry({
       mealName: suggestedMealName,
       calories: suggestedCalories,
-      entryDate: new Date().toISOString().slice(0, 10),
+      entryDate: formatLocalIsoDate(new Date()),
       switchToHistory: false
     });
     if (added) {
@@ -479,7 +486,7 @@ export default function CaloriesPage({ requestApi, accountId }) {
       await updateCalorieEntry(accountId, entryId, {
         mealName: updates.mealName || "",
         calories: Math.round(Number(updates.calories))
-      });
+      }, accountEmail);
       await loadHistory(weekAnchor);
     } catch (actionError) {
       setTrackerError(actionError instanceof Error ? actionError.message : "Unable to update entry.");
@@ -491,7 +498,7 @@ export default function CaloriesPage({ requestApi, accountId }) {
   const deleteTrackerEntry = async (entryId) => {
     setEntryActionLoading(true);
     try {
-      await deleteCalorieEntry(accountId, entryId);
+      await deleteCalorieEntry(accountId, entryId, accountEmail);
       await loadHistory(weekAnchor);
     } catch (actionError) {
       setTrackerError(actionError instanceof Error ? actionError.message : "Unable to delete entry.");
@@ -503,7 +510,7 @@ export default function CaloriesPage({ requestApi, accountId }) {
   const clearTrackerDay = async (entryDate) => {
     setEntryActionLoading(true);
     try {
-      await clearCalorieDay(accountId, entryDate);
+      await clearCalorieDay(accountId, entryDate, accountEmail);
       await loadHistory(weekAnchor);
       return true;
     } catch (actionError) {
