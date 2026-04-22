@@ -134,6 +134,11 @@ def _singapore_authority_queries(claim: str, queries: list[str]) -> list[str]:
         f"site:ncid.sg {claim_text}",
         f"site:ace-hta.gov.sg {claim_text}",
         f"site:healthxchange.sg {claim_text}",
+        f"site:a-star.edu.sg {claim_text}",
+        f"site:scri.edu.sg {claim_text}",
+        f"site:nhic.sg {claim_text}",
+        f"site:singhealthdukenus.com.sg {claim_text}",
+        f"site:nuhs.edu.sg {claim_text}",
     ]
     deduped: list[str] = []
     seen: set[str] = set()

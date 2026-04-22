@@ -137,12 +137,18 @@ def claim_evidence_fit_score(claim_analysis: ClaimAnalysis, sources: list[Source
     support_strength = _high_quality_support(sources)
 
     fit_score = consensus.credibilityScore
+    if support_strength >= 2.4 and consensus.supportShare >= 0.58:
+        fit_score += 10
+    elif support_strength >= 1.8 and consensus.supportShare >= 0.5:
+        fit_score += 6
     if strongest_subclaim >= 4 and support_strength < 1.5:
         fit_score -= 16
     if strongest_subclaim == 5 and claim_analysis.languageRiskScore >= 45:
         fit_score -= 10
     if consensus.contradictionShare > 0.45:
         fit_score -= 8
+    elif consensus.contradictionShare < 0.18 and support_strength >= 1.8:
+        fit_score += 4
     return max(0, min(100, fit_score))
 
 
@@ -201,7 +207,14 @@ def calibrated_credibility_score(claim_analysis: ClaimAnalysis, sources: list[So
     strongest_claim = max((item.strength for item in claim_analysis.atomicClaims), default=1)
     high_quality_support = _high_quality_support(sources)
     penalties: list[str] = []
+    boosts: list[str] = []
 
+    if high_quality_support >= 2.5 and consensus.supportShare >= 0.58:
+        score += 10
+        boosts.append("Strong verified or high-quality support added a 10-point boost.")
+    elif high_quality_support >= 1.8 and consensus.supportShare >= 0.5:
+        score += 6
+        boosts.append("Consistent high-quality support added a 6-point boost.")
     if strongest_claim >= 4 and high_quality_support < 1.5:
         score -= 14
         penalties.append("Strong claim without strong supporting evidence triggered a 14-point penalty.")
@@ -211,8 +224,11 @@ def calibrated_credibility_score(claim_analysis: ClaimAnalysis, sources: list[So
     if consensus.contradictionShare > 0.45:
         score -= 8
         penalties.append("Contradicting evidence exceeded 45% of weighted evidence, triggering an 8-point penalty.")
+    elif consensus.contradictionShare < 0.18 and high_quality_support >= 1.8:
+        score += 4
+        boosts.append("Low contradiction pressure added a 4-point boost.")
 
-    return max(0, min(100, score)), penalties, consensus
+    return max(0, min(100, score)), [*boosts, *penalties], consensus
 
 
 def contradiction_summary(sources: list[SourceAssessment]) -> Counter[str]:

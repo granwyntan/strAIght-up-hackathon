@@ -58,12 +58,29 @@ class SingaporeAuthorityOutput(BaseModel):
 
 
 def review_singapore_authorities(claim: str, sources: list[SourceAssessment]) -> SingaporeAuthorityReview:
-    singapore_sources = [source for source in sources if _is_singapore_authority(source.domain)]
+    lowered_claim = claim.lower()
+    singapore_marked_claim = any(marker in lowered_claim for marker in ("singapore", "sg", "moh", "hsa", "healthhub", "ncid"))
+    singapore_sources = [
+        source
+        for source in sources
+        if _is_singapore_authority(source.domain)
+        or "singapore" in (source.sourceName or "").lower()
+        or "singapore" in (source.title or "").lower()
+    ]
     if not singapore_sources:
         return SingaporeAuthorityReview(
             totalSources=0,
             agreementLabel="insufficient",
-            summary="No Singapore authority or Singapore institutional source was retained in this review.",
+            summary=(
+                "No Singapore authority or Singapore institutional source was retained in this review."
+                if singapore_marked_claim
+                else "This claim did not surface retained Singapore-specific authority evidence in the current run."
+            ),
+            keyPoints=[
+                "No retained Singapore authority source cleared the final evidence screen for this run."
+            ]
+            if singapore_marked_claim
+            else [],
         )
 
     sentiment_counts = Counter(source.sentiment for source in singapore_sources)

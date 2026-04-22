@@ -74,25 +74,26 @@ def _baseline_signals(claim_analysis: ClaimAnalysis, sources: list[SourceAssessm
     risk_score = min(
         100,
         round(
-            claim_analysis.languageRiskScore * 0.35
+            claim_analysis.languageRiskScore * 0.28
             + (len(weak_supportive) * 4)
             + (len(strong_contradictions) * 8)
-            + (max(0.0, consensus.contradictionShare) * 26)
+            + (max(0.0, consensus.contradictionShare) * 24)
             + (8 if not verified_support and consensus.supportShare < 0.42 else 0)
+            - (10 if verified_support and consensus.supportShare >= 0.52 and consensus.contradictionShare < 0.22 else 0)
         ),
     )
-    if risk_score >= 76:
+    if risk_score >= 82:
         classification: MisinformationRisk = "high"
-    elif risk_score >= 48:
+    elif risk_score >= 54:
         classification = "moderate"
     else:
         classification = "low"
     summary = (
         "The claim behaves more like a hoax-risk or overstatement pattern than a clean fact pattern."
         if classification == "high"
-        else "The claim shows some misinformation-risk markers and should be treated cautiously."
+        else "The claim shows some overclaim or misinformation-risk markers, but they are not strong enough to override the wider evidence alone."
         if classification == "moderate"
-        else "The claim shows limited hoax-pattern signals, although normal evidence uncertainty may still remain."
+        else "The claim does not show strong hoax-pattern behavior in the final pass, although normal evidence uncertainty may still remain."
     )
     return HoaxDetectionOutput(
         riskScore=risk_score,
@@ -142,9 +143,9 @@ def detect_hoax_risk(claim: str, claim_analysis: ClaimAnalysis, sources: list[So
     merged_signals = list(dict.fromkeys([signal.model_dump_json() for signal in [*baseline.signals, *llm_result.signals]]))
     signals = [HoaxSignal.model_validate_json(item) for item in merged_signals][:8]
     risk_score = round((baseline.riskScore + llm_result.riskScore) / 2)
-    if risk_score >= 76:
+    if risk_score >= 82:
         classification: MisinformationRisk = "high"
-    elif risk_score >= 48:
+    elif risk_score >= 54:
         classification = "moderate"
     else:
         classification = "low"

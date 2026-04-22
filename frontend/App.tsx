@@ -190,36 +190,36 @@ const consultantChecks = [
 
 const profileSections = [
   {
-    title: "Health profile",
-    body: "Aly Tan, 29. 168 cm, 61 kg. Light-to-moderate exercise 4 times weekly, with a focus on sleep quality, stable energy, and skin health.",
+    title: "Current health focus",
+    body: "Sleep quality, steady daytime energy, skin stability, hydration, and realistic routines that can hold up during busy weeks.",
   },
   {
-    title: "Conditions and flags",
-    body: "Mild seasonal allergies, intermittent eczema flares, family history of hypertension. No diabetes and no known cardiovascular disease.",
+    title: "Conditions and background",
+    body: "Mild seasonal allergies, intermittent eczema flares, and a family history of hypertension, with no known diabetes or established cardiovascular disease.",
   },
   {
     title: "Medications and supplements",
-    body: "Cetirizine as needed, Vitamin D3 daily, Omega-3 daily, magnesium glycinate occasionally before bed.",
+    body: "Cetirizine as needed, Vitamin D3 daily, Omega-3 daily, and magnesium glycinate occasionally before bed.",
   },
   {
-    title: "Nutrition and hydration",
-    body: "Protein-forward breakfast, balanced lunch, afternoon fruit or nuts, and a hydration target of 2.2 liters on most days.",
+    title: "Nutrition rhythm",
+    body: "Protein-forward breakfast, balanced lunch, fruit or nuts in the afternoon, and a hydration goal of about 2.2 liters on most days.",
   },
   {
     title: "Sleep and recovery",
-    body: "Bedtime target 11 PM, wind-down routine from 10:15 PM, and one lighter recovery day after high-activity sessions.",
+    body: "Bedtime target around 11 PM, wind-down routine from 10:15 PM, and one lighter recovery day after higher-activity sessions.",
   },
   {
     title: "Movement routine",
-    body: "Walking most days with Pilates twice weekly and light strength work twice weekly.",
+    body: "Walking most days, Pilates twice weekly, and light strength work twice weekly to support energy and recovery.",
   },
   {
     title: "Care preferences",
-    body: "Prefers evidence-based guidance, lower-caffeine options after lunch, and plans that fit a busy weekday schedule.",
+    body: "Prefers evidence-based guidance, low-friction routines, lower caffeine after lunch, and plans that fit a busy weekday schedule.",
   },
   {
     title: "Alerts and support",
-    body: "No known drug allergies. Seasonal allergy tracking is turned on, and eczema flare notes are logged during high-stress weeks.",
+    body: "No known drug allergies. Seasonal allergy tracking is on, and eczema flare notes are logged during higher-stress weeks.",
   },
 ];
 
@@ -281,12 +281,12 @@ function formatTimestamp(value: string) {
 
 function depthLabel(depth: ReviewDepth) {
   if (depth === "quick") {
-    return "Quick review";
+    return "Quick";
   }
   if (depth === "deep") {
-    return "Deep review";
+    return "Deep";
   }
-  return "Standard review";
+  return "Standard";
 }
 
 function depthDescription(depth: ReviewDepth) {
@@ -588,7 +588,7 @@ function historySortLabel(sort: HistorySort) {
   if (sort === "score") {
     return "Highest Score";
   }
-  return "Sorted by Latest";
+  return "Newest First";
 }
 
 const HEALTH_KEYWORDS = [
@@ -1519,9 +1519,9 @@ function GramwinApp() {
     }
   }
 
-  function applyFeaturedClaim(item: FeaturedClaim) {
-    setClaimDraft(item.claim);
-    setContextDraft(item.whyItIsInteresting);
+function applyFeaturedClaim(item: FeaturedClaim) {
+    setClaimDraft(formatClaimForDisplay(item.claim));
+    setContextDraft(item.id.startsWith("recent-") ? "" : item.whyItIsInteresting);
     setClaimSourceDraft("");
     setPopulationDraft("");
     setFocusDraft("");
@@ -1718,24 +1718,15 @@ function Header({
 }) {
   return (
     <Surface style={styles.headerSurface} elevation={0}>
-      <View style={styles.headerTop}>
-        <View style={styles.headerBrandWrap}>
-          <Text variant="headlineSmall" style={styles.headerTitle}>
-            {brand}
-          </Text>
+        <View style={styles.headerTop}>
+          <View style={styles.headerBrandWrap}>
+            <Text variant="headlineSmall" style={styles.headerTitle}>
+              {brand}
+            </Text>
           <Text variant="bodyMedium" style={styles.headerSubtitle}>
             {tagline}
           </Text>
         </View>
-        <Chip
-          compact
-          icon={apiError ? "wifi-strength-alert-outline" : "wifi-strength-4"}
-          style={[styles.headerChip, apiError ? styles.headerChipError : styles.headerChipOkay]}
-          textStyle={[styles.headerChipText, apiError ? styles.headerChipTextError : styles.headerChipTextOkay]}
-          onPress={onRetry}
-        >
-          {apiError ? "Offline" : "Live"}
-        </Chip>
       </View>
       <Text variant="bodySmall" style={styles.headerMicrocopy}>
         A calmer health dashboard with claim checking, medication support, and saved investigations in one place.
@@ -1766,15 +1757,6 @@ function ToolHeader({
             {body}
           </Text>
         </View>
-        <Chip
-          compact
-          icon={apiError ? "wifi-strength-alert-outline" : "wifi-strength-4"}
-          style={[styles.headerChip, apiError ? styles.headerChipError : styles.headerChipOkay]}
-          textStyle={[styles.headerChipText, apiError ? styles.headerChipTextError : styles.headerChipTextOkay]}
-          onPress={onRetry}
-        >
-          {apiError ? "Offline" : "Live"}
-        </Chip>
       </View>
     </Surface>
   );
@@ -1937,9 +1919,9 @@ function HomeScreen({
 
 function QuickLinks({ onOpenTab }: { onOpenTab: (tab: AppTab) => void }) {
   const links: Array<{ tab: AppTab; icon: string; label: string; body: string }> = [
-    { tab: "consultant", icon: "doctor", label: "Consultant", body: "Investigate claims and read evidence." },
+    { tab: "consultant", icon: "stethoscope", label: "Consultant", body: "Investigate claims and read evidence." },
     { tab: "nutrition", icon: "silverware-fork-knife", label: "Nutrition", body: "Meals, hydration, and nutrient planning." },
-    { tab: "supplements", icon: "pill", label: "Supplements", body: "Supplement notes and medication workflows." },
+    { tab: "supplements", icon: "capsule", label: "Supplements", body: "Supplement notes and medication workflows." },
     { tab: "profile", icon: "account-circle-outline", label: "Profile", body: "Health profile, goals, and context." },
   ];
 
@@ -2088,12 +2070,15 @@ function ConsultantScreen(props: ConsultantScreenProps) {
   }, [history]);
 
   const recentQueryMatches = useMemo(() => {
+    if (!healthGuard.allowed) {
+      return [];
+    }
     const query = normalizedClaimKey(claimDraft);
     if (!query) {
       return [];
     }
     return recentSuggestions.filter((item) => normalizedClaimKey(item.claim).includes(query)).slice(0, 5);
-  }, [claimDraft, recentSuggestions]);
+  }, [claimDraft, healthGuard.allowed, recentSuggestions]);
 
   const liveQueryMatches = useMemo(() => {
     const seen = new Set(recentQueryMatches.map((item) => normalizedClaimKey(item.claim)));
@@ -2101,7 +2086,7 @@ function ConsultantScreen(props: ConsultantScreenProps) {
       .map((claim, index) => ({
         id: `suggestion-${index}-${normalizedClaimKey(claim)}`,
         claim,
-        whyItIsInteresting: "Suggested live search phrasing",
+        whyItIsInteresting: "",
       }))
       .filter((item) => {
         const key = normalizedClaimKey(item.claim);
@@ -2204,11 +2189,13 @@ function ConsultantScreen(props: ConsultantScreenProps) {
                         <TouchableRipple key={item.id} style={styles.recentQueryRow} onPress={() => onUseClaim(item)}>
                           <View style={styles.cardStack}>
                             <Text variant="bodyMedium" style={styles.linkTitle}>
-                              {item.claim}
+                              {formatClaimForDisplay(item.claim)}
                             </Text>
-                            <Text variant="bodySmall" style={styles.historyMetaLine}>
-                              {item.whyItIsInteresting}
-                            </Text>
+                            {safeTrim(item.whyItIsInteresting) ? (
+                              <Text variant="bodySmall" style={styles.historyMetaLine}>
+                                {item.whyItIsInteresting}
+                              </Text>
+                            ) : null}
                           </View>
                         </TouchableRipple>
                       ))}
@@ -2230,9 +2217,11 @@ function ConsultantScreen(props: ConsultantScreenProps) {
                             <Text variant="bodyMedium" style={styles.linkTitle}>
                               {formatClaimForDisplay(item.claim)}
                             </Text>
-                            <Text variant="bodySmall" style={styles.historyMetaLine}>
-                              {item.whyItIsInteresting}
-                            </Text>
+                            {safeTrim(item.whyItIsInteresting) ? (
+                              <Text variant="bodySmall" style={styles.historyMetaLine}>
+                                {item.whyItIsInteresting}
+                              </Text>
+                            ) : null}
                           </View>
                         </TouchableRipple>
                       ))}
@@ -2313,13 +2302,13 @@ function ConsultantScreen(props: ConsultantScreenProps) {
 
               <View style={styles.segmentRow}>
                 <Chip selected={depth === "quick"} onPress={() => onDepthChange("quick")} style={styles.segmentChip}>
-                  Quick review
+                  Quick
                 </Chip>
                 <Chip selected={depth === "standard"} onPress={() => onDepthChange("standard")} style={styles.segmentChip}>
-                  Standard review
+                  Standard
                 </Chip>
                 <Chip selected={depth === "deep"} onPress={() => onDepthChange("deep")} style={styles.segmentChip}>
-                  Deep review
+                  Deep
                 </Chip>
               </View>
               <Text variant="bodySmall" style={styles.depthHint}>
@@ -2646,12 +2635,14 @@ function ProcessingCard({
   onCancel: () => void;
   cancelling: boolean;
 }) {
+  const { width } = useWindowDimensions();
+  const compact = width < 760;
   const steps = investigation.stepSummaries.length > 0 ? investigation.stepSummaries : [];
   const recentEvents = investigation.progressEvents.slice(-5).reverse();
   return (
     <Card mode="contained" style={styles.processingCard}>
       <Card.Content style={styles.cardStack}>
-        <View style={styles.rowBetween}>
+        <View style={[styles.rowBetween, compact && styles.rowBetweenStacked]}>
           <View style={styles.flexOne}>
             <Text variant="titleLarge" style={styles.formTitle}>
               Review in progress
@@ -2677,14 +2668,14 @@ function ProcessingCard({
             {steps.map((step) => {
               const indicator = statusIcon(step.status);
               return (
-                <View key={step.key} style={styles.stepRow}>
+                <View key={step.key} style={[styles.stepRow, compact && styles.stepRowCompact]}>
                   <Avatar.Icon size={40} icon={stageIcon(step)} color={palette.primary} style={styles.stepAvatar} />
                   <View style={styles.flexOne}>
-                    <View style={styles.rowBetween}>
+                    <View style={[styles.rowBetween, compact && styles.stepHeaderCompact]}>
                       <Text variant="titleSmall" style={styles.stepTitle}>
                         {step.title}
                       </Text>
-                      <Chip compact icon={indicator.icon} textStyle={[styles.miniChipText, { color: indicator.color }]}>
+                      <Chip compact icon={indicator.icon} style={compact ? styles.statusChipCompact : undefined} textStyle={[styles.miniChipText, { color: indicator.color }]}>
                         {statusLabel(step.status)}
                       </Chip>
                     </View>
@@ -2730,6 +2721,9 @@ function ProcessingCard({
 }
 
 function InvestigationResult({ investigation }: { investigation: InvestigationDetail }) {
+  const { width } = useWindowDimensions();
+  const compactSignals = width < 760;
+  const compactLayout = width < 760;
   const verdict = verdictMeta(investigation.verdict);
   const scoreMeta = scoreTone(investigation.overallScore);
   const groupedSources = investigation.sourceGroups.filter((group) => group.sources.length > 0);
@@ -2765,17 +2759,22 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
     ];
   }, [groupedSources, investigation.sources]);
   const riskMeta = riskTone(investigation.misinformationRisk);
-  const [explanationMode, setExplanationMode] = useState<"summary" | "eli15" | "detailed">("summary");
+  const [explanationMode, setExplanationMode] = useState<"summary" | "detailed">("summary");
   const [sourceTypeFilter, setSourceTypeFilter] = useState<"all" | SourceQualityLabel>("all");
   const [sourceSentimentFilter, setSourceSentimentFilter] = useState<"all" | SourceAssessment["sentiment"]>("all");
   const [recencyFilter, setRecencyFilter] = useState<"all" | "recent" | "established" | "undated">("all");
   const [studyTypeFilter, setStudyTypeFilter] = useState<"all" | SourceAssessment["evidenceTier"]>("all");
   const explanationText =
-    explanationMode === "eli15"
-      ? investigation.eli15Summary || investigation.aiSummary || investigation.summary
-      : explanationMode === "detailed"
+    explanationMode === "detailed"
       ? investigation.expertInsight || investigation.finalNarrative || investigation.aiSummary
       : investigation.aiSummary || investigation.finalNarrative || investigation.summary;
+  const agreementHighlights = [
+    ...investigation.strengths,
+    ...investigation.sources
+      .filter((source) => source.sentiment === "positive")
+      .slice(0, 4)
+      .map((source) => source.sentimentSummary || source.relevanceSummary || source.title),
+  ].filter(Boolean);
   const filteredGroups = useMemo(
     () =>
       sourceDeckGroups
@@ -2815,6 +2814,8 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
       }),
     [investigation.sources]
   );
+  const showSingaporeAuthoritySection =
+    Boolean(investigation.singaporeAuthorityReview) || singaporeAuthoritySources.length > 0 || safeLower(investigation.claim).includes("singapore");
   const singaporeReviewMeta = singaporeAgreementMeta(investigation.singaporeAuthorityReview?.agreementLabel);
   const fullSourceLog = useMemo(
     () =>
@@ -2842,7 +2843,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
     <View style={styles.cardStack}>
       <Card mode="contained" style={styles.resultHero}>
         <Card.Content style={styles.cardStack}>
-          <View style={styles.rowBetween}>
+          <View style={[styles.rowBetween, compactLayout && styles.rowBetweenStacked]}>
             <VerdictPill verdict={investigation.verdict} />
             <Chip compact style={[styles.scoreChip, { backgroundColor: scoreMeta.background }]} textStyle={[styles.scoreChipText, { color: scoreMeta.color }]}>
               {investigation.overallScore ?? "--"}/100
@@ -2854,7 +2855,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
           <Text key={`hero-${explanationMode}`} variant="bodyMedium" style={styles.resultBody}>
             {explanationText}
           </Text>
-          <View style={styles.resultMetaRow}>
+          <View style={[styles.resultMetaRow, compactLayout && styles.resultMetaColumn]}>
             <MiniStat label="Score band" value={scoreBandLabel(investigation.overallScore)} />
             <MiniStat label="Confidence" value={safeUpper(investigation.confidenceLevel ?? "unknown")} />
             <MiniStat label="Classification" value={investigation.truthClassification || verdict.label} />
@@ -2870,10 +2871,10 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
           </View>
           {investigation.sentiment ? (
             <>
-              <View style={styles.resultSignalRow}>
-                <SignalPill label="Support" value={`${investigation.sentiment.positivePct}%`} icon="check-circle" color={palette.success} background={palette.successSoft} />
-                <SignalPill label="Mixed" value={`${investigation.sentiment.neutralPct}%`} icon="help-circle" color={palette.warning} background={palette.warningSoft} />
-                <SignalPill label="Contradict" value={`${investigation.sentiment.negativePct}%`} icon="close-circle" color={palette.danger} background={palette.dangerSoft} />
+              <View style={[styles.resultSignalRow, compactSignals ? styles.resultSignalColumn : styles.resultSignalRowWide]}>
+                <SignalPill label="Agreement" value={`${investigation.sentiment.positivePct}%`} icon="check-circle" color={palette.success} background={palette.successSoft} />
+                <SignalPill label="Unsettled" value={`${investigation.sentiment.neutralPct}%`} icon="help-circle" color={palette.warning} background={palette.warningSoft} />
+                <SignalPill label="Pushback" value={`${investigation.sentiment.negativePct}%`} icon="close-circle" color={palette.danger} background={palette.dangerSoft} />
               </View>
               <ConfidenceBreakdownBar investigation={investigation} />
             </>
@@ -2885,7 +2886,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
       </Card>
 
       <ExpandableResultSection
-        title="Summary and conclusion"
+        title="Conclusion and findings"
         body={explanationText}
         icon="text-box-check-outline"
         bodyKey={explanationMode}
@@ -2894,7 +2895,6 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
           {([
             ["summary", "Summary"],
-            ["eli15", "Explain Like I'm 15"],
             ["detailed", "Detailed"],
           ] as const).map(([value, label]) => (
             <Chip key={value} selected={explanationMode === value} onPress={() => setExplanationMode(value)} style={styles.segmentChip}>
@@ -2917,7 +2917,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
 
       {investigation.keyFindings.length > 0 && (
         <ExpandableResultSection
-          title="What matters most"
+          title="Key details"
           body={investigation.keyFindings[0]}
           icon="star-four-points-circle-outline"
           defaultExpanded={false}
@@ -2928,12 +2928,14 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
         </ExpandableResultSection>
       )}
 
-      {(investigation.singaporeAuthorityReview || singaporeAuthoritySources.length > 0) && (
+      {showSingaporeAuthoritySection && (
         <ExpandableResultSection
           title="Singapore authority view"
           body={
             investigation.singaporeAuthorityReview?.summary ||
-            `${singaporeAuthoritySources.length} Singapore-linked health or research sources were found in this review.`
+            (singaporeAuthoritySources.length > 0
+              ? `${singaporeAuthoritySources.length} Singapore-linked health or research sources were found in this review.`
+              : "No retained Singapore authority source made it into the final evidence set for this run.")
           }
           icon="map-marker-radius-outline"
         >
@@ -3072,7 +3074,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
           {filteredGroups.length > 0 ? (
             filteredGroups.map((group) => (
               <View key={group.key} style={styles.cardStack}>
-                <View style={styles.rowBetween}>
+                <View style={[styles.rowBetween, compactLayout && styles.rowBetweenStacked]}>
                   <Text variant="titleMedium" style={styles.evidenceTitle}>
                     {group.title}
                   </Text>
@@ -3096,25 +3098,10 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
         </ExpandableResultSection>
       )}
 
-      {fullSourceLog.length > 0 && (
-        <ExpandableResultSection
-          title="Full source log"
-          body={`All ${investigation.sources.length} analyzed sources are preserved for this saved investigation, not just the streamlined evidence deck.`}
-          icon="database-outline"
-        >
-          <Text variant="bodySmall" style={styles.sectionBody}>
-            Use this log when you want the complete analyzed source pool, including lower-visibility items that still influenced scoring, consensus, and saved history.
-          </Text>
-          {fullSourceLog.map((source) => (
-            <EvidenceBlock key={`full-log-${source.id}`} source={source} />
-          ))}
-        </ExpandableResultSection>
-      )}
-
       {(investigation.misinformationRisk || investigation.hoaxSignals.length > 0) && (
         <ExpandableResultSection
-          title="Hoax and misinformation scan"
-          body={`Risk is ${investigation.misinformationRisk ?? "unknown"} right now. This stage checks whether the claim behaves like a truth-seeking statement, an overstatement, or a hoax-style health promise.`}
+          title="Misinformation pattern scan"
+          body={`Pattern risk is ${investigation.misinformationRisk ?? "unknown"} right now. This stage looks for overclaiming, weak citation habits, and mismatch between wording and real evidence strength.`}
           icon="alert-decagram-outline"
         >
           <View style={styles.historyMetaRow}>
@@ -3125,14 +3112,18 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
             {typeof investigation.claimAnalysis?.languageRiskScore === "number" ? (
               <Chip compact style={styles.segmentChip}>{`Language risk ${investigation.claimAnalysis.languageRiskScore}/100`}</Chip>
             ) : null}
+            {investigation.consensus ? <Chip compact style={styles.segmentChip}>{`Support share ${Math.round((investigation.consensus.supportShare ?? 0) * 100)}%`}</Chip> : null}
           </View>
+          <Text variant="bodySmall" style={styles.sectionBody}>
+            Lower risk here does not automatically make a claim true. It means the wording behaves more like a normal evidence question than a hoax-style health pitch.
+          </Text>
           {investigation.hoaxSignals.length > 0 ? (
             investigation.hoaxSignals.map((signal) => {
               const tone = riskTone(signal.severity);
               return (
                 <Card key={`${signal.label}-${signal.rationale}`} mode="contained" style={styles.evidenceCard}>
                   <Card.Content style={styles.cardStack}>
-                    <View style={styles.rowBetween}>
+                    <View style={[styles.rowBetween, compactLayout && styles.rowBetweenStacked]}>
                       <Text variant="titleMedium" style={styles.evidenceTitle}>
                         {signal.label}
                       </Text>
@@ -3155,9 +3146,21 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
         </ExpandableResultSection>
       )}
 
+      {agreementHighlights.length > 0 && (
+        <ExpandableResultSection
+          title="Supporting signals and reinforcing sources"
+          body={agreementHighlights[0]}
+          icon="check-decagram-outline"
+        >
+          {agreementHighlights.slice(0, 8).map((item) => (
+            <Bullet key={`agreement-${item}`} text={item} />
+          ))}
+        </ExpandableResultSection>
+      )}
+
       {investigation.contradictions.length > 0 && (
         <ExpandableResultSection
-          title="Contradictions and cautions"
+          title="Pushback and caution signals"
           body={investigation.contradictions[0]}
           icon="alert-circle-outline"
         >
@@ -3184,7 +3187,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
             return (
               <Card key={`${review.provider}-${review.role}`} mode="contained" style={styles.evidenceCard}>
                 <Card.Content style={styles.cardStack}>
-                  <View style={styles.rowBetween}>
+                  <View style={[styles.rowBetween, compactLayout && styles.rowBetweenStacked]}>
                     <View style={styles.flexOne}>
                       <Text variant="titleMedium" style={styles.evidenceTitle}>
                         {providerLabel(review.provider)}
@@ -3232,14 +3235,14 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
           {investigation.stepSummaries.map((step) => {
             const indicator = statusIcon(step.status);
             return (
-              <View key={step.key} style={styles.stepRow}>
+              <View key={step.key} style={[styles.stepRow, compactLayout && styles.stepRowCompact]}>
                 <Avatar.Icon size={38} icon={stageIcon(step)} color={palette.primary} style={styles.stepAvatar} />
                 <View style={styles.flexOne}>
-                  <View style={styles.rowBetween}>
+                  <View style={[styles.rowBetween, compactLayout && styles.stepHeaderCompact]}>
                     <Text variant="titleSmall" style={styles.stepTitle}>
                       {step.title}
                     </Text>
-                    <Chip compact icon={indicator.icon} textStyle={[styles.miniChipText, { color: indicator.color }]}>
+                    <Chip compact icon={indicator.icon} style={compactLayout ? styles.statusChipCompact : undefined} textStyle={[styles.miniChipText, { color: indicator.color }]}>
                       {statusLabel(step.status)}
                     </Chip>
                   </View>
@@ -3258,6 +3261,21 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
               </View>
             );
           })}
+        </ExpandableResultSection>
+      )}
+
+      {fullSourceLog.length > 0 && (
+        <ExpandableResultSection
+          title="Full source log"
+          body={`All ${investigation.sources.length} analyzed sources are preserved for this saved investigation, not just the streamlined evidence deck.`}
+          icon="database-outline"
+        >
+          <Text variant="bodySmall" style={styles.sectionBody}>
+            Use this log when you want the complete analyzed source pool, including lower-visibility items that still influenced scoring, consensus, and saved history.
+          </Text>
+          {fullSourceLog.map((source) => (
+            <EvidenceBlock key={`full-log-${source.id}`} source={source} />
+          ))}
         </ExpandableResultSection>
       )}
     </View>
@@ -3284,6 +3302,8 @@ function ConfidenceBreakdownBar({ investigation }: { investigation: Investigatio
 }
 
 function EvidenceBlock({ source }: { source: SourceAssessment }) {
+  const { width } = useWindowDimensions();
+  const compact = width < 760;
   const tone = sourceTone(source);
   const quality = sourceQualityMeta(source.sourceQualityLabel);
   const quote = safeTrim(source.evidence?.quotedEvidence);
@@ -3296,7 +3316,7 @@ function EvidenceBlock({ source }: { source: SourceAssessment }) {
   return (
     <Card mode="contained" style={styles.evidenceCard}>
       <Card.Content style={styles.cardStack}>
-        <View style={styles.rowBetween}>
+        <View style={[styles.rowBetween, compact && styles.rowBetweenStacked]}>
           <View style={styles.flexOne}>
             <Text variant="titleMedium" style={styles.evidenceTitle}>
               {source.sourceName || source.domain}
@@ -3310,7 +3330,7 @@ function EvidenceBlock({ source }: { source: SourceAssessment }) {
           <Avatar.Icon size={34} icon={tone.icon} color={tone.color} style={{ backgroundColor: tone.background }} />
         </View>
 
-        <View style={styles.historyMetaRow}>
+        <View style={[styles.historyMetaRow, compact && styles.historyMetaColumn]}>
           <Chip compact style={{ backgroundColor: tone.background }} textStyle={{ color: tone.color, fontFamily: "Poppins_600SemiBold" }}>
             {sourceSentimentLabel(source)}
           </Chip>
@@ -3494,6 +3514,29 @@ function ProfileScreen({
               </View>
             </Card.Content>
           </Card>
+          <View style={styles.metricGrid}>
+            {[
+              { label: "Evidence style", value: "Balanced", detail: "Less skeptical when strong support is real", icon: "scale-balance" },
+              { label: "Default depth", value: "Deep", detail: "100+ sources when the claim justifies it", icon: "layers-triple-outline" },
+              { label: "Singapore view", value: "On", detail: "Regional authority pass included when relevant", icon: "map-marker-radius-outline" },
+              { label: "Reconnect", value: "Auto", detail: "Toast appears when the backend drops offline", icon: "sync-circle" },
+            ].map((metric) => (
+              <Card key={metric.label} mode="contained" style={styles.metricCard}>
+                <Card.Content style={styles.metricContent}>
+                  <Avatar.Icon size={42} icon={metric.icon} color={palette.primary} style={styles.metricAvatar} />
+                  <Text variant="titleLarge" style={styles.metricValue}>
+                    {metric.value}
+                  </Text>
+                  <Text variant="labelLarge" style={styles.metricLabel}>
+                    {metric.label}
+                  </Text>
+                  <Text variant="bodySmall" style={styles.metricDetail}>
+                    {metric.detail}
+                  </Text>
+                </Card.Content>
+              </Card>
+            ))}
+          </View>
           <View style={styles.cardStack}>
             {profileSections.map((section) => (
               <Card key={section.title} mode="contained" style={styles.resultSectionCard}>
@@ -3543,10 +3586,12 @@ function HistoryItem({
   onMoveUp: () => void;
   onMoveDown: () => void;
 }) {
+  const { width } = useWindowDimensions();
   const pan = useRef(new Animated.ValueXY()).current;
   const status = statusIcon(item.status);
   const scoreMeta = scoreTone(item.overallScore);
   const [dragMode, setDragMode] = useState(false);
+  const compactSignals = width < 760;
 
   const resetCard = () => {
     Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: true }).start();
@@ -3663,9 +3708,9 @@ function HistoryItem({
               </Text>
             ) : null}
             {(item.positiveCount > 0 || item.neutralCount > 0 || item.negativeCount > 0) && (
-              <View style={styles.resultSignalRow}>
-                <SignalPill label="Support" value={String(item.positiveCount)} icon="check-circle" color={palette.success} background={palette.successSoft} />
-                <SignalPill label="Mixed" value={String(item.neutralCount)} icon="help-circle" color={palette.warning} background={palette.warningSoft} />
+              <View style={[styles.resultSignalRow, compactSignals ? styles.resultSignalColumn : styles.resultSignalRowWide]}>
+                <SignalPill label="Agreement" value={String(item.positiveCount)} icon="check-circle" color={palette.success} background={palette.successSoft} />
+                <SignalPill label="Unsettled" value={String(item.neutralCount)} icon="help-circle" color={palette.warning} background={palette.warningSoft} />
                 <SignalPill label="Pushback" value={String(item.negativeCount)} icon="close-circle" color={palette.danger} background={palette.dangerSoft} />
               </View>
             )}
@@ -4017,9 +4062,9 @@ function BottomTabs({
 }) {
   const tabs: Array<{ key: AppTab; label: string; icon: string }> = [
     { key: "home", label: "Home", icon: "home-heart" },
-    { key: "consultant", label: "Consultant", icon: "doctor" },
+    { key: "consultant", label: "Consultant", icon: "stethoscope" },
     { key: "nutrition", label: "Nutrition", icon: "silverware-fork-knife" },
-    { key: "supplements", label: "Supplements", icon: "pill" },
+    { key: "supplements", label: "Supplements", icon: "capsule" },
     { key: "profile", label: "Profile", icon: "account-circle-outline" },
   ];
 
@@ -4105,12 +4150,14 @@ function ExpandableResultSection({
   defaultExpanded?: boolean;
   children: React.ReactNode;
 }) {
+  const { width } = useWindowDimensions();
+  const compact = width < 760;
   const [expanded, setExpanded] = useState(defaultExpanded);
   return (
     <Card mode="contained" style={styles.resultSectionCard}>
       <Card.Content style={styles.cardStack}>
         <TouchableRipple onPress={() => setExpanded((current) => !current)} style={styles.expandableHeader}>
-          <View style={styles.rowBetween}>
+          <View style={[styles.rowBetween, compact && styles.rowBetweenStacked]}>
             <View style={styles.rowGapTop}>
               <View style={styles.expandableIconWrap}>
                 <MaterialCommunityIcons name={icon} size={20} color={palette.primary} />
@@ -4124,7 +4171,7 @@ function ExpandableResultSection({
                 </Text>
               </View>
             </View>
-            <IconButton icon={expanded ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={styles.dragButton} />
+            <IconButton icon={expanded ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={[styles.dragButton, compact && styles.expandChevron]} />
           </View>
         </TouchableRipple>
         {expanded ? <View style={styles.cardStack}>{children}</View> : null}
@@ -4247,8 +4294,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 22,
-    paddingTop: 8,
+    paddingHorizontal: 20,
+    paddingTop: 12,
     paddingBottom: 124,
     gap: 28,
   },
@@ -4510,6 +4557,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12,
   },
+  rowBetweenStacked: {
+    flexDirection: "column",
+    alignItems: "stretch",
+  },
   rowGap: {
     flexDirection: "row",
     alignItems: "center",
@@ -4630,12 +4681,19 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 12,
   },
+  stepRowCompact: {
+    flexDirection: "column",
+  },
   stepAvatar: {
     backgroundColor: palette.primarySoft,
+  },
+  stepHeaderCompact: {
+    gap: 8,
   },
   stepTitle: {
     color: palette.text,
     fontFamily: "Poppins_600SemiBold",
+    flexShrink: 1,
   },
   stepBody: {
     color: palette.muted,
@@ -4679,10 +4737,18 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 10,
   },
+  resultMetaColumn: {
+    flexDirection: "column",
+  },
   resultSignalRow: {
-    flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
+  },
+  resultSignalRowWide: {
+    flexDirection: "row",
+  },
+  resultSignalColumn: {
+    flexDirection: "column",
   },
   scoreGuideText: {
     color: palette.muted,
@@ -4691,6 +4757,7 @@ const styles = StyleSheet.create({
   miniStat: {
     flexGrow: 1,
     flexBasis: 105,
+    minWidth: 0,
     borderRadius: 12,
     backgroundColor: palette.surfaceSoft,
     paddingHorizontal: 14,
@@ -4727,9 +4794,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexBasis: 106,
     minWidth: 96,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
@@ -4826,6 +4893,9 @@ const styles = StyleSheet.create({
     paddingRight: 12,
     paddingBottom: 2,
   },
+  statusChipCompact: {
+    alignSelf: "flex-start",
+  },
   historySwipeShell: {
     position: "relative",
   },
@@ -4890,6 +4960,9 @@ const styles = StyleSheet.create({
   dragButton: {
     margin: 0,
   },
+  expandChevron: {
+    alignSelf: "flex-end",
+  },
   dragButtonActive: {
     backgroundColor: palette.primarySoft,
   },
@@ -4927,6 +5000,9 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
+  historyMetaColumn: {
+    alignItems: "flex-start",
+  },
   historyMetaLine: {
     color: palette.muted,
     lineHeight: 18,
@@ -4955,7 +5031,7 @@ const styles = StyleSheet.create({
     ...floatingShadow,
     maxHeight: "86%",
     width: "100%",
-    maxWidth: 900,
+    maxWidth: 860,
     alignSelf: "center",
     backgroundColor: palette.surface,
     borderTopLeftRadius: 20,
@@ -5044,6 +5120,7 @@ const styles = StyleSheet.create({
   comparisonCard: {
     ...cardShadow,
     width: clampNumber(Dimensions.get("window").width - 96, 220, 320),
+    maxWidth: "100%",
     borderRadius: 14,
     backgroundColor: palette.surfaceSoft,
     padding: 16,
