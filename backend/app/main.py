@@ -12,6 +12,7 @@ from .models import BootstrapPayload, InvestigationCollection, InvestigationCrea
 from .routes.calorie_routes import legacy_router as calorie_legacy_router
 from .routes.calorie_routes import router as calorie_router
 from .routes.supplements import router as supplements_router
+from .routes.workout_routes import router as workout_router
 from .settings import settings
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ app.add_middleware(
 app.include_router(calorie_router)
 app.include_router(calorie_legacy_router)
 app.include_router(supplements_router)
+app.include_router(workout_router)
 
 
 @app.on_event("startup")

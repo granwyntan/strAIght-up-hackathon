@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { collection, doc, getDocs, getFirestore, setDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, getFirestore, setDoc } from "firebase/firestore";
 
 import { firebaseApp } from "../lib/firebaseClient";
 
@@ -112,7 +112,7 @@ export async function loadExerciseEntries(accountId, accountEmail) {
 export async function addExerciseEntry(accountId, entry, accountEmail) {
   const next = normalizeExerciseEntry(entry);
   const existing = await loadLocalEntries(accountId);
-  const updatedLocal = await saveLocalEntries(accountId, [next, ...existing]);
+  await saveLocalEntries(accountId, [next, ...existing]);
 
   const userId = toFirestoreUserId(accountEmail);
   if (!userId) {
@@ -124,6 +124,55 @@ export async function addExerciseEntry(accountId, entry, accountEmail) {
     console.warn("Unable to save exercise entry to Firestore; local save kept", error);
   }
   return next;
+}
+
+export async function updateExerciseEntry(accountId, entryId, updates, accountEmail) {
+  const existing = await loadLocalEntries(accountId);
+  const updated = existing.map((entry) => {
+    if (entry.id !== entryId) {
+      return entry;
+    }
+    return normalizeExerciseEntry({
+      ...entry,
+      title: typeof updates?.title === "string" ? updates.title : entry.title,
+      duration: typeof updates?.duration === "string" ? updates.duration : entry.duration,
+      intensity: typeof updates?.intensity === "string" ? updates.intensity : entry.intensity,
+      notes: typeof updates?.notes === "string" ? updates.notes : entry.notes,
+      date: typeof updates?.date === "string" ? updates.date : entry.date,
+      createdAt: entry.createdAt
+    });
+  });
+  await saveLocalEntries(accountId, updated);
+
+  const userId = toFirestoreUserId(accountEmail);
+  if (!userId) {
+    return;
+  }
+  const target = updated.find((entry) => entry.id === entryId);
+  if (!target) {
+    return;
+  }
+  try {
+    await setDoc(doc(firestore, "users", userId, "exercise_history", entryId), toFirestoreRecord(target), { merge: true });
+  } catch (error) {
+    console.warn("Unable to update exercise entry in Firestore; local update kept", error);
+  }
+}
+
+export async function deleteExerciseEntry(accountId, entryId, accountEmail) {
+  const existing = await loadLocalEntries(accountId);
+  const updated = existing.filter((entry) => entry.id !== entryId);
+  await saveLocalEntries(accountId, updated);
+
+  const userId = toFirestoreUserId(accountEmail);
+  if (!userId) {
+    return;
+  }
+  try {
+    await deleteDoc(doc(firestore, "users", userId, "exercise_history", entryId));
+  } catch (error) {
+    console.warn("Unable to delete exercise entry in Firestore; local deletion kept", error);
+  }
 }
 
 export { formatLocalIsoDate as formatExerciseDate };

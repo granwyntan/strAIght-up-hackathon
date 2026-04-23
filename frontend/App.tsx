@@ -25,9 +25,10 @@ import ProfilePage from "./src/pages/ProfilePage";
 import ScannerPage from "./src/pages/SupplementsPage";
 import { loginOrRegisterAccount, logoutActiveSession, subscribeToActiveSession } from "./src/storage/accountStorage";
 import { loadCalorieWeek } from "./src/storage/calorieTrackerStorage";
-import { addExerciseEntry, loadExerciseEntries } from "./src/storage/exerciseStorage";
+import { addExerciseEntry, deleteExerciseEntry, loadExerciseEntries, updateExerciseEntry } from "./src/storage/exerciseStorage";
 import { loadProfile } from "./src/storage/profileStorage";
 import { formatLocalIsoDate, loadHomeVitals, saveHomeVitalForDate } from "./src/storage/homeVitalsStorage";
+import { loadWorkoutTasks, replaceWorkoutTasks, setWorkoutTaskCompleted } from "./src/storage/workoutRoutineStorage";
 
 import {
   defaultBootstrap,
@@ -628,7 +629,7 @@ export default function App() {
             <HomeScreen
               accountId={activeAccount?.id}
               accountEmail={activeAccount?.email}
-              onOpenInvestigate={() => setActiveTab("consultant")}
+              requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000, true)}
             />
           ) : activeTab === "consultant" ? (
             <InvestigateScreen
@@ -732,11 +733,11 @@ function TopBar({
 function HomeScreen({
   accountId,
   accountEmail,
-  onOpenInvestigate
+  requestApi
 }: {
   accountId?: string;
   accountEmail?: string;
-  onOpenInvestigate: () => void;
+  requestApi: (path: string, init?: RequestInit) => Promise<Response>;
 }) {
   const [vitalsByDate, setVitalsByDate] = useState<Record<string, Record<string, string>>>({});
   const [loadingVitals, setLoadingVitals] = useState(true);
@@ -758,6 +759,40 @@ function HomeScreen({
   const [exerciseError, setExerciseError] = useState("");
   const [savingExercise, setSavingExercise] = useState(false);
   const [expandedExerciseId, setExpandedExerciseId] = useState("");
+  const [exerciseModalVisible, setExerciseModalVisible] = useState(false);
+  const [editingExerciseId, setEditingExerciseId] = useState("");
+  const [intensityMenuVisible, setIntensityMenuVisible] = useState(false);
+  const [welcomeName, setWelcomeName] = useState("");
+  const [routineModalVisible, setRoutineModalVisible] = useState(false);
+  const [routineLoading, setRoutineLoading] = useState(false);
+  const [routineError, setRoutineError] = useState("");
+  const [routineAge, setRoutineAge] = useState("");
+  const [routineHeight, setRoutineHeight] = useState("");
+  const [routineWeight, setRoutineWeight] = useState("");
+  const [routineGoals, setRoutineGoals] = useState("");
+  const [routineMedicalHistory, setRoutineMedicalHistory] = useState("");
+  const [suggestedRoutine, setSuggestedRoutine] = useState<{
+    routineTitle: string;
+    continuous: string;
+    trialWeeks: number;
+    exercises: Array<{ type: string; duration: string; intensity: string; description: string; frequency: string; daysOfWeek: string[] }>;
+  } | null>(null);
+  const [workoutTasks, setWorkoutTasks] = useState<
+    Array<{
+      id: string;
+      routineTitle: string;
+      type: string;
+      duration: string;
+      intensity: string;
+      description: string;
+      dueDate: string;
+      completed: boolean;
+      completedAt: string;
+      createdAt: string;
+    }>
+  >([]);
+  const [updatingTaskId, setUpdatingTaskId] = useState("");
+  const intensityOptions = ["Easy", "Medium", "Hard", "Max effort"];
   const todayDate = formatLocalIsoDate(new Date());
   const todaysRecord = vitalsByDate[todayDate] || {};
   const toVitalsMap = (input: unknown): Record<string, Record<string, string>> => {
@@ -900,12 +935,16 @@ function HomeScreen({
         const profile = await loadProfile(accountId, accountEmail);
         const savedTarget = parseNumber(typeof profile?.dailyCalorieTarget === "string" ? profile.dailyCalorieTarget : "");
         const target = savedTarget || estimateDailyTargetFromProfile(profile);
+        const profileName = typeof profile?.name === "string" ? profile.name.trim() : "";
+        const emailName = typeof accountEmail === "string" ? accountEmail.split("@")[0] : "";
         if (mounted) {
           setDailyCalorieTarget(target);
+          setWelcomeName(profileName || emailName);
         }
       } catch {
         if (mounted) {
           setDailyCalorieTarget(null);
+          setWelcomeName(typeof accountEmail === "string" ? accountEmail.split("@")[0] : "");
         }
       }
     };
@@ -938,6 +977,27 @@ function HomeScreen({
       }
     };
     void hydrateExercises();
+    return () => {
+      mounted = false;
+    };
+  }, [accountId, accountEmail]);
+
+  useEffect(() => {
+    let mounted = true;
+    const hydrateWorkoutTasks = async () => {
+      try {
+        const tasks = await loadWorkoutTasks(accountId, accountEmail);
+        if (mounted) {
+          setWorkoutTasks(Array.isArray(tasks) ? tasks : []);
+        }
+      } catch (error) {
+        console.warn("Unable to load workout tasks", error);
+        if (mounted) {
+          setWorkoutTasks([]);
+        }
+      }
+    };
+    void hydrateWorkoutTasks();
     return () => {
       mounted = false;
     };
@@ -1017,6 +1077,224 @@ function HomeScreen({
     return accumulator;
   }, {} as Record<string, Array<{ id: string; title: string; duration: string; intensity: string; notes: string; createdAt: string; date: string }>>);
   const exerciseHistoryDates = Object.keys(exerciseEntriesByDate).sort((a, b) => (a > b ? -1 : 1));
+  const todaysWorkoutTasks = workoutTasks
+    .filter((task) => task?.dueDate === todayDate && !task.completed)
+    .sort((a, b) => Date.parse(a.createdAt || "") - Date.parse(b.createdAt || ""));
+
+  const openRoutineModal = async () => {
+    setRoutineError("");
+    setSuggestedRoutine(null);
+    if (!accountId || !accountEmail) {
+      setRoutineAge("");
+      setRoutineHeight("");
+      setRoutineWeight("");
+      setRoutineGoals("");
+      setRoutineMedicalHistory("");
+      setRoutineModalVisible(true);
+      return;
+    }
+    try {
+      const profile = await loadProfile(accountId, accountEmail);
+      setRoutineAge(typeof profile?.age === "string" ? profile.age : "");
+      setRoutineHeight(typeof profile?.height === "string" ? profile.height : "");
+      setRoutineWeight(typeof profile?.weight === "string" ? profile.weight : "");
+      setRoutineGoals(typeof profile?.goals === "string" ? profile.goals : "");
+      setRoutineMedicalHistory(
+        typeof profile?.medicalHistory === "string" && profile.medicalHistory.trim()
+          ? profile.medicalHistory
+          : typeof profile?.medicalConditions === "string"
+            ? profile.medicalConditions
+            : ""
+      );
+    } catch (error) {
+      console.warn("Unable to prefill routine form from profile", error);
+    } finally {
+      setRoutineModalVisible(true);
+    }
+  };
+
+  const suggestRoutine = async () => {
+    setRoutineLoading(true);
+    setRoutineError("");
+    try {
+      const response = await requestApi("/api/workout-routine/suggest", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          age: routineAge,
+          heightCm: routineHeight,
+          weightKg: routineWeight,
+          goals: routineGoals,
+          medicalHistory: routineMedicalHistory
+        })
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || "Unable to suggest routine.");
+      }
+      const payload = await response.json();
+      const normalized = {
+        routineTitle: typeof payload?.routineTitle === "string" ? payload.routineTitle : "2-week routine",
+        continuous: typeof payload?.continuous === "string" ? payload.continuous : "daily",
+        trialWeeks: Number(payload?.trialWeeks) || 2,
+        exercises: Array.isArray(payload?.exercises)
+          ? payload.exercises.map((item: any) => ({
+              type: typeof item?.type === "string" ? item.type : "Workout",
+              duration: typeof item?.duration === "string" ? item.duration : "30 min",
+              intensity: typeof item?.intensity === "string" ? item.intensity : "medium",
+              description: typeof item?.description === "string" ? item.description : "",
+              frequency: typeof item?.frequency === "string" ? item.frequency : "daily",
+              daysOfWeek: Array.isArray(item?.daysOfWeek) ? item.daysOfWeek.map((day: any) => String(day).toLowerCase()) : []
+            }))
+          : []
+      };
+      setSuggestedRoutine(normalized);
+    } catch (error) {
+      setRoutineError(error instanceof Error ? error.message : "Unable to suggest routine.");
+      setSuggestedRoutine(null);
+    } finally {
+      setRoutineLoading(false);
+    }
+  };
+
+  const dayName = (date: Date) => ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][date.getDay()];
+
+  const acceptRoutineForTrial = async () => {
+    if (!suggestedRoutine || !Array.isArray(suggestedRoutine.exercises) || suggestedRoutine.exercises.length === 0) {
+      setRoutineError("No routine available to accept.");
+      return;
+    }
+    const start = new Date(`${todayDate}T00:00:00`);
+    const totalDays = 14;
+    const createdAt = new Date().toISOString();
+    const nextTasks: Array<{
+      id: string;
+      routineTitle: string;
+      type: string;
+      duration: string;
+      intensity: string;
+      description: string;
+      dueDate: string;
+      completed: boolean;
+      completedAt: string;
+      createdAt: string;
+    }> = [];
+    let seq = 0;
+
+    for (let dayOffset = 0; dayOffset < totalDays; dayOffset += 1) {
+      const dayDate = new Date(start);
+      dayDate.setDate(start.getDate() + dayOffset);
+      const isoDate = formatLocalIsoDate(dayDate);
+      const weekday = dayName(dayDate);
+      for (const exercise of suggestedRoutine.exercises) {
+        const frequency = (exercise.frequency || suggestedRoutine.continuous || "daily").toLowerCase();
+        const normalizedDays = Array.isArray(exercise.daysOfWeek) ? exercise.daysOfWeek.map((day) => String(day).toLowerCase()) : [];
+        let include = false;
+        if (frequency === "daily") {
+          include = true;
+        } else if (frequency === "weekly") {
+          include = normalizedDays.length > 0 ? normalizedDays.includes(weekday) : weekday === "mon";
+        } else {
+          include = dayOffset === 0;
+        }
+        if (dayOffset === 0) {
+          include = true;
+        }
+        if (!include) {
+          continue;
+        }
+        seq += 1;
+        nextTasks.push({
+          id: `task-${Date.now()}-${seq}`,
+          routineTitle: suggestedRoutine.routineTitle,
+          type: exercise.type,
+          duration: exercise.duration,
+          intensity: exercise.intensity,
+          description: exercise.description,
+          dueDate: isoDate,
+          completed: false,
+          completedAt: "",
+          createdAt
+        });
+      }
+    }
+
+    const saved = await replaceWorkoutTasks(accountId, nextTasks, accountEmail);
+    setWorkoutTasks(saved);
+    setRoutineModalVisible(false);
+    setSuggestedRoutine(null);
+  };
+
+  const toggleWorkoutTask = async (task: {
+    id: string;
+    type: string;
+    duration: string;
+    intensity: string;
+    description: string;
+    dueDate: string;
+    completed: boolean;
+  }) => {
+    if (!task?.id) {
+      return;
+    }
+    const nextCompleted = !task.completed;
+    setUpdatingTaskId(task.id);
+    try {
+      const updatedTasks = await setWorkoutTaskCompleted(accountId, task.id, nextCompleted, accountEmail);
+      setWorkoutTasks(updatedTasks);
+      if (nextCompleted) {
+        const savedExercise = await addExerciseEntry(
+          accountId,
+          {
+            title: task.type || "Workout",
+            duration: task.duration || "",
+            intensity: task.intensity || "medium",
+            notes: task.description || "",
+            date: task.dueDate,
+            createdAt: new Date().toISOString()
+          },
+          accountEmail
+        );
+        setExerciseEntries((current) => [savedExercise, ...current].sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || "")));
+      }
+    } catch (error) {
+      setExerciseError(error instanceof Error ? error.message : "Unable to update workout task.");
+    } finally {
+      setUpdatingTaskId("");
+    }
+  };
+
+  const openExerciseModalForCreate = () => {
+    setEditingExerciseId("");
+    setExerciseTitle("");
+    setExerciseDuration("");
+    setExerciseIntensity("");
+    setExerciseNotes("");
+    setExerciseError("");
+    setIntensityMenuVisible(false);
+    setExerciseModalVisible(true);
+  };
+
+  const openExerciseModalForEdit = (entry: { id: string; title: string; duration: string; intensity: string; notes: string }) => {
+    setEditingExerciseId(entry.id);
+    setExerciseTitle(entry.title || "");
+    setExerciseDuration(entry.duration || "");
+    setExerciseIntensity(entry.intensity || "");
+    setExerciseNotes(entry.notes || "");
+    setExerciseError("");
+    setIntensityMenuVisible(false);
+    setExerciseModalVisible(true);
+  };
+
+  const closeExerciseModal = () => {
+    if (savingExercise) {
+      return;
+    }
+    setExerciseModalVisible(false);
+    setIntensityMenuVisible(false);
+  };
 
   const saveExercise = async () => {
     const title = exerciseTitle.trim();
@@ -1030,25 +1308,64 @@ function HomeScreen({
     setSavingExercise(true);
     setExerciseError("");
     try {
-      const createdAt = new Date().toISOString();
-      const entry = {
-        title,
-        duration,
-        intensity,
-        notes,
-        createdAt,
-        date: todayDate
-      };
-      const saved = await addExerciseEntry(accountId, entry, accountEmail);
-      setExerciseEntries((current) => [saved, ...current].sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || "")));
-      setExerciseTitle("");
-      setExerciseDuration("");
-      setExerciseIntensity("");
-      setExerciseNotes("");
+      if (editingExerciseId) {
+        await updateExerciseEntry(
+          accountId,
+          editingExerciseId,
+          {
+            title,
+            duration,
+            intensity,
+            notes
+          },
+          accountEmail
+        );
+        setExerciseEntries((current) =>
+          current
+            .map((entry) =>
+              entry.id === editingExerciseId
+                ? {
+                    ...entry,
+                    title,
+                    duration,
+                    intensity,
+                    notes
+                  }
+                : entry
+            )
+            .sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""))
+        );
+      } else {
+        const createdAt = new Date().toISOString();
+        const entry = {
+          title,
+          duration,
+          intensity,
+          notes,
+          createdAt,
+          date: todayDate
+        };
+        const saved = await addExerciseEntry(accountId, entry, accountEmail);
+        setExerciseEntries((current) => [saved, ...current].sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || "")));
+      }
+      setExerciseModalVisible(false);
+      setEditingExerciseId("");
     } catch (error) {
       setExerciseError(error instanceof Error ? error.message : "Unable to save exercise entry.");
     } finally {
       setSavingExercise(false);
+    }
+  };
+
+  const removeExercise = async (entryId: string) => {
+    try {
+      await deleteExerciseEntry(accountId, entryId, accountEmail);
+      setExerciseEntries((current) => current.filter((entry) => entry.id !== entryId));
+      if (expandedExerciseId === entryId) {
+        setExpandedExerciseId("");
+      }
+    } catch (error) {
+      setExerciseError(error instanceof Error ? error.message : "Unable to delete exercise entry.");
     }
   };
 
@@ -1060,15 +1377,16 @@ function HomeScreen({
           <Chip label="Daily logging" tone="aqua" />
         </View>
 
-        <Text style={styles.heroTitle}>Track key health signals every day</Text>
+        <Text style={styles.heroTitle}>{accountId && welcomeName ? `Welcome ${welcomeName}` : "Track key health signals every day"}</Text>
         <Text style={styles.heroSubtitle}>Tap any metric to log today’s value. If a metric has not been logged yet, it shows Missing to prompt completion.</Text>
-
-        <View style={styles.heroActionRow}>
-          <PrimaryButton label="Open investigator" onPress={onOpenInvestigate} icon={<AppIcon kind="play" color="#fffdfa" size={18} />} />
-        </View>
       </View>
 
-      <SectionHeader title={`Today · ${todayDate}`} body="These values reset naturally each new day. Previous days remain in history below by date." />
+      <View style={styles.trackersHeaderRow}>
+        <SectionHeader title={`Today · ${todayDate}`} body="These values reset naturally each new day. Previous days remain in history below by date." />
+        <Pressable style={styles.historyTopButton} onPress={() => setHistoryVisible(true)}>
+          <Text style={styles.historyTopButtonText}>History</Text>
+        </Pressable>
+      </View>
 
       <View style={styles.statsRow}>
         {homeMetricDefs.map((item) => {
@@ -1087,10 +1405,6 @@ function HomeScreen({
           );
         })}
       </View>
-
-      <Pressable style={styles.secondaryButton} onPress={() => setHistoryVisible(true)}>
-        <Text style={styles.secondaryButtonText}>History</Text>
-      </Pressable>
 
       <View style={styles.panel}>
         <View style={styles.mealHeaderRow}>
@@ -1119,46 +1433,18 @@ function HomeScreen({
       </View>
 
       <View style={styles.panel}>
-        <Text style={styles.subSectionTitle}>Exercise Tracker</Text>
-        <TextInput
-          style={styles.primaryInput}
-          value={exerciseTitle}
-          onChangeText={setExerciseTitle}
-          placeholder="Title of exercise"
-          placeholderTextColor={palette.muted}
-          editable={!savingExercise}
-        />
-        <View style={styles.exerciseInputRow}>
-          <TextInput
-            style={[styles.primaryInput, styles.exerciseInputHalf]}
-            value={exerciseDuration}
-            onChangeText={setExerciseDuration}
-            placeholder="Duration (e.g. 35 min)"
-            placeholderTextColor={palette.muted}
-            editable={!savingExercise}
-          />
-          <TextInput
-            style={[styles.primaryInput, styles.exerciseInputHalf]}
-            value={exerciseIntensity}
-            onChangeText={setExerciseIntensity}
-            placeholder="Intensity"
-            placeholderTextColor={palette.muted}
-            editable={!savingExercise}
-          />
+        <View style={styles.exerciseHeaderRow}>
+          <Text style={styles.subSectionTitle}>Exercise Tracker</Text>
+          <View style={styles.exerciseHeaderActions}>
+            <Pressable style={styles.exerciseAddButton} onPress={() => void openRoutineModal()}>
+              <Text style={styles.exerciseAddButtonText}>*</Text>
+            </Pressable>
+            <Pressable style={styles.exerciseAddButton} onPress={openExerciseModalForCreate}>
+              <Text style={styles.exerciseAddButtonText}>+</Text>
+            </Pressable>
+          </View>
         </View>
-        <TextInput
-          style={styles.notesInput}
-          value={exerciseNotes}
-          onChangeText={setExerciseNotes}
-          placeholder="Personal notes (optional)"
-          placeholderTextColor={palette.muted}
-          editable={!savingExercise}
-          multiline
-        />
         {exerciseError ? <Text style={styles.modalError}>{exerciseError}</Text> : null}
-        <Pressable style={[styles.modalPrimary, savingExercise && styles.modalButtonDisabled]} onPress={() => void saveExercise()} disabled={savingExercise}>
-          <Text style={styles.modalPrimaryText}>{savingExercise ? "Saving..." : "Add exercise"}</Text>
-        </Pressable>
 
         {loadingExercises ? (
           <Text style={styles.sectionBody}>Loading today&apos;s exercise...</Text>
@@ -1172,10 +1458,17 @@ function HomeScreen({
                     <View style={styles.exerciseInfo}>
                       <Text style={styles.exerciseTitle}>{entry.title || "Exercise"}</Text>
                       <Text style={styles.exerciseMeta}>
-                        {entry.duration || "--"} • {entry.intensity || "--"} • {formatEntryTime(entry.createdAt)}
+                        Duration: {entry.duration || "--"} • Intensity: {entry.intensity || "--"} • {entry.date} {formatEntryTime(entry.createdAt)}
                       </Text>
                     </View>
-                    <Text style={styles.exerciseDate}>{entry.date}</Text>
+                    <View style={styles.exerciseRowActions}>
+                      <Pressable onPress={() => openExerciseModalForEdit(entry)} style={styles.exerciseActionButton}>
+                        <Text style={styles.exerciseActionButtonText}>Edit</Text>
+                      </Pressable>
+                      <Pressable onPress={() => void removeExercise(entry.id)} style={styles.exerciseActionDeleteButton}>
+                        <Text style={styles.exerciseActionDeleteButtonText}>Delete</Text>
+                      </Pressable>
+                    </View>
                   </Pressable>
                   {expanded ? <Text style={styles.exerciseNotes}>{entry.notes || "No personal notes."}</Text> : null}
                 </View>
@@ -1185,7 +1478,170 @@ function HomeScreen({
         ) : (
           <Text style={styles.sectionBody}>No exercise logged for today yet.</Text>
         )}
+
+        <View style={styles.routineCard}>
+          <Text style={styles.routineTitle}>Exercises To Do Today</Text>
+          {todaysWorkoutTasks.length > 0 ? (
+            <View style={styles.routineTaskList}>
+              {todaysWorkoutTasks.map((task) => (
+                <Pressable
+                  key={task.id}
+                  style={[styles.routineTaskRow, task.completed && styles.routineTaskRowDone]}
+                  onPress={() => void toggleWorkoutTask(task)}
+                  disabled={updatingTaskId === task.id}
+                >
+                  <Text style={styles.routineTaskCheckbox}>{task.completed ? "☑" : "☐"}</Text>
+                  <View style={styles.routineTaskInfo}>
+                    <Text style={[styles.routineTaskType, task.completed && styles.routineTaskTypeDone]}>{task.type || "Workout"}</Text>
+                    <Text style={styles.routineTaskMeta}>
+                      {task.duration || "--"} • {task.intensity || "medium"} • due {task.dueDate}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.sectionBody}>No routine reminders for today.</Text>
+          )}
+        </View>
       </View>
+
+      <Modal visible={routineModalVisible} transparent animationType="fade" onRequestClose={() => setRoutineModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <ScrollView style={styles.routineModalScroll} contentContainerStyle={styles.routineModalContent} showsVerticalScrollIndicator>
+              <View style={styles.modalHeaderRow}>
+                <Text style={styles.modalTitle}>Suggest exercise routine</Text>
+                <Pressable onPress={() => setRoutineModalVisible(false)}>
+                  <Text style={styles.modalCloseText}>x</Text>
+                </Pressable>
+              </View>
+              <TextInput style={[styles.primaryInput, styles.routineAgeInput]} value={routineAge} onChangeText={setRoutineAge} placeholder="Age" placeholderTextColor={palette.muted} />
+              <View style={styles.exerciseInputRow}>
+                <TextInput
+                  style={[styles.primaryInput, styles.routineCompactInput]}
+                  value={routineHeight}
+                  onChangeText={setRoutineHeight}
+                  placeholder="Height (cm)"
+                  placeholderTextColor={palette.muted}
+                />
+                <TextInput
+                  style={[styles.primaryInput, styles.routineCompactInput]}
+                  value={routineWeight}
+                  onChangeText={setRoutineWeight}
+                  placeholder="Weight (kg)"
+                  placeholderTextColor={palette.muted}
+                />
+              </View>
+              <TextInput style={styles.notesInput} value={routineGoals} onChangeText={setRoutineGoals} placeholder="Goals" placeholderTextColor={palette.muted} multiline />
+              <TextInput
+                style={styles.notesInput}
+                value={routineMedicalHistory}
+                onChangeText={setRoutineMedicalHistory}
+                placeholder="Medical history"
+                placeholderTextColor={palette.muted}
+                multiline
+              />
+              {routineError ? <Text style={styles.modalError}>{routineError}</Text> : null}
+              <Pressable style={[styles.modalPrimary, routineLoading && styles.modalButtonDisabled]} onPress={() => void suggestRoutine()} disabled={routineLoading}>
+                <Text style={styles.modalPrimaryText}>{routineLoading ? "Generating..." : "Generate routine"}</Text>
+              </Pressable>
+
+              {suggestedRoutine ? (
+                <View style={styles.routineSuggestionCard}>
+                  <Text style={styles.routineSuggestionTitle}>{suggestedRoutine.routineTitle}</Text>
+                  <Text style={styles.routineSuggestionMeta}>
+                    Continuous: {suggestedRoutine.continuous} • Trial: {suggestedRoutine.trialWeeks} weeks
+                  </Text>
+                  <View style={styles.routineSuggestionList}>
+                    {suggestedRoutine.exercises.map((exercise, index) => (
+                      <View key={`${exercise.type}-${index}`} style={styles.routineSuggestionItem}>
+                        <Text style={styles.routineSuggestionItemTitle}>
+                          {exercise.type} • {exercise.duration} • {exercise.intensity}
+                        </Text>
+                        <Text style={styles.routineSuggestionItemMeta}>
+                          {exercise.description} {exercise.frequency ? `(${exercise.frequency})` : ""}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  <Pressable style={styles.modalPrimary} onPress={() => void acceptRoutineForTrial()}>
+                    <Text style={styles.modalPrimaryText}>Accept & trial for 2 weeks</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={exerciseModalVisible} transparent animationType="fade" onRequestClose={closeExerciseModal}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>{editingExerciseId ? "Edit exercise" : "Add exercise"}</Text>
+              <Pressable onPress={closeExerciseModal}>
+                <Text style={styles.modalCloseText}>x</Text>
+              </Pressable>
+            </View>
+            <TextInput
+              style={styles.primaryInput}
+              value={exerciseTitle}
+              onChangeText={setExerciseTitle}
+              placeholder="Title of exercise"
+              placeholderTextColor={palette.muted}
+              editable={!savingExercise}
+            />
+            <TextInput
+              style={styles.primaryInput}
+              value={exerciseDuration}
+              onChangeText={setExerciseDuration}
+              placeholder="Duration (e.g. 35 min)"
+              placeholderTextColor={palette.muted}
+              editable={!savingExercise}
+            />
+            <Pressable style={styles.exerciseDropdown} onPress={() => setIntensityMenuVisible((current) => !current)} disabled={savingExercise}>
+              <Text style={exerciseIntensity ? styles.exerciseDropdownValue : styles.exerciseDropdownPlaceholder}>
+                {exerciseIntensity || "Select intensity"}
+              </Text>
+            </Pressable>
+            {intensityMenuVisible ? (
+              <View style={styles.exerciseDropdownMenu}>
+                {intensityOptions.map((option) => (
+                  <Pressable
+                    key={option}
+                    style={[styles.exerciseDropdownOption, exerciseIntensity === option && styles.exerciseDropdownOptionSelected]}
+                    onPress={() => {
+                      setExerciseIntensity(option);
+                      setIntensityMenuVisible(false);
+                    }}
+                  >
+                    <Text style={[styles.exerciseDropdownOptionText, exerciseIntensity === option && styles.exerciseDropdownOptionTextSelected]}>{option}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+            <TextInput
+              style={styles.notesInput}
+              value={exerciseNotes}
+              onChangeText={setExerciseNotes}
+              placeholder="Personal notes (optional)"
+              placeholderTextColor={palette.muted}
+              editable={!savingExercise}
+              multiline
+            />
+            {exerciseError ? <Text style={styles.modalError}>{exerciseError}</Text> : null}
+            <View style={styles.modalActions}>
+              <Pressable style={[styles.modalPrimary, savingExercise && styles.modalButtonDisabled]} onPress={() => void saveExercise()} disabled={savingExercise}>
+                <Text style={styles.modalPrimaryText}>{savingExercise ? "Saving..." : editingExerciseId ? "Save changes" : "Add exercise"}</Text>
+              </Pressable>
+              <Pressable style={[styles.modalSecondary, savingExercise && styles.modalButtonDisabled]} onPress={closeExerciseModal} disabled={savingExercise}>
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={editorVisible} transparent animationType="fade" onRequestClose={() => setEditorVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -2730,6 +3186,26 @@ const styles = StyleSheet.create({
   sectionHeader: {
     gap: 6
   },
+  trackersHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  historyTopButton: {
+    marginTop: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#f7f3ec",
+    paddingHorizontal: 14,
+    paddingVertical: 8
+  },
+  historyTopButtonText: {
+    color: palette.blue,
+    fontSize: 13,
+    fontWeight: "800"
+  },
   sectionEyebrow: {
     color: palette.blue,
     fontSize: 12,
@@ -2958,12 +3434,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800"
   },
+  exerciseHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  exerciseHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  exerciseAddButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#eef3fc",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  exerciseAddButtonText: {
+    color: palette.blue,
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: "700"
+  },
   exerciseInputRow: {
     flexDirection: "row",
     gap: 10
   },
   exerciseInputHalf: {
     flex: 1
+  },
+  routineAgeInput: {
+    maxWidth: 140
+  },
+  routineCompactInput: {
+    maxWidth: 160,
+    flexGrow: 0
   },
   exerciseList: {
     gap: 10
@@ -3002,10 +3512,88 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800"
   },
+  exerciseRowActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  exerciseActionButton: {
+    minHeight: 32,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#fffdf9",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 10
+  },
+  exerciseActionButtonText: {
+    color: palette.blue,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  exerciseActionDeleteButton: {
+    minHeight: 32,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#f1c6c7",
+    backgroundColor: "#fff2f2",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 10
+  },
+  exerciseActionDeleteButtonText: {
+    color: palette.red,
+    fontSize: 12,
+    fontWeight: "800"
+  },
   exerciseNotes: {
     color: palette.ink,
     fontSize: 13,
     lineHeight: 19
+  },
+  exerciseDropdown: {
+    minHeight: 52,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#fffdf9",
+    justifyContent: "center",
+    paddingHorizontal: 16
+  },
+  exerciseDropdownPlaceholder: {
+    color: palette.muted,
+    fontSize: 15
+  },
+  exerciseDropdownValue: {
+    color: palette.ink,
+    fontSize: 15,
+    fontWeight: "700"
+  },
+  exerciseDropdownMenu: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#fffdf9",
+    overflow: "hidden"
+  },
+  exerciseDropdownOption: {
+    minHeight: 42,
+    paddingHorizontal: 14,
+    justifyContent: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#efe8db"
+  },
+  exerciseDropdownOptionSelected: {
+    backgroundColor: "#eef3fc"
+  },
+  exerciseDropdownOptionText: {
+    color: palette.ink,
+    fontSize: 14
+  },
+  exerciseDropdownOptionTextSelected: {
+    color: palette.blue,
+    fontWeight: "800"
   },
   logCard: {
     flexDirection: "row",
@@ -3762,6 +4350,7 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 420,
+    maxHeight: "86%",
     borderRadius: 24,
     backgroundColor: palette.surface,
     borderWidth: 1,
@@ -3803,6 +4392,13 @@ const styles = StyleSheet.create({
   modalHistoryScroll: {
     maxHeight: 420
   },
+  routineModalScroll: {
+    maxHeight: "100%"
+  },
+  routineModalContent: {
+    gap: 12,
+    paddingBottom: 6
+  },
   modalHistoryStack: {
     gap: 10,
     paddingBottom: 4
@@ -3838,6 +4434,95 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 12,
     lineHeight: 17
+  },
+  routineCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#faf7f1",
+    padding: 12,
+    gap: 10
+  },
+  routineTitle: {
+    color: palette.ink,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  routineTaskList: {
+    gap: 8
+  },
+  routineTaskRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#fffdf9",
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  routineTaskRowDone: {
+    backgroundColor: "#f0f6e5"
+  },
+  routineTaskCheckbox: {
+    fontSize: 16,
+    color: palette.blue
+  },
+  routineTaskInfo: {
+    flex: 1,
+    gap: 2
+  },
+  routineTaskType: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  routineTaskTypeDone: {
+    color: "#5f7a41"
+  },
+  routineTaskMeta: {
+    color: palette.muted,
+    fontSize: 12
+  },
+  routineSuggestionCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#faf7f1",
+    padding: 12,
+    gap: 10
+  },
+  routineSuggestionTitle: {
+    color: palette.ink,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  routineSuggestionMeta: {
+    color: palette.muted,
+    fontSize: 13
+  },
+  routineSuggestionList: {
+    gap: 8
+  },
+  routineSuggestionItem: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#fffdf9",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 3
+  },
+  routineSuggestionItemTitle: {
+    color: palette.ink,
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  routineSuggestionItemMeta: {
+    color: palette.muted,
+    fontSize: 12,
+    lineHeight: 16
   },
   modalPrimary: {
     flex: 1,
