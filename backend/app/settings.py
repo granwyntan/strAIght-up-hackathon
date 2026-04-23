@@ -1,9 +1,10 @@
 import json
+import os
 from functools import cached_property
+from hashlib import sha256
 from pathlib import Path
 
 from pydantic import BaseModel, Field
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,8 +47,12 @@ class Settings(BaseSettings):
     extraction_cache_ttl_seconds: int = 43200
     final_cache_ttl_seconds: int = 21600
     cache_cleanup_probability: float = 0.08
-    openai_api_key: str | None = None
+
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     openai_api_base_url: str = "https://api.openai.com/v1"
+    openai_vision_detail: str = "auto"
+    openai_vision_max_dimension: int = 1024
+    openai_vision_jpeg_quality: int = 72
     openai_model: str = "gpt-5.4"
     openai_research_model: str = "gpt-5.4-mini"
     openai_reasoning_model: str = "gpt-5.4"
@@ -112,13 +117,13 @@ class Settings(BaseSettings):
     serpapi_num_results: int = 24
     exa_api_key: str | None = None
     exa_max_results: int = 20
+    search_timeout_seconds: float = 12.0
     source_validation_timeout_seconds: float = 18.0
     source_validation_llm_review_limit: int = 10
     source_validation_rescue_excerpt_chars: int = 3200
     source_validation_general_rescue_min_chars: int = 120
     notifications_enabled: bool = True
     expo_push_api_url: str = "https://exp.host/--/api/v2/push/send"
-    search_timeout_seconds: float = 12.0
     source_tier_config_path: str = str(DEFAULT_SOURCE_TIER_PATH)
     database_path: str = str(DEFAULT_DB_PATH)
 
@@ -180,6 +185,13 @@ class Settings(BaseSettings):
     @property
     def has_exa(self) -> bool:
         return bool(self.exa_api_key)
+
+    @property
+    def openai_vision_detail_normalized(self) -> str:
+        candidate = self.openai_vision_detail.strip().lower()
+        if candidate in {"low", "high", "auto", "original"}:
+            return candidate
+        return "low"
 
     @property
     def cors_allowed_origins_list(self) -> list[str]:
@@ -255,6 +267,33 @@ class Settings(BaseSettings):
 
     def source_weight_for_bucket(self, bucket: str) -> float:
         return self.source_bucket_weights.get(bucket, self.source_tier_config.generalSources.weight)
+
+    @staticmethod
+    def _fingerprint_secret(value: str | None) -> str:
+        if not value:
+            return "missing"
+        return sha256(value.encode("utf-8")).hexdigest()[:12]
+
+    @property
+    def openai_api_key_fingerprint(self) -> str:
+        return self._fingerprint_secret(self.openai_api_key)
+
+    @property
+    def openai_runtime_diagnostics(self) -> dict[str, object]:
+        env_files = [
+            BASE_DIR / ".env",
+            BASE_DIR / ".env.local",
+            BASE_DIR / "backend" / ".env",
+            BASE_DIR / "backend" / ".env.local",
+        ]
+        env_file_presence = {str(path): path.exists() for path in env_files}
+        return {
+            "has_openai_key": bool(self.openai_api_key),
+            "openai_key_fingerprint": self.openai_api_key_fingerprint,
+            "openai_base_url": self.openai_api_base_url,
+            "os_env_has_openai_api_key": bool(os.environ.get("OPENAI_API_KEY")),
+            "env_file_presence": env_file_presence,
+        }
 
 
 settings = Settings()

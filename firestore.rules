@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && (
+        request.auth.token.email == userId + "@gmail.com" ||
+        request.auth.token.email == userId + "@googlemail.com"
+      );
+    }
+
+    // Profile stored at users/{userId} with nested "profile" object.
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      // Daily calories stored at users/{userId}/daily_calories/{date}
+      match /daily_calories/{date} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Home dashboard vitals stored at users/{userId}/daily_health/{date}
+      match /daily_health/{date} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Supplement scanner history stored at users/{userId}/scanner_history/{date+time}
+      match /scanner_history/{entryId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Exercise tracker history stored at users/{userId}/exercise_history/{entryId}
+      match /exercise_history/{entryId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Suggested workout plan tasks stored at users/{userId}/workout_plan/{taskId}
+      match /workout_plan/{taskId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}

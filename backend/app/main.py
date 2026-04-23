@@ -1,12 +1,14 @@
+import logging
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import repository
+from .agents.comparison_agent import compare_investigations
 from .ai import stage_target_label
 from .core.orchestrator import queue_investigation, start_investigation_workers
 from .database import init_db
 from .knowledge.base import BOOTSTRAP
-from .services.query_support import fetch_claim_suggestions, is_health_related_query, is_supported_english_query
 from .models import (
     BootstrapPayload,
     InvestigationCollection,
@@ -17,10 +19,15 @@ from .models import (
     NotificationRegistrationRequest,
     NotificationRegistrationResponse,
 )
-from .agents.comparison_agent import compare_investigations
+from .routes.calorie_routes import legacy_router as calorie_legacy_router
+from .routes.calorie_routes import router as calorie_router
 from .routes.supplements import router as supplements_router
+from .routes.workout_routes import router as workout_router
+from .services.query_support import fetch_claim_suggestions, is_health_related_query, is_supported_english_query
 from .settings import settings
 
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="GramWIN API",
@@ -37,13 +44,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(calorie_router)
+app.include_router(calorie_legacy_router)
 app.include_router(supplements_router)
+app.include_router(workout_router)
 
 
 @app.on_event("startup")
 def startup() -> None:
     init_db()
     start_investigation_workers()
+    logger.info("OpenAI runtime diagnostics: %s", settings.openai_runtime_diagnostics)
 
 
 @app.get("/health")

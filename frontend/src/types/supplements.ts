@@ -7,6 +7,13 @@ export interface SupplementAnalysisResult {
   analysisText: string;
   sections: SupplementSection[];
   infographicImageDataUrl: string;
+  detectedDrugs?: string[];
+  generationTiming?: {
+    textStartedAt?: number | null;
+    textCompletedAt?: number | null;
+    imageStartedAt?: number | null;
+    imageCompletedAt?: number | null;
+  } | null;
 }
 
 export interface PickedSupplementAsset {

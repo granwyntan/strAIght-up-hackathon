@@ -13,6 +13,10 @@ type ImageUploadProps = {
   loading: boolean;
   error: string;
   showCameraButton?: boolean;
+  disableImageOptions?: boolean;
+  onClearImageSelection?: () => void;
+  clearImageSelectionLabel?: string;
+  analyzeLabel?: string;
   onCaptureImage: () => void;
   onPickImage: () => void;
   onAnalyze: () => void;
@@ -28,6 +32,10 @@ export default function ImageUpload({
   loading,
   error,
   showCameraButton = true,
+  disableImageOptions = false,
+  onClearImageSelection,
+  clearImageSelectionLabel = "Clear image",
+  analyzeLabel = "Analyze supplement",
   onCaptureImage,
   onPickImage,
   onAnalyze,
@@ -40,22 +48,29 @@ export default function ImageUpload({
       </Text>
 
       {showCameraButton ? (
-        <Pressable className="items-center rounded-2xl border border-line bg-soft px-4 py-3" onPress={onCaptureImage} disabled={loading}>
+        <Pressable className={`items-center rounded-2xl border border-line px-4 py-3 ${disableImageOptions ? "bg-soft/60 opacity-50" : "bg-soft"}`} onPress={onCaptureImage} disabled={loading || disableImageOptions}>
           <Text className="font-['Poppins_600SemiBold'] text-sage">Use webcam / camera</Text>
         </Pressable>
       ) : null}
 
-      <Pressable className="items-center rounded-2xl border border-line bg-soft px-4 py-3" onPress={onPickImage} disabled={loading}>
+      <Pressable className={`items-center rounded-2xl border border-line px-4 py-3 ${disableImageOptions ? "bg-soft/60 opacity-50" : "bg-soft"}`} onPress={onPickImage} disabled={loading || disableImageOptions}>
         <Text className="font-['Poppins_600SemiBold'] text-sage">{selectedImageUri ? "Replace image" : "Choose image"}</Text>
       </Pressable>
 
       {selectedImageUri ? (
-        <Image
-          source={{ uri: selectedImageUri }}
-          className="w-full rounded-2xl border border-line bg-soft"
-          style={{ aspectRatio: selectedImageAspectRatio || 1.4, maxHeight: 260 }}
-          resizeMode="contain"
-        />
+        <View className="gap-2">
+          <Image
+            source={{ uri: selectedImageUri }}
+            className="w-full rounded-2xl border border-line bg-soft"
+            style={{ aspectRatio: selectedImageAspectRatio || 1.4, maxHeight: 260 }}
+            resizeMode="contain"
+          />
+          {onClearImageSelection ? (
+            <Pressable className="self-start rounded-full border border-line bg-soft px-3 py-2" onPress={onClearImageSelection} disabled={loading}>
+              <Text className="font-['Poppins_600SemiBold'] text-sage">{clearImageSelectionLabel}</Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
 
       <View className="gap-2">
@@ -91,7 +106,7 @@ export default function ImageUpload({
         onPress={onAnalyze}
         disabled={loading || !selectedImageUri}
       >
-        {loading ? <ActivityIndicator color={palette.surface} size="small" /> : <Text className="font-['Poppins_600SemiBold'] text-card">Analyze supplement</Text>}
+        {loading ? <ActivityIndicator color={palette.surface} size="small" /> : <Text className="font-['Poppins_600SemiBold'] text-card">{analyzeLabel}</Text>}
       </Pressable>
 
       {error ? <Text className="font-['Poppins_400Regular'] text-[13px] leading-5 text-danger">{error}</Text> : null}

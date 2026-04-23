@@ -1,5 +1,7 @@
 import json
+import logging
 import time
+import uuid
 from dataclasses import dataclass
 from functools import lru_cache
 from threading import Lock
@@ -34,6 +36,7 @@ PROVIDER_HARD_FAILURE_MARKERS = (
     "403",
     "429",
 )
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -303,6 +306,11 @@ def _call_openai_responses(target: StageTarget, system_prompt: str, payload: dic
     if not api_key:
         return ""
     client = _openai_client(api_key, _provider_base_url(target.provider))
+    if target.provider == "openai":
+        print("OPENAI CALL ID:", uuid.uuid4())
+        print("CALL START", time.time())
+        print(f"[OpenAI API] responses.create model={target.model} stage-payload-size={len(_payload_text(payload))}")
+        logger.info("OpenAI API call: responses.create model=%s", target.model)
     response = client.responses.create(
         model=target.model,
         input=_openai_messages(system_prompt, payload),
@@ -316,6 +324,11 @@ def _call_deepseek_chat(target: StageTarget, system_prompt: str, payload: dict[s
     if not api_key:
         return ""
     client = _openai_client(api_key, _provider_base_url(target.provider))
+    if target.provider == "openai":
+        print("OPENAI CALL ID:", uuid.uuid4())
+        print("CALL START", time.time())
+        print(f"[OpenAI API] chat.completions.create model={target.model} stage-payload-size={len(_payload_text(payload))}")
+        logger.info("OpenAI API call: chat.completions.create model=%s", target.model)
     response = client.chat.completions.create(
         model=target.model,
         messages=_openai_messages(system_prompt, payload),

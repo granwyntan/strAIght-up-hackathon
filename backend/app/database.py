@@ -86,18 +86,24 @@ def init_db() -> None:
                 last_seen_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS calorie_entries (
+                id TEXT PRIMARY KEY,
+                entry_date TEXT NOT NULL,
+                calories INTEGER NOT NULL,
+                meal_name TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_investigations_created_at ON investigations (created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_investigations_updated_at ON investigations (updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_investigations_verdict ON investigations (verdict);
             CREATE INDEX IF NOT EXISTS idx_investigations_score ON investigations (overall_score DESC);
             CREATE INDEX IF NOT EXISTS idx_push_subscriptions_last_seen ON push_subscriptions (last_seen_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_calorie_entries_entry_date ON calorie_entries(entry_date);
             """
         )
 
-        existing_columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(investigations)").fetchall()
-        }
+        existing_columns = {row["name"] for row in connection.execute("PRAGMA table_info(investigations)").fetchall()}
         column_definitions = {
             "confidence_level": "TEXT",
             "truth_classification": "TEXT NOT NULL DEFAULT ''",

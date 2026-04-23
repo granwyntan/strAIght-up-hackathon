@@ -20,12 +20,12 @@ import {
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
+  Poppins_400Regular,
+  Poppins_500Medium,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
   useFonts,
-} from "@expo-google-fonts/inter";
+} from "@expo-google-fonts/poppins";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   ActivityIndicator,
@@ -64,7 +64,10 @@ import {
   type SingaporeAuthorityReview,
 } from "./src/data";
 import { notificationDataUrl, notificationsSupportedInCurrentShell, parseInvestigationUrl, registerForPushNotificationsAsync } from "./src/notifications";
+import CaloriesPage from "./src/pages/CaloriesPage";
 import SupplementsPage from "./src/pages/SupplementsPage";
+import ProfilePage from "./src/pages/ProfilePage";
+import { getActiveSessionAccount, loginOrRegisterAccount, logoutActiveSession, subscribeToActiveSession } from "./src/storage/accountStorage";
 
 const BASE_SCREEN_WIDTH = 390;
 
@@ -805,10 +808,10 @@ function AppRoot() {
   const typeScale = clampNumber(width / BASE_SCREEN_WIDTH, 0.94, 1.12);
   const theme = useMemo(() => createPaperTheme(typeScale), [typeScale]);
   const [fontsLoaded] = useFonts({
-    Poppins_400Regular: Inter_400Regular,
-    Poppins_500Medium: Inter_500Medium,
-    Poppins_600SemiBold: Inter_600SemiBold,
-    Poppins_700Bold: Inter_700Bold,
+    Poppins_400Regular,
+    Poppins_500Medium,
+    Poppins_600SemiBold,
+    Poppins_700Bold,
   });
 
   if (!fontsLoaded) {
@@ -829,6 +832,8 @@ function AppRoot() {
 function GramwinApp() {
   const insets = useSafeAreaInsets();
   const [apiBaseUrl, setApiBaseUrl] = useState(resolveApiBaseUrl);
+  const [activeAccount, setActiveAccount] = useState<{ id: string; email: string; createdAt?: string } | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<{ visible: boolean; message: string; action?: SnackbarAction }>({
     visible: false,
@@ -904,6 +909,30 @@ function GramwinApp() {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+    void getActiveSessionAccount()
+      .then((account) => {
+        if (mounted) {
+          setActiveAccount(account);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setActiveAccount(null);
+        }
+      });
+
+    const unsubscribe = subscribeToActiveSession((account: { id: string; email: string; createdAt?: string } | null) => {
+      setActiveAccount(account);
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!liveInvestigation || !isRunning(liveInvestigation.status)) {
       return;
     }
@@ -913,6 +942,33 @@ function GramwinApp() {
     }, 2000);
     return () => clearInterval(interval);
   }, [liveInvestigation]);
+
+  async function handleAuthenticate(email: string, password: string) {
+    setAuthLoading(true);
+    try {
+      const account = await loginOrRegisterAccount(email, password);
+      setActiveAccount(account);
+      setSnackbar({ visible: true, message: "Account connected" });
+    } catch (error) {
+      setSnackbar({ visible: true, message: error instanceof Error ? error.message : "Could not sign in" });
+      throw error;
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    setAuthLoading(true);
+    try {
+      await logoutActiveSession();
+      setActiveAccount(null);
+      setSnackbar({ visible: true, message: "Signed out" });
+    } catch (error) {
+      setSnackbar({ visible: true, message: error instanceof Error ? error.message : "Could not sign out" });
+    } finally {
+      setAuthLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!apiError) {
@@ -1675,19 +1731,17 @@ function GramwinApp() {
           />
         )}
 
-        {activeTab === "nutrition" && <NutritionScreen onOpenHome={() => setActiveTab("home")} />}
-        {activeTab === "supplements" && <SupplementsScreen requestApi={requestApi} onOpenConsultant={() => setActiveTab("consultant")} />}
+        {activeTab === "nutrition" && <CaloriesPage requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000)} accountId={activeAccount?.id} accountEmail={activeAccount?.email} />}
+        {activeTab === "supplements" && <SupplementsPage requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000)} accountId={activeAccount?.id} accountEmail={activeAccount?.email} />}
         {activeTab === "profile" && (
-          <ProfileScreen
-            bootstrap={bootstrap}
+          <ProfilePage
             history={history}
-            profileView={profileView}
-            onProfileViewChange={setProfileView}
-            onOpenInvestigate={() => {
-              setConsultantView("investigate");
-              setActiveTab("consultant");
-            }}
-            onUseClaim={applyFeaturedClaim}
+            accountId={activeAccount?.id}
+            accountEmail={activeAccount?.email}
+            activeAccount={activeAccount}
+            authLoading={authLoading}
+            onAuthenticate={handleAuthenticate}
+            onLogout={() => void handleLogout()}
           />
         )}
       </ScrollView>
