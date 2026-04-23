@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { palette } from "../data";
 import AnalysisResult from "../components/supplements/AnalysisResult";
 import ImageUpload from "../components/supplements/ImageUpload";
+import ToolHeader from "../components/shared/ToolHeader";
 import { loadProfile } from "../storage/profileStorage";
 import { addSupplementHistoryEntry, clearSupplementHistory, loadSupplementHistory, removeSupplementHistoryEntry } from "../storage/supplementSearchStorage";
 import type { PickedSupplementAsset, RequestApi, SupplementAnalysisResult } from "../types/supplements";
+import { compactIsoId, formatDisplayDateTime, formatDisplayTime } from "../utils/dateTime";
 
 const DEFAULT_CONDITIONS = "NIL";
 const DEFAULT_GOALS = "Reduce belly fat, Improve cognitive power";
@@ -18,7 +21,7 @@ const SCANNER_GUIDE_PAGES = [
   },
   {
     title: "Pick one input mode",
-    body: "Use either supplement name search or image scanning. When one mode is active, the other is dimmed so the analysis stays clear.",
+    body: "Use either supplement name search OR image scanning. When one mode is active, the other is dimmed so the analysis stays clear.",
   },
   {
     title: "Result flow",
@@ -117,20 +120,34 @@ function formatElapsed(elapsedMs: number) {
   return `${(elapsedMs / 1000).toFixed(2)}s`;
 }
 
-function formatDateTime(isoValue: string) {
-  const date = new Date(isoValue);
-  if (Number.isNaN(date.getTime())) {
-    return isoValue;
-  }
-  return date.toLocaleString();
-}
-
 function phaseDurationLabel(startSeconds?: number | null, endSeconds?: number | null, prefix = "Duration") {
   if (typeof startSeconds !== "number" || typeof endSeconds !== "number") {
     return "";
   }
   const durationMs = Math.max(0, (endSeconds - startSeconds) * 1000);
   return `${prefix}: ${(durationMs / 1000).toFixed(2)}s`;
+}
+
+function analysisProgressValue(textStatus: "idle" | "waiting" | "generating" | "completed" | "failed", imageStatus: "idle" | "waiting" | "generating" | "completed" | "failed" | "not_available") {
+  if (textStatus === "failed" || imageStatus === "failed") {
+    return 0.18;
+  }
+  if (textStatus === "completed" && (imageStatus === "completed" || imageStatus === "not_available")) {
+    return 1;
+  }
+  if (textStatus === "completed" && imageStatus === "generating") {
+    return 0.82;
+  }
+  if (textStatus === "completed") {
+    return 0.72;
+  }
+  if (textStatus === "generating") {
+    return 0.48;
+  }
+  if (textStatus === "waiting") {
+    return 0.18;
+  }
+  return 0;
 }
 
 export default function SupplementsPage({ requestApi, accountId, accountEmail }: SupplementsPageProps) {
@@ -155,6 +172,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
   const [guidePageWidth, setGuidePageWidth] = useState(320);
   const [activeGuidePage, setActiveGuidePage] = useState(0);
   const [selectedHistoryEntryId, setSelectedHistoryEntryId] = useState("");
+  const [historyModalEntry, setHistoryModalEntry] = useState<SearchHistoryEntry | null>(null);
   const canCallApi = useMemo(() => typeof requestApi === "function", [requestApi]);
   const selectedImageAspectRatio = selectedAsset?.width && selectedAsset?.height ? selectedAsset.width / selectedAsset.height : 1.4;
   const streamRef = useRef<MediaStream | null>(null);
@@ -491,7 +509,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
       const nowIso = new Date().toISOString();
       const updatedHistory = (await addSupplementHistoryEntry(
         {
-          id: nowIso.replace(/[-:.TZ]/g, "").slice(0, 17),
+          id: compactIsoId(nowIso),
           query: queryLabel,
           title,
           mode: "image",
@@ -560,7 +578,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
       const nowIso = new Date().toISOString();
       const updatedHistory = (await addSupplementHistoryEntry(
         {
-          id: nowIso.replace(/[-:.TZ]/g, "").slice(0, 17),
+          id: compactIsoId(nowIso),
           query: normalizedQuery,
           title,
           mode: "text",
@@ -589,11 +607,15 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
   async function clearOneHistoryItem(entryId: string) {
     const updated = (await removeSupplementHistoryEntry(entryId, accountId, accountEmail)) as SearchHistoryEntry[];
     setSearchHistory(updated);
+    if (historyModalEntry?.id === entryId) {
+      setHistoryModalEntry(null);
+    }
   }
 
   async function clearAllHistoryItems() {
     const updated = (await clearSupplementHistory(accountId, accountEmail)) as SearchHistoryEntry[];
     setSearchHistory(updated);
+    setHistoryModalEntry(null);
   }
 
   function clearSearchInput() {
@@ -601,18 +623,27 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
     setSelectedHistoryEntryId("");
   }
 
-  function openHistoryEntry(entry: SearchHistoryEntry) {
+  function openHistoryEntry(entry: SearchHistoryEntry, options?: { openInAnalyzer?: boolean }) {
     if (!entry?.result) {
       return;
     }
+    if (!options?.openInAnalyzer) {
+      setHistoryModalEntry(entry);
+      return;
+    }
     closeWebcam();
-    setSelectedAsset(null);
+    setSelectedAsset(entry.inputImage ? { uri: entry.inputImage } : null);
     setError("");
     setSearchQuery("");
     setResult(entry.result);
     setSelectedHistoryEntryId(entry.id || "history");
+    setHistoryModalEntry(null);
     applyGenerationStatusFromPayload(entry.result);
     setActiveSubPage("analyzer");
+  }
+
+  function closeHistoryModal() {
+    setHistoryModalEntry(null);
   }
 
   function closeGuide() {
@@ -641,6 +672,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
   const generationTiming = result?.generationTiming || null;
   const textDuration = phaseDurationLabel(generationTiming?.textStartedAt, generationTiming?.textCompletedAt, "Text duration");
   const imageDuration = phaseDurationLabel(generationTiming?.imageStartedAt, generationTiming?.imageCompletedAt, "Image duration");
+  const progressValue = analysisProgressValue(textGenerationStatus, imageGenerationStatus);
 
   const textStatusLabel =
     textGenerationStatus === "generating"
@@ -666,22 +698,15 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
 
   return (
     <View className="gap-4">
-      <View className="gap-3 rounded-[24px] border border-line bg-card px-5 py-6 shadow-panel">
-        <View className="flex-row items-start justify-between gap-3">
-          <View className="flex-1 gap-2">
-            <Text className="self-start rounded-full bg-soft px-3 py-1.5 font-['Poppins_600SemiBold'] text-xs text-sage">Supplement scanner</Text>
-            <Text className="font-['Poppins_700Bold'] text-[24px] leading-8 text-ink">Medicine and supplement analyzer</Text>
-            <Text className="font-['Poppins_400Regular'] text-[14px] leading-6 text-muted">
-              Upload a bottle or label, or search by supplement name, to get a green, calmer report on ingredients, benefits, cautions, and goal fit.
-            </Text>
-          </View>
-          <Pressable className="h-10 w-10 items-center justify-center rounded-full border border-line bg-soft" onPress={openGuide}>
-            <Text className="font-['Poppins_700Bold'] text-sage">?</Text>
-          </Pressable>
-        </View>
-      </View>
+      <ToolHeader
+        eyebrow="Consultant tool"
+        icon="pill-multiple"
+        title="Medicine and supplement analyzer"
+        subtitle="Use either bottle or label upload OR supplement-name search to get a calmer report on ingredients, benefits, cautions, interactions, and goal fit."
+        onPressHelp={openGuide}
+      />
 
-      <View className="flex-row rounded-[20px] border border-line bg-card p-1 shadow-panel">
+      <View className="flex-row rounded-[18px] border border-line bg-card p-1 shadow-panel">
         <Pressable className={`flex-1 items-center rounded-2xl px-4 py-3 ${activeSubPage === "analyzer" ? "bg-sage" : "bg-transparent"}`} onPress={() => setActiveSubPage("analyzer")}>
           <Text className={`font-['Poppins_600SemiBold'] ${activeSubPage === "analyzer" ? "text-card" : "text-muted"}`}>Analyzer</Text>
         </Pressable>
@@ -693,16 +718,17 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
       {activeSubPage === "analyzer" ? (
         <>
           {selectedHistoryEntryId ? (
-            <View className="gap-2 rounded-[20px] border border-line bg-soft px-4 py-4">
-              <Text className="font-['Poppins_600SemiBold'] text-ink">Viewing a saved supplement analysis.</Text>
+            <View className="gap-2 rounded-[18px] border border-line bg-soft px-4 py-4">
+              <Text className="font-['Poppins_600SemiBold'] text-ink">Viewing a saved supplement analysis inside the live analyzer layout.</Text>
               <Pressable className="self-start rounded-full border border-line bg-card px-3 py-2" onPress={exitHistoryPreviewMode}>
                 <Text className="font-['Poppins_600SemiBold'] text-sage">Start a new analysis</Text>
               </Pressable>
             </View>
           ) : (
             <>
-              <View className="gap-3 rounded-[24px] border border-line bg-card p-5 shadow-panel">
+              <View className="gap-3 rounded-[22px] border border-line bg-card p-5 shadow-panel">
                 <Text className="font-['Poppins_700Bold'] text-base text-ink">Search supplement by name</Text>
+                <Text className="font-['Poppins_400Regular'] leading-5 text-muted">Use name search for a quick product review, then switch to an image when you want more label-specific detail.</Text>
                 <TextInput
                   className={`min-h-[50px] rounded-2xl border px-4 py-3 font-['Poppins_400Regular'] text-ink ${searchOptionsDisabled ? "border-line bg-soft/60" : "border-line bg-card"}`}
                   value={searchQuery}
@@ -726,7 +752,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
               </View>
 
               {Platform.OS === "web" ? (
-                <View className="gap-2.5 rounded-[24px] border border-line bg-card p-5 shadow-panel">
+                <View className="gap-2.5 rounded-[22px] border border-line bg-card p-5 shadow-panel">
                   <Text className="font-['Poppins_700Bold'] text-base text-ink">Webcam capture</Text>
                   <Text className="font-['Poppins_400Regular'] leading-5 text-muted">Use your browser webcam for a quick front-label scan.</Text>
                   {webcamActive ? (
@@ -769,7 +795,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
                 onAnalyze={analyzeSupplement}
               />
 
-              <View className="flex-row items-center justify-between gap-3 rounded-[24px] border border-line bg-card px-5 py-4 shadow-panel">
+              <View className="flex-row items-center justify-between gap-3 rounded-[22px] border border-line bg-card px-5 py-4 shadow-panel">
                 <View className="flex-1">
                   <Text className="font-['Poppins_700Bold'] text-base text-ink">Generate infographic</Text>
                   <Text className="font-['Poppins_400Regular'] leading-5 text-muted">Turn this off if you want faster supplement analysis.</Text>
@@ -778,13 +804,46 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
               </View>
 
               {apiCallStartedAt ? (
-                <View className="gap-1.5 rounded-[24px] border border-line bg-card px-5 py-4 shadow-panel">
-                  <Text className="font-['Poppins_600SemiBold'] text-ink">Call started: {new Date(apiCallStartedAt).toLocaleTimeString()}</Text>
-                  <Text className="font-['Poppins_400Regular'] text-muted">{apiCallInFlight ? "Elapsed (live): " : "Elapsed: "}{formatElapsed(apiCallElapsedMs)}</Text>
-                  <Text className="font-['Poppins_400Regular'] text-muted">{textStatusLabel}</Text>
-                  <Text className="font-['Poppins_400Regular'] text-muted">{imageStatusLabel}</Text>
-                  {textDuration ? <Text className="font-['Poppins_400Regular'] text-muted">{textDuration}</Text> : null}
-                  {imageDuration ? <Text className="font-['Poppins_400Regular'] text-muted">{imageDuration}</Text> : null}
+                <View className="gap-3 rounded-[22px] border border-line bg-card px-5 py-4 shadow-panel">
+                  <View className="flex-row items-start justify-between gap-3">
+                    <View className="flex-1 gap-1">
+                      <Text className="font-['Poppins_700Bold'] text-base text-ink">{loading ? "Working on your report" : "Latest analysis run"}</Text>
+                      <Text className="font-['Poppins_400Regular'] text-muted">
+                        Started {formatDisplayTime(apiCallStartedAt)} • {apiCallInFlight ? "Elapsed" : "Total time"} {formatElapsed(apiCallElapsedMs)}
+                      </Text>
+                    </View>
+                    <Text className="rounded-full bg-moss px-3 py-1.5 font-['Poppins_600SemiBold'] text-xs text-sage">{Math.round(progressValue * 100)}%</Text>
+                  </View>
+                  <View className="h-2 overflow-hidden rounded-full bg-moss">
+                    <View className="h-full rounded-full bg-sage" style={{ width: `${Math.max(8, Math.round(progressValue * 100))}%` }} />
+                  </View>
+                  <View className="gap-2">
+                    {[
+                      { label: "Extractor", body: "Reading the label or product name.", active: progressValue >= 0.18, complete: progressValue >= 0.48 },
+                      { label: "Claim analyzer", body: "Separating real claims from marketing language.", active: progressValue >= 0.48, complete: progressValue >= 0.72 },
+                      { label: "Safety and evidence", body: "Checking ingredient fit, risks, and evidence strength.", active: progressValue >= 0.72, complete: progressValue >= 1 },
+                    ].map((step) => (
+                      <View key={step.label} className="flex-row items-start gap-3">
+                        <View className={`mt-0.5 h-6 w-6 items-center justify-center rounded-full ${step.complete ? "bg-moss" : step.active ? "bg-soft" : "bg-shell"}`}>
+                          <MaterialCommunityIcons
+                            name={step.complete ? "check" : step.active ? "progress-clock" : "circle-outline"}
+                            size={14}
+                            color={step.complete ? palette.primary : palette.muted}
+                          />
+                        </View>
+                        <View className="flex-1 gap-0.5">
+                          <Text className="font-['Poppins_600SemiBold'] text-[13px] text-ink">{step.label}</Text>
+                          <Text className="font-['Poppins_400Regular'] text-[12px] leading-5 text-muted">{step.body}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                  <View className="gap-1">
+                    <Text className="font-['Poppins_400Regular'] text-[13px] text-muted">{textStatusLabel}</Text>
+                    <Text className="font-['Poppins_400Regular'] text-[13px] text-muted">{imageStatusLabel}</Text>
+                    {textDuration ? <Text className="font-['Poppins_400Regular'] text-[13px] text-muted">{textDuration}</Text> : null}
+                    {imageDuration ? <Text className="font-['Poppins_400Regular'] text-[13px] text-muted">{imageDuration}</Text> : null}
+                  </View>
                 </View>
               ) : null}
             </>
@@ -792,36 +851,106 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
 
           <AnalysisResult result={result} selectedImageUri={selectedAsset?.uri || ""} selectedImageAspectRatio={selectedImageAspectRatio} />
         </>
-      ) : (
-        <View className="gap-4 rounded-[24px] border border-line bg-card p-5 shadow-panel">
-          <View className="flex-row items-center justify-between gap-3">
-            <Text className="font-['Poppins_700Bold'] text-base text-ink">Recent supplement searches</Text>
-            <Pressable className="rounded-full border border-line bg-soft px-3 py-2" onPress={() => void clearAllHistoryItems()}>
-              <Text className="font-['Poppins_600SemiBold'] text-sage">Clear all</Text>
-            </Pressable>
-          </View>
+        ) : (
+          <View className="gap-4 rounded-[22px] border border-line bg-card p-5 shadow-panel">
+            <View className="flex-row items-center justify-between gap-3">
+              <View className="flex-row items-center gap-2">
+                <View className="h-9 w-9 items-center justify-center rounded-[12px] bg-moss">
+                  <MaterialCommunityIcons name="history" size={18} color={palette.primary} />
+                </View>
+                <Text className="font-['Poppins_700Bold'] text-base text-ink">Recent supplement searches</Text>
+              </View>
+              <Pressable className="rounded-full border border-line bg-soft px-3 py-2" onPress={() => void clearAllHistoryItems()}>
+                <Text className="font-['Poppins_600SemiBold'] text-sage">Clear all</Text>
+              </Pressable>
+            </View>
+          <Text className="font-['Poppins_400Regular'] text-[13px] leading-5 text-muted">Open a saved result in a modal, then move it back into the analyzer only if you want to rework it.</Text>
           {searchHistory.length === 0 ? <Text className="font-['Poppins_400Regular'] text-muted">No searches yet.</Text> : null}
           {searchHistory.map((entry) => (
-            <Pressable key={entry.id} className="flex-row items-center justify-between gap-3 rounded-[20px] border border-line bg-soft px-4 py-4" onPress={() => openHistoryEntry(entry)}>
-              <View className="flex-1 gap-1">
-                <Text className="font-['Poppins_600SemiBold'] text-ink">{entry.title || entry.query || "Unknown supplement"}</Text>
-                <Text className="font-['Poppins_400Regular'] text-muted">
-                  {entry.mode === "image" ? "Image scan" : "Text search"} · {formatDateTime(entry.searchedAt)}
-                </Text>
+            <Pressable key={entry.id} className="gap-3 rounded-[18px] border border-line bg-soft px-4 py-4" onPress={() => openHistoryEntry(entry)}>
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="flex-1 gap-1">
+                  <Text className="font-['Poppins_600SemiBold'] text-ink">{entry.title || entry.query || "Unknown supplement"}</Text>
+                  <Text className="font-['Poppins_400Regular'] text-muted">
+                    {entry.mode === "image" ? "Image scan" : "Text search"} • {formatDisplayDateTime(entry.searchedAt)}
+                  </Text>
+                </View>
+                <View className="rounded-full bg-card px-3 py-1.5">
+                  <Text className="font-['Poppins_600SemiBold'] text-xs text-sage">View</Text>
+                </View>
               </View>
-              <Pressable
-                className="rounded-full border border-line bg-card px-3 py-2"
-                onPress={(event) => {
-                  event.stopPropagation();
-                  void clearOneHistoryItem(entry.id);
-                }}
-              >
-                <Text className="font-['Poppins_600SemiBold'] text-sage">Remove</Text>
-              </Pressable>
+              <View className="flex-row items-center justify-end gap-2">
+                <Pressable
+                  className="rounded-full border border-line bg-card px-3 py-2"
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    openHistoryEntry(entry, { openInAnalyzer: true });
+                  }}
+                >
+                  <Text className="font-['Poppins_600SemiBold'] text-sage">Open in analyzer</Text>
+                </Pressable>
+                <Pressable
+                  className="rounded-full border border-line bg-card px-3 py-2"
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    void clearOneHistoryItem(entry.id);
+                  }}
+                >
+                  <Text className="font-['Poppins_600SemiBold'] text-sage">Remove</Text>
+                </Pressable>
+              </View>
             </Pressable>
           ))}
         </View>
       )}
+
+      <Modal visible={Boolean(historyModalEntry)} transparent animationType="slide" onRequestClose={closeHistoryModal}>
+        <View style={styles.guideBackdrop}>
+          <View style={[styles.guideCard, styles.historyModalCard]}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.historyModalHeader}>
+              <View style={styles.historyModalCopy}>
+                <Text style={styles.guideTitle}>Saved supplement analysis</Text>
+                <Text style={styles.historyModalMeta}>
+                  {(historyModalEntry?.mode === "image" ? "Image scan" : "Text search")} • {historyModalEntry ? formatDisplayDateTime(historyModalEntry.searchedAt) : ""}
+                </Text>
+              </View>
+              <Pressable style={styles.guideCloseButton} onPress={closeHistoryModal}>
+                <Text style={styles.guideCloseButtonText}>×</Text>
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.historyModalScroller}>
+              <AnalysisResult
+                result={historyModalEntry?.result || null}
+                selectedImageUri={historyModalEntry?.inputImage || ""}
+                selectedImageAspectRatio={selectedImageAspectRatio}
+              />
+            </ScrollView>
+            <View style={styles.historyModalActions}>
+              <Pressable
+                style={styles.historyModalPrimaryButton}
+                onPress={() => {
+                  if (historyModalEntry) {
+                    openHistoryEntry(historyModalEntry, { openInAnalyzer: true });
+                  }
+                }}
+              >
+                <Text style={styles.historyModalPrimaryText}>Open in analyzer</Text>
+              </Pressable>
+              {historyModalEntry ? (
+                <Pressable
+                  style={styles.historyModalSecondaryButton}
+                  onPress={() => {
+                    void clearOneHistoryItem(historyModalEntry.id);
+                  }}
+                >
+                  <Text style={styles.historyModalSecondaryText}>Delete</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={guideVisible} transparent animationType="fade" onRequestClose={closeGuide}>
         <View style={styles.guideBackdrop}>
@@ -829,7 +958,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
             <Pressable style={styles.guideCloseButton} onPress={closeGuide}>
               <Text style={styles.guideCloseButtonText}>×</Text>
             </Pressable>
-            <Text style={styles.guideTitle}>Scanner guide</Text>
+            <Text style={styles.guideTitle}>Supplement tutorial</Text>
             <ScrollView
               ref={guideScrollRef}
               horizontal
@@ -880,17 +1009,86 @@ const styles = StyleSheet.create({
   guideBackdrop: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.25)",
-    justifyContent: "center",
+    justifyContent: "flex-end",
     alignItems: "center",
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 0,
   },
   guideCard: {
     width: "100%",
     maxWidth: 420,
-    borderRadius: 28,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     backgroundColor: palette.surface,
     padding: 20,
     gap: 12,
+  },
+  historyModalCard: {
+    maxWidth: 720,
+    maxHeight: "88%",
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 54,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: "#D1D5DB",
+    marginBottom: 10,
+  },
+  historyModalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  historyModalCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  historyModalMeta: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 13,
+    lineHeight: 20,
+    color: palette.muted,
+  },
+  historyModalScroller: {
+    gap: 12,
+    paddingBottom: 4,
+  },
+  historyModalActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    justifyContent: "flex-end",
+  },
+  historyModalPrimaryButton: {
+    minHeight: 44,
+    borderRadius: 14,
+    backgroundColor: palette.primary,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyModalPrimaryText: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 13,
+    color: palette.surface,
+  },
+  historyModalSecondaryButton: {
+    minHeight: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyModalSecondaryText: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 13,
+    color: palette.ink,
   },
   guideCloseButton: {
     alignSelf: "flex-end",

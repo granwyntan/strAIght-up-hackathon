@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Notifications from "expo-notifications";
 import {
   Animated,
   Dimensions,
@@ -63,11 +62,12 @@ import {
   type SourceQualityLabel,
   type SingaporeAuthorityReview,
 } from "./src/data";
-import { notificationDataUrl, notificationsSupportedInCurrentShell, parseInvestigationUrl, registerForPushNotificationsAsync } from "./src/notifications";
+import { addNotificationResponseListener, getLastNotificationResponseUrl, notificationsSupportedInCurrentShell, parseInvestigationUrl, registerForPushNotificationsAsync } from "./src/notifications";
 import CaloriesPage from "./src/pages/CaloriesPage";
 import SupplementsPage from "./src/pages/SupplementsPage";
 import ProfilePage from "./src/pages/ProfilePage";
 import { getActiveSessionAccount, loginOrRegisterAccount, logoutActiveSession, subscribeToActiveSession } from "./src/storage/accountStorage";
+import { formatDisplayDateTime } from "./src/utils/dateTime";
 
 const BASE_SCREEN_WIDTH = 390;
 
@@ -274,16 +274,8 @@ function safeLower(value: unknown) {
   return typeof value === "string" ? value.toLowerCase() : "";
 }
 
-function padTimestamp(value: number) {
-  return value.toString().padStart(2, "0");
-}
-
 function formatTimestamp(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return `${padTimestamp(date.getDate())}/${padTimestamp(date.getMonth() + 1)}/${date.getFullYear()}, ${padTimestamp(date.getHours())}:${padTimestamp(date.getMinutes())}`;
+  return formatDisplayDateTime(value);
 }
 
 function depthLabel(depth: ReviewDepth) {
@@ -860,6 +852,7 @@ function GramwinApp() {
   const [historySheetDetail, setHistorySheetDetail] = useState<InvestigationDetail | null>(null);
   const [historySheetVisible, setHistorySheetVisible] = useState(false);
   const [historySheetLoading, setHistorySheetLoading] = useState(false);
+  const [consultantTutorialVisible, setConsultantTutorialVisible] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [loadingSelected, setLoadingSelected] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -892,15 +885,9 @@ function GramwinApp() {
     const linkSubscription = Linking.addEventListener("url", ({ url }) => {
       void openInvestigationFromUrl(url);
     });
-    const notificationSubscription =
-      Platform.OS === "web" || !notificationsSupportedInCurrentShell()
-        ? null
-        : Notifications.addNotificationResponseReceivedListener((response) => {
-          const url = notificationDataUrl(response.notification.request.content.data as Record<string, unknown> | undefined);
-          if (url) {
-            void openInvestigationFromUrl(url);
-          }
-        });
+    const notificationSubscription = addNotificationResponseListener((url) => {
+      void openInvestigationFromUrl(url);
+    });
 
     return () => {
       linkSubscription.remove();
@@ -1155,8 +1142,7 @@ function GramwinApp() {
   async function hydrateInitialNotificationTarget() {
     try {
       if (Platform.OS !== "web" && notificationsSupportedInCurrentShell()) {
-        const response = await Notifications.getLastNotificationResponseAsync();
-        const notificationUrl = notificationDataUrl(response?.notification.request.content.data as Record<string, unknown> | undefined);
+        const notificationUrl = await getLastNotificationResponseUrl();
         if (notificationUrl) {
           await openInvestigationFromUrl(notificationUrl);
           return;
@@ -1663,6 +1649,7 @@ function GramwinApp() {
             }
             apiError={apiError}
             onRetry={retryBackendConnection}
+            onPressHelp={activeTab === "consultant" && consultantView !== "history" ? () => setConsultantTutorialVisible(true) : undefined}
           />
         )}
 
@@ -1759,6 +1746,39 @@ function GramwinApp() {
         cancellingIds={cancellingIds}
       />
 
+      <Modal visible={consultantTutorialVisible} transparent animationType="fade" onRequestClose={() => setConsultantTutorialVisible(false)}>
+        <View style={styles.sheetBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setConsultantTutorialVisible(false)} />
+          <Surface style={styles.tutorialModal} elevation={0}>
+            <View style={styles.sheetHeader}>
+              <View style={styles.flexOne}>
+                <Text variant="titleLarge" style={styles.formTitle}>
+                  Claim consultant tutorial
+                </Text>
+                <Text variant="bodySmall" style={styles.historyMetaLine}>
+                  Start with a health claim, choose the review depth, then read the conclusion before drilling into evidence.
+                </Text>
+              </View>
+              <IconButton icon="close" onPress={() => setConsultantTutorialVisible(false)} iconColor={palette.primary} />
+            </View>
+            <View style={styles.tutorialList}>
+              <Text variant="bodyMedium" style={styles.tutorialItem}>
+                1. Enter the health claim you want checked.
+              </Text>
+              <Text variant="bodyMedium" style={styles.tutorialItem}>
+                2. Add optional context only if it changes what counts as relevant evidence.
+              </Text>
+              <Text variant="bodyMedium" style={styles.tutorialItem}>
+                3. Choose quick, standard, or deep depending on how broad you want the evidence sweep to be.
+              </Text>
+              <Text variant="bodyMedium" style={styles.tutorialItem}>
+                4. Read the conclusion first, then open evidence and workflow sections for the deeper trail.
+              </Text>
+            </View>
+          </Surface>
+        </View>
+      </Modal>
+
       <Snackbar
         visible={snackbar.visible}
         onDismiss={() => setSnackbar((current) => ({ ...current, visible: false }))}
@@ -1818,11 +1838,13 @@ function ToolHeader({
   body,
   apiError,
   onRetry,
+  onPressHelp,
 }: {
   title: string;
   body: string;
   apiError: string | null;
   onRetry: () => void;
+  onPressHelp?: () => void;
 }) {
   return (
     <Surface style={styles.toolHeaderSurface} elevation={0}>
@@ -1835,6 +1857,7 @@ function ToolHeader({
             {body}
           </Text>
         </View>
+        {onPressHelp ? <IconButton icon="help-circle-outline" onPress={onPressHelp} iconColor={palette.primary} style={styles.headerHelpButton} /> : null}
       </View>
     </Surface>
   );
@@ -3776,7 +3799,7 @@ function HistoryItem({
             </Text>
             {dragMode ? (
               <Text variant="bodySmall" style={styles.dragModeHint}>
-                Drag mode is on. Move the card up or down, or tap the dots again to cancel.
+                Drag mode is on. Drag this card up or down, or tap the dots again to cancel.
               </Text>
             ) : null}
             {(item.positiveCount > 0 || item.neutralCount > 0 || item.negativeCount > 0) && (
@@ -3834,12 +3857,6 @@ function HistoryItem({
                 <Button mode="outlined" compact icon="stop-circle-outline" onPress={onCancel} textColor={palette.warning}>
                   Stop
                 </Button>
-              ) : null}
-              {dragMode ? (
-                <>
-                  <IconButton icon="arrow-up" size={18} style={styles.webActionButton} onPress={onMoveUp} disabled={!canMoveUp} />
-                  <IconButton icon="arrow-down" size={18} style={styles.webActionButton} onPress={onMoveDown} disabled={!canMoveDown} />
-                </>
               ) : null}
             </View>
             {Platform.OS === "web" ? (
@@ -4443,6 +4460,9 @@ const styles = StyleSheet.create({
     color: palette.muted,
     lineHeight: 21,
   },
+  headerHelpButton: {
+    margin: 0,
+  },
   headerChip: {
     borderRadius: 999,
   },
@@ -4468,6 +4488,26 @@ const styles = StyleSheet.create({
     gap: 16,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
+  },
+  tutorialModal: {
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
+    borderRadius: 18,
+    borderWidth: softBorderWidth,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 20,
+    ...cardShadow,
+  },
+  tutorialList: {
+    gap: 12,
+  },
+  tutorialItem: {
+    color: palette.text,
+    lineHeight: 22,
   },
   heroChip: {
     alignSelf: "flex-start",

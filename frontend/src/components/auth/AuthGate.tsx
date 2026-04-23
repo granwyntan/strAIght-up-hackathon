@@ -26,8 +26,8 @@ export default function AuthGate({ onAuthenticate, loading }) {
   return (
     <View style={styles.shell}>
       <View style={styles.card}>
-        <Text style={styles.title}>Account login</Text>
-        <Text style={styles.subtitle}>Login with email and password. New emails create a local account automatically.</Text>
+        <Text style={styles.title}>Optional account sync</Text>
+        <Text style={styles.subtitle}>Stay local-only if you want. Sign in here only when you want your profile and history synced across devices.</Text>
 
         <View style={styles.field}>
           <Text style={styles.label}>Email</Text>

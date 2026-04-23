@@ -1,7 +1,8 @@
 import Constants from "expo-constants";
 import * as Device from "expo-device";
-import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+
+declare const require: (moduleName: string) => unknown;
 
 
 type RequestApi = (path: string, init?: RequestInit, timeoutMsOverride?: number) => Promise<Response>;
@@ -11,16 +12,39 @@ type NotificationRegistrationResult =
   | { status: "skipped"; reason: string }
   | { status: "error"; reason: string };
 
-const INVESTIGATION_URL_PATTERN = /^[a-z0-9+.-]+:\/\/investigations\/([^/?#]+)/i;
+type NotificationSubscription = { remove: () => void };
+type NotificationsModule = typeof import("expo-notifications");
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+const INVESTIGATION_URL_PATTERN = /^[a-z0-9+.-]+:\/\/investigations\/([^/?#]+)/i;
+let notificationsConfigured = false;
+
+function getNotificationsModule(): NotificationsModule | null {
+  try {
+    return require("expo-notifications") as NotificationsModule;
+  } catch {
+    return null;
+  }
+}
+
+function ensureNotificationHandler() {
+  if (notificationsConfigured) {
+    return true;
+  }
+  const Notifications = getNotificationsModule();
+  if (!Notifications) {
+    return false;
+  }
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+  notificationsConfigured = true;
+  return true;
+}
 
 
 function notificationProjectId() {
@@ -54,6 +78,38 @@ export function notificationDataUrl(data: Record<string, unknown> | null | undef
 }
 
 
+export function addNotificationResponseListener(onUrl: (url: string) => void): NotificationSubscription | null {
+  if (Platform.OS === "web" || !notificationsSupportedInCurrentShell()) {
+    return null;
+  }
+  const Notifications = getNotificationsModule();
+  if (!Notifications) {
+    return null;
+  }
+  ensureNotificationHandler();
+  return Notifications.addNotificationResponseReceivedListener((response) => {
+    const url = notificationDataUrl(response.notification.request.content.data as Record<string, unknown> | undefined);
+    if (url) {
+      onUrl(url);
+    }
+  });
+}
+
+
+export async function getLastNotificationResponseUrl() {
+  if (Platform.OS === "web" || !notificationsSupportedInCurrentShell()) {
+    return "";
+  }
+  const Notifications = getNotificationsModule();
+  if (!Notifications) {
+    return "";
+  }
+  ensureNotificationHandler();
+  const response = await Notifications.getLastNotificationResponseAsync();
+  return notificationDataUrl(response?.notification.request.content.data as Record<string, unknown> | undefined);
+}
+
+
 export async function registerForPushNotificationsAsync(requestApi: RequestApi): Promise<NotificationRegistrationResult> {
   if (Platform.OS === "web") {
     return { status: "skipped", reason: "Push registration is only enabled for native devices." };
@@ -61,9 +117,14 @@ export async function registerForPushNotificationsAsync(requestApi: RequestApi):
   if (!notificationsSupportedInCurrentShell()) {
     return { status: "skipped", reason: "Remote push is unavailable in Expo Go. Use a development build instead." };
   }
+  const Notifications = getNotificationsModule();
+  if (!Notifications) {
+    return { status: "skipped", reason: "expo-notifications is not available in this shell." };
+  }
   if (!Device.isDevice) {
     return { status: "skipped", reason: "Push registration requires a physical device." };
   }
+  ensureNotificationHandler();
 
   const projectId = notificationProjectId();
   if (!projectId) {

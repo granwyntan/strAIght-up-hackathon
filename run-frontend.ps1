@@ -20,6 +20,7 @@ $frontendPackageJson = Join-Path $frontendDir "package.json"
 $frontendNodeModules = Join-Path $frontendDir "node_modules"
 $frontendDepsStamp = Join-Path $frontendNodeModules ".gramwin-install-stamp"
 $apiCandidates = @()
+$publicFrontendEnv = @{}
 $backendPort = "8000"
 $metroPort = "8081"
 
@@ -70,10 +71,24 @@ function Invoke-AdbReverseIfAvailable {
 }
 
 if (Test-Path $backendEnvFile) {
-    $publicBaseUrlLine = Get-Content $backendEnvFile | Where-Object { $_ -match '^\s*BACKEND_PUBLIC_BASE_URL\s*=' } | Select-Object -Last 1
-    $portLine = Get-Content $backendEnvFile | Where-Object { $_ -match '^\s*BACKEND_PORT\s*=' } | Select-Object -Last 1
-    $candidateLine = Get-Content $backendEnvFile | Where-Object { $_ -match '^\s*EXPO_PUBLIC_API_CANDIDATES\s*=' } | Select-Object -Last 1
-    $apiLine = Get-Content $backendEnvFile | Where-Object { $_ -match '^\s*EXPO_PUBLIC_API_BASE_URL\s*=' } | Select-Object -Last 1
+    $backendEnvLines = Get-Content $backendEnvFile
+    $publicBaseUrlLine = $backendEnvLines | Where-Object { $_ -match '^\s*BACKEND_PUBLIC_BASE_URL\s*=' } | Select-Object -Last 1
+    $portLine = $backendEnvLines | Where-Object { $_ -match '^\s*BACKEND_PORT\s*=' } | Select-Object -Last 1
+    $candidateLine = $backendEnvLines | Where-Object { $_ -match '^\s*EXPO_PUBLIC_API_CANDIDATES\s*=' } | Select-Object -Last 1
+    $apiLine = $backendEnvLines | Where-Object { $_ -match '^\s*EXPO_PUBLIC_API_BASE_URL\s*=' } | Select-Object -Last 1
+    foreach ($line in $backendEnvLines) {
+        if ($line -match '^\s*(EXPO_PUBLIC_[A-Z0-9_]+)\s*=\s*(.*)$') {
+            $key = $matches[1]
+            $value = $matches[2].Trim().Trim('"').Trim("'")
+            $publicFrontendEnv[$key] = $value
+            continue
+        }
+        if ($line -match '^\s*(FIREBASE_[A-Z0-9_]+)\s*=\s*(.*)$') {
+            $key = "EXPO_PUBLIC_$($matches[1])"
+            $value = $matches[2].Trim().Trim('"').Trim("'")
+            $publicFrontendEnv[$key] = $value
+        }
+    }
     if ($portLine) {
         $backendPort = (($portLine -split '=', 2)[1]).Trim().Trim('"').Trim("'")
     }
@@ -117,10 +132,21 @@ if ($apiCandidates.Count -gt 0) {
     Write-Host "Using EXPO_PUBLIC_API_CANDIDATES=$($env:EXPO_PUBLIC_API_CANDIDATES)" -ForegroundColor DarkCyan
 }
 
-$envFileContents = @(
-    "EXPO_PUBLIC_API_BASE_URL=$($env:EXPO_PUBLIC_API_BASE_URL)"
-    "EXPO_PUBLIC_API_CANDIDATES=$($env:EXPO_PUBLIC_API_CANDIDATES)"
-)
+foreach ($entry in $publicFrontendEnv.GetEnumerator()) {
+    if ($entry.Key -eq "EXPO_PUBLIC_API_BASE_URL" -or $entry.Key -eq "EXPO_PUBLIC_API_CANDIDATES") {
+        continue
+    }
+    Set-Item -Path "env:$($entry.Key)" -Value $entry.Value
+}
+
+$envKeys = @($publicFrontendEnv.Keys) + @("EXPO_PUBLIC_API_BASE_URL", "EXPO_PUBLIC_API_CANDIDATES")
+$envFileContents = @()
+foreach ($key in ($envKeys | Select-Object -Unique | Sort-Object)) {
+    $value = [Environment]::GetEnvironmentVariable($key)
+    if ($null -ne $value -and $value -ne "") {
+        $envFileContents += "$key=$value"
+    }
+}
 Set-Content -Path $frontendEnvLocalFile -Value $envFileContents
 Write-Host "Wrote generated frontend env to $frontendEnvLocalFile" -ForegroundColor DarkCyan
 

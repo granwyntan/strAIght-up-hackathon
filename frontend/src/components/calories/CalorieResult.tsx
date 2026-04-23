@@ -100,7 +100,7 @@ function Metric({ label, value }) {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     color: palette.ink,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     fontSize: 16
   },
   contextRow: {
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   },
   metricTile: {
     minWidth: 90,
-    borderRadius: 10,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
@@ -129,20 +129,22 @@ const styles = StyleSheet.create({
   },
   metricLabel: {
     color: palette.muted,
-    fontSize: 11
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular"
   },
   metricValue: {
     color: palette.ink,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     fontSize: 12
   },
   contextText: {
     color: palette.muted,
-    lineHeight: 19
+    lineHeight: 19,
+    fontFamily: "Poppins_400Regular"
   },
   resultScroller: {
     maxHeight: 420,
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft
@@ -155,8 +157,8 @@ const styles = StyleSheet.create({
     gap: 6
   },
   sectionHeading: {
-    color: palette.blue,
-    fontWeight: "700",
+    color: palette.primary,
+    fontFamily: "Poppins_700Bold",
     fontSize: 14
   },
   markdownBlock: {
@@ -167,12 +169,14 @@ const styles = StyleSheet.create({
   },
   sectionBody: {
     color: palette.ink,
-    lineHeight: 21
+    lineHeight: 21,
+    fontFamily: "Poppins_400Regular"
   },
   inlineBold: {
-    fontWeight: "700"
+    fontFamily: "Poppins_700Bold"
   },
   inlineItalic: {
+    fontFamily: "Poppins_400Regular",
     fontStyle: "italic"
   },
   bulletRow: {
@@ -182,6 +186,7 @@ const styles = StyleSheet.create({
   },
   bulletMarker: {
     color: palette.ink,
-    lineHeight: 21
+    lineHeight: 21,
+    fontFamily: "Poppins_600SemiBold"
   }
 });

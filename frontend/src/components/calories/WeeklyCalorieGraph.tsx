@@ -76,7 +76,7 @@ export default function WeeklyCalorieGraph({ days }) {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: palette.ink,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     fontSize: 15
   },
   chartShell: {
@@ -103,19 +103,19 @@ const styles = StyleSheet.create({
   lineSegmentHorizontal: {
     position: "absolute",
     height: 2,
-    backgroundColor: "#5d9f33"
+    backgroundColor: palette.primary
   },
   lineSegmentVertical: {
     position: "absolute",
     width: 2,
-    backgroundColor: "#5d9f33"
+    backgroundColor: palette.primary
   },
   pointDot: {
     position: "absolute",
     width: 8,
     height: 8,
     borderRadius: 999,
-    backgroundColor: "#2f6f1a"
+    backgroundColor: palette.primary
   },
   labelsRow: {
     flexDirection: "row",
@@ -130,10 +130,11 @@ const styles = StyleSheet.create({
   dayLabel: {
     color: palette.ink,
     fontSize: 10,
-    fontWeight: "600"
+    fontFamily: "Poppins_600SemiBold"
   },
   dayValue: {
     color: palette.muted,
-    fontSize: 10
+    fontSize: 10,
+    fontFamily: "Poppins_400Regular"
   }
 });

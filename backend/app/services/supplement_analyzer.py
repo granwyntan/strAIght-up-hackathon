@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import logging
 import random
 import re
 import time
 import uuid
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -205,6 +207,7 @@ class SupplementAnalysisResult:
     sections: list[SupplementSection]
     infographic_image_data_url: str
     detected_drugs: list[str]
+    structured_analysis: dict[str, object] | None = None
     text_generation_started_at: float | None = None
     text_generation_completed_at: float | None = None
     image_generation_started_at: float | None = None
@@ -322,16 +325,51 @@ def _build_analysis_prompt(conditions: str, goals: str) -> str:
     normalized_goals = goals.strip() or "General health support"
 
     return (
-        "You are a pharmacist deciding if this patient should consume this supplement. "
+        "You are a careful pharmacist and evidence communicator deciding whether this patient should use the supplement shown in the image. "
+        "Be clinically grounded, practical, and readable for everyday users. "
         "The FIRST LINE of your response must be exactly: 'Supplement Name: <name>'. "
         "Do not add any text before that first line. "
-        "Return clear markdown with exactly 4 top-level sections using H2 headings. "
-        "Section 1: Supplement Identity and Ingredients. "
-        "Section 2: Potential Benefits and Mechanisms. "
-        "Section 3: Risks, Side Effects, and Contraindications. "
-        "Section 4: Suitability for This Patient and Recommendation. "
-        "For section 4, directly evaluate fit against the patient's conditions and goals. "
-        "Use concise medical language and practical guidance.\n\n"
+        "Return markdown with exactly these H2 headings, in this exact order:\n"
+        "## Hero Summary\n"
+        "## Quick Match to User Goals\n"
+        "## Plain Language Summary\n"
+        "## Ingredient Breakdown\n"
+        "## Benefits\n"
+        "## Risks and Warnings\n"
+        "## Personalization\n"
+        "## Usage Guide\n"
+        "## Evidence and Transparency\n"
+        "## Claim Analyzer (Quick)\n\n"
+        "Formatting rules:\n"
+        "- Keep every section concise and scannable.\n"
+        "- Use bullets only, no tables.\n"
+        "- For Hero Summary use these bullets exactly:\n"
+        "  - Product Name: ...\n"
+        "  - Brand: ...\n"
+        "  - Category: ...\n"
+        "  - Form: ...\n"
+        "  - Verdict: Good fit / Limited fit / Avoid / Needs caution\n"
+        "  - Confidence: High / Medium / Low\n"
+        "  - Key warning: ... (or 'None noted')\n"
+        "  - Summary: one clear sentence\n"
+        "- For Quick Match to User Goals use one bullet per goal in this format:\n"
+        "  - Goal | Fit: Strong / Medium / Limited / Poor / Not relevant | Reason: ...\n"
+        "- For Plain Language Summary use 3 to 5 bullets covering what it is, what it may do, and what it does not do.\n"
+        "- For Ingredient Breakdown use one bullet per key ingredient in this format:\n"
+        "  - Ingredient | Amount: ... or Unknown | Dose: Low / Normal / High / Unknown | Evidence: Strong / Moderate / Weak / Unclear | Risks: ... | Why it matters: ...\n"
+        "- For Benefits use one bullet per likely benefit in this format:\n"
+        "  - Benefit | Evidence: Strong / Moderate / Weak | Best for: ... | Limit: ...\n"
+        "- For Risks and Warnings use one bullet per warning in this format:\n"
+        "  - Severity: High / Medium / Low | Issue: ... | Trigger: ... | Advice: ...\n"
+        "- For Personalization use bullets in this format:\n"
+        "  - Good: ...\n"
+        "  - Caution: ...\n"
+        "  - Avoid: ...\n"
+        "- For Usage Guide use bullets for Take, Timing, Avoid stacking, and Duration.\n"
+        "- For Evidence and Transparency use bullets for Evidence level, Confidence, Product-specific certainty, and Main uncertainty.\n"
+        "- For Claim Analyzer (Quick) use bullets exactly for Real claims, Marketing fluff, Evidence-backed, Weak, and False or overstated.\n"
+        "- If the image does not show enough detail, say so clearly and mark uncertain fields as Unknown.\n"
+        "- Do not invent brand or dosage details when the image does not support them.\n\n"
         f"Patient goals: {normalized_goals}\n"
         f"Patient medical history: {normalized_conditions}\n"
     )
@@ -342,22 +380,463 @@ def _build_text_analysis_prompt(supplement_name: str, conditions: str, goals: st
     normalized_conditions = conditions.strip() or "No prior illness or long term conditions."
     normalized_goals = goals.strip() or "General health support"
     return (
-        "You are a pharmacist deciding if this patient should consume this supplement. "
+        "You are a careful pharmacist and evidence communicator deciding whether this patient should use this supplement. "
         f"The supplement to evaluate is: {normalized_name}. "
         "The FIRST LINE of your response must be exactly: 'Supplement Name: <name>'. "
         "Use the supplement name you are evaluating. Do not add any text before that first line. "
         "Do not claim to have read a label image. "
         "Use generally known ingredient profiles when possible, and clearly label uncertainty when product-specific details are unknown. "
-        "Return clear markdown with exactly 4 top-level sections using H2 headings. "
-        "Section 1: Supplement Identity and Likely Ingredients. "
-        "Section 2: Potential Benefits and Mechanisms. "
-        "Section 3: Risks, Side Effects, and Contraindications. "
-        "Section 4: Suitability for This Patient and Recommendation. "
-        "For section 4, directly evaluate fit against the patient's conditions and goals. "
-        "Use concise medical language and practical guidance.\n\n"
+        "Return markdown with exactly these H2 headings, in this exact order:\n"
+        "## Hero Summary\n"
+        "## Quick Match to User Goals\n"
+        "## Plain Language Summary\n"
+        "## Ingredient Breakdown\n"
+        "## Benefits\n"
+        "## Risks and Warnings\n"
+        "## Personalization\n"
+        "## Usage Guide\n"
+        "## Evidence and Transparency\n"
+        "## Claim Analyzer (Quick)\n\n"
+        "Formatting rules:\n"
+        "- Keep every section concise and scannable.\n"
+        "- Use bullets only, no tables.\n"
+        "- For Hero Summary use these bullets exactly:\n"
+        "  - Product Name: ...\n"
+        "  - Brand: ...\n"
+        "  - Category: ...\n"
+        "  - Form: ...\n"
+        "  - Verdict: Good fit / Limited fit / Avoid / Needs caution\n"
+        "  - Confidence: High / Medium / Low\n"
+        "  - Key warning: ... (or 'None noted')\n"
+        "  - Summary: one clear sentence\n"
+        "- For Quick Match to User Goals use one bullet per goal in this format:\n"
+        "  - Goal | Fit: Strong / Medium / Limited / Poor / Not relevant | Reason: ...\n"
+        "- For Plain Language Summary use 3 to 5 bullets covering what it is, what it may do, and what it does not do.\n"
+        "- For Ingredient Breakdown use one bullet per key ingredient in this format:\n"
+        "  - Ingredient | Amount: ... or Unknown | Dose: Low / Normal / High / Unknown | Evidence: Strong / Moderate / Weak / Unclear | Risks: ... | Why it matters: ...\n"
+        "- For Benefits use one bullet per likely benefit in this format:\n"
+        "  - Benefit | Evidence: Strong / Moderate / Weak | Best for: ... | Limit: ...\n"
+        "- For Risks and Warnings use one bullet per warning in this format:\n"
+        "  - Severity: High / Medium / Low | Issue: ... | Trigger: ... | Advice: ...\n"
+        "- For Personalization use bullets in this format:\n"
+        "  - Good: ...\n"
+        "  - Caution: ...\n"
+        "  - Avoid: ...\n"
+        "- For Usage Guide use bullets for Take, Timing, Avoid stacking, and Duration.\n"
+        "- For Evidence and Transparency use bullets for Evidence level, Confidence, Product-specific certainty, and Main uncertainty.\n"
+        "- For Claim Analyzer (Quick) use bullets exactly for Real claims, Marketing fluff, Evidence-backed, Weak, and False or overstated.\n"
+        "- Make it clear when a point is based on common formulations rather than verified label-specific data.\n\n"
         f"Patient goals: {normalized_goals}\n"
         f"Patient medical history: {normalized_conditions}\n"
     )
+
+
+def _safe_slug(value: str, fallback: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower()).strip("-")
+    return cleaned or fallback
+
+
+def _section_content_map(sections: list[SupplementSection]) -> dict[str, str]:
+    return {section.heading.strip().lower(): section.content.strip() for section in sections}
+
+
+def _bullet_lines(content: str) -> list[str]:
+    lines: list[str] = []
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        line = re.sub(r"^[-*]\s*", "", line).strip()
+        if line:
+            lines.append(line)
+    return lines
+
+
+def _split_pipe_fields(line: str) -> list[str]:
+    return [field.strip() for field in line.split("|") if field.strip()]
+
+
+def _field_value(fields: list[str], label: str) -> str:
+    needle = f"{label.strip().lower()}:"
+    for field in fields:
+        lowered = field.lower()
+        if lowered.startswith(needle):
+            return field.split(":", 1)[1].strip()
+    return ""
+
+
+def _parse_score(value: str, default: int) -> int:
+    match = re.search(r"\d{1,3}", value or "")
+    if match:
+        return max(0, min(100, int(match.group(0))))
+    return default
+
+
+def _score_from_level(value: str, *, positive_bias: int = 65) -> int:
+    lowered = (value or "").strip().lower()
+    if any(token in lowered for token in ["strong", "high"]):
+        return 82
+    if any(token in lowered for token in ["moderate", "medium", "normal"]):
+        return positive_bias
+    if any(token in lowered for token in ["weak", "poor", "low", "limited"]):
+        return 44
+    if "avoid" in lowered:
+        return 26
+    return positive_bias
+
+
+def _build_user_profile_snapshot(conditions: str) -> dict[str, object]:
+    age_match = re.search(r"\bage\s*[:\-]?\s*(\d{1,3})\b", conditions, flags=re.IGNORECASE)
+    gender_match = re.search(r"\bgender\s*[:\-]?\s*([A-Za-z ]+)", conditions, flags=re.IGNORECASE)
+    medications_match = re.search(
+        r"current medications or supplements\s*:\s*(.+)",
+        conditions,
+        flags=re.IGNORECASE,
+    )
+    medical_conditions_match = re.search(r"medical conditions\s*:\s*(.+)", conditions, flags=re.IGNORECASE)
+    medical_history_match = re.search(r"medical history\s*:\s*(.+)", conditions, flags=re.IGNORECASE)
+
+    condition_pool: list[str] = []
+    if medical_conditions_match:
+        condition_pool.extend(re.split(r",|;|\band\b", medical_conditions_match.group(1)))
+    if medical_history_match:
+        condition_pool.extend(re.split(r",|;|\band\b", medical_history_match.group(1)))
+
+    medications: list[str] = []
+    if medications_match:
+        medications = [item.strip() for item in re.split(r",|;|\band\b", medications_match.group(1)) if item.strip()]
+
+    conditions_list = [item.strip() for item in condition_pool if item.strip()]
+    return {
+        "age": age_match.group(1) if age_match else "",
+        "gender": gender_match.group(1).strip() if gender_match else "",
+        "conditions": conditions_list,
+        "medications": medications,
+    }
+
+
+def _structured_analysis_fallback(sections: list[SupplementSection], conditions: str, goals: str) -> dict[str, object]:
+    section_map = _section_content_map(sections)
+    ingredient_lines = _bullet_lines(section_map.get("ingredient breakdown", ""))
+    risk_lines = _bullet_lines(section_map.get("risks and warnings", ""))
+    personalization_lines = _bullet_lines(section_map.get("personalization", ""))
+    evidence_lines = _bullet_lines(section_map.get("evidence and transparency", ""))
+
+    risk_lookup = " ".join(risk_lines)
+    personalization_lookup = " ".join(personalization_lines)
+    evidence_lookup = " ".join(evidence_lines)
+
+    ingredients: list[dict[str, object]] = []
+    for index, line in enumerate(ingredient_lines):
+        parts = _split_pipe_fields(line)
+        name = parts[0] if parts else f"Ingredient {index + 1}"
+        amount = _field_value(parts[1:], "Amount") or "Unknown"
+        dose_assessment = _field_value(parts[1:], "Dose") or "Unknown"
+        evidence_level = _field_value(parts[1:], "Evidence") or "Unclear"
+        risks = _field_value(parts[1:], "Risks") or ""
+        why_it_matters = _field_value(parts[1:], "Why it matters") or ""
+        ingredient_id = _safe_slug(name, f"ingredient-{index + 1}")
+        category = "active ingredient"
+        lowered = name.lower()
+        if any(token in lowered for token in ["vitamin", "b12", "b6", "folate"]):
+            category = "vitamin"
+        elif any(token in lowered for token in ["magnesium", "calcium", "iron", "zinc"]):
+            category = "mineral"
+        elif any(token in lowered for token in ["extract", "herb", "ashwagandha", "turmeric", "ginseng"]):
+            category = "botanical"
+
+        interaction_items: list[dict[str, object]] = []
+        if risks:
+            interaction_items.append(
+                {
+                    "ingredient_id": ingredient_id,
+                    "interacts_with": "sensitive users or concurrent treatments",
+                    "severity": "medium" if any(flag in risks.lower() for flag in ["avoid", "interaction", "contraind"]) else "low",
+                    "description": risks,
+                }
+            )
+
+        evidence_items = [
+            {
+                "id": f"{ingredient_id}-evidence-1",
+                "ingredient_id": ingredient_id,
+                "study_type": "review summary",
+                "strength": evidence_level,
+                "summary": why_it_matters or evidence_lookup or "Evidence summary was inferred from the analysis narrative.",
+                "source_link": "",
+            }
+        ]
+
+        ingredients.append(
+            {
+                "id": ingredient_id,
+                "name": name,
+                "category": category,
+                "description": why_it_matters or f"{name} appears in the product and was reviewed against the user's goals and risks.",
+                "amount": amount,
+                "dose_assessment": dose_assessment,
+                "evidence": evidence_items,
+                "interactions": interaction_items,
+                "personal_relevance": why_it_matters or personalization_lookup,
+                "analysis_result": {
+                    "effectiveness_score": _score_from_level(evidence_level, positive_bias=63),
+                    "safety_score": max(25, 92 - _score_from_level(risks or dose_assessment, positive_bias=28)),
+                    "compatibility_score": _score_from_level(why_it_matters or goals, positive_bias=68),
+                },
+            }
+        )
+
+    if not ingredients:
+        ingredients.append(
+            {
+                "id": "primary-formula",
+                "name": "Primary formula",
+                "category": "supplement blend",
+                "description": "A general ingredient-level breakdown could not be isolated cleanly, so this summary reflects the overall formulation.",
+                "amount": "Unknown",
+                "dose_assessment": "Unknown",
+                "evidence": [
+                    {
+                        "id": "primary-formula-evidence-1",
+                        "ingredient_id": "primary-formula",
+                        "study_type": "formula overview",
+                        "strength": "Unclear",
+                        "summary": evidence_lookup or "Product-level evidence was limited or not label-specific.",
+                        "source_link": "",
+                    }
+                ],
+                "interactions": [],
+                "personal_relevance": personalization_lookup,
+                "analysis_result": {
+                    "effectiveness_score": 58,
+                    "safety_score": 68,
+                    "compatibility_score": 60,
+                },
+            }
+        )
+
+    mean_effectiveness = round(sum(item["analysis_result"]["effectiveness_score"] for item in ingredients) / len(ingredients))
+    mean_safety = round(sum(item["analysis_result"]["safety_score"] for item in ingredients) / len(ingredients))
+    mean_compatibility = round(sum(item["analysis_result"]["compatibility_score"] for item in ingredients) / len(ingredients))
+
+    return {
+        "ingredients": ingredients,
+        "user_profile": _build_user_profile_snapshot(conditions),
+        "analysis_result": {
+            "effectiveness_score": mean_effectiveness,
+            "safety_score": mean_safety,
+            "compatibility_score": mean_compatibility,
+        },
+    }
+
+
+def _extract_first_json_object(raw_text: str) -> dict[str, object] | None:
+    stripped = raw_text.strip()
+    if not stripped:
+        return None
+    fenced_match = re.search(r"```json\s*(\{.*\})\s*```", stripped, flags=re.DOTALL | re.IGNORECASE)
+    candidate = fenced_match.group(1) if fenced_match else stripped
+    if not candidate.startswith("{"):
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start >= 0 and end > start:
+            candidate = candidate[start : end + 1]
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _build_structured_analysis_prompt(
+    analysis_text: str,
+    sections: list[SupplementSection],
+    conditions: str,
+    goals: str,
+) -> str:
+    section_text = "\n\n".join(f"## {section.heading}\n{section.content}" for section in sections)
+    return (
+        "You are a pharmacist QA agent turning a supplement review into strict JSON for a mobile app. "
+        "Use only the information present in the source analysis. Do not invent source links or dosage values. "
+        "If something is unknown, use an empty string or empty list. "
+        "Return JSON only with this shape:\n"
+        "{\n"
+        '  "ingredients": [\n'
+        "    {\n"
+        '      "id": "string",\n'
+        '      "name": "string",\n'
+        '      "category": "string",\n'
+        '      "description": "string",\n'
+        '      "amount": "string",\n'
+        '      "dose_assessment": "string",\n'
+        '      "personal_relevance": "string",\n'
+        '      "evidence": [\n'
+        "        {\n"
+        '          "id": "string",\n'
+        '          "ingredient_id": "string",\n'
+        '          "study_type": "string",\n'
+        '          "strength": "string",\n'
+        '          "summary": "string",\n'
+        '          "source_link": "string"\n'
+        "        }\n"
+        "      ],\n"
+        '      "interactions": [\n'
+        "        {\n"
+        '          "ingredient_id": "string",\n'
+        '          "interacts_with": "string",\n'
+        '          "severity": "low|medium|high",\n'
+        '          "description": "string"\n'
+        "        }\n"
+        "      ],\n"
+        '      "analysis_result": {\n'
+        '        "effectiveness_score": 0,\n'
+        '        "safety_score": 0,\n'
+        '        "compatibility_score": 0\n'
+        "      }\n"
+        "    }\n"
+        "  ],\n"
+        '  "user_profile": {\n'
+        '    "age": "string",\n'
+        '    "gender": "string",\n'
+        '    "conditions": ["string"],\n'
+        '    "medications": ["string"]\n'
+        "  },\n"
+        '  "analysis_result": {\n'
+        '    "effectiveness_score": 0,\n'
+        '    "safety_score": 0,\n'
+        '    "compatibility_score": 0\n'
+        "  }\n"
+        "}\n\n"
+        f"User goals: {goals}\n"
+        f"User profile context: {conditions}\n\n"
+        "Source supplement analysis:\n"
+        f"{analysis_text}\n\n"
+        "Source sections:\n"
+        f"{section_text}"
+    )
+
+
+def _normalize_structured_analysis(payload: dict[str, object], fallback: dict[str, object]) -> dict[str, object]:
+    ingredients_payload = payload.get("ingredients")
+    normalized_ingredients: list[dict[str, object]] = []
+    if isinstance(ingredients_payload, list):
+        for index, item in enumerate(ingredients_payload):
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            ingredient_id = str(item.get("id") or _safe_slug(name, f"ingredient-{index + 1}")).strip() or f"ingredient-{index + 1}"
+
+            evidence_payload = item.get("evidence")
+            normalized_evidence: list[dict[str, object]] = []
+            if isinstance(evidence_payload, list):
+                for evidence_index, evidence in enumerate(evidence_payload):
+                    if not isinstance(evidence, dict):
+                        continue
+                    normalized_evidence.append(
+                        {
+                            "id": str(evidence.get("id") or f"{ingredient_id}-evidence-{evidence_index + 1}").strip(),
+                            "ingredient_id": ingredient_id,
+                            "study_type": str(evidence.get("study_type") or "").strip(),
+                            "strength": str(evidence.get("strength") or "").strip(),
+                            "summary": str(evidence.get("summary") or "").strip(),
+                            "source_link": str(evidence.get("source_link") or "").strip(),
+                        }
+                    )
+
+            interaction_payload = item.get("interactions")
+            normalized_interactions: list[dict[str, object]] = []
+            if isinstance(interaction_payload, list):
+                for interaction in interaction_payload:
+                    if not isinstance(interaction, dict):
+                        continue
+                    normalized_interactions.append(
+                        {
+                            "ingredient_id": ingredient_id,
+                            "interacts_with": str(interaction.get("interacts_with") or "").strip(),
+                            "severity": str(interaction.get("severity") or "low").strip().lower(),
+                            "description": str(interaction.get("description") or "").strip(),
+                        }
+                    )
+
+            analysis_result = item.get("analysis_result")
+            analysis_payload = analysis_result if isinstance(analysis_result, dict) else {}
+            normalized_ingredients.append(
+                {
+                    "id": ingredient_id,
+                    "name": name or f"Ingredient {index + 1}",
+                    "category": str(item.get("category") or "").strip(),
+                    "description": str(item.get("description") or "").strip(),
+                    "amount": str(item.get("amount") or "").strip(),
+                    "dose_assessment": str(item.get("dose_assessment") or "").strip(),
+                    "personal_relevance": str(item.get("personal_relevance") or "").strip(),
+                    "evidence": normalized_evidence,
+                    "interactions": normalized_interactions,
+                    "analysis_result": {
+                        "effectiveness_score": _parse_score(str(analysis_payload.get("effectiveness_score") or ""), 58),
+                        "safety_score": _parse_score(str(analysis_payload.get("safety_score") or ""), 68),
+                        "compatibility_score": _parse_score(str(analysis_payload.get("compatibility_score") or ""), 62),
+                    },
+                }
+            )
+
+    if not normalized_ingredients:
+        return fallback
+
+    user_profile_payload = payload.get("user_profile")
+    user_profile = user_profile_payload if isinstance(user_profile_payload, dict) else {}
+    overall_payload = payload.get("analysis_result")
+    overall = overall_payload if isinstance(overall_payload, dict) else {}
+    return {
+        "ingredients": normalized_ingredients,
+        "user_profile": {
+            "age": str(user_profile.get("age") or fallback["user_profile"].get("age") or "").strip(),
+            "gender": str(user_profile.get("gender") or fallback["user_profile"].get("gender") or "").strip(),
+            "conditions": user_profile.get("conditions") if isinstance(user_profile.get("conditions"), list) else fallback["user_profile"].get("conditions", []),
+            "medications": user_profile.get("medications") if isinstance(user_profile.get("medications"), list) else fallback["user_profile"].get("medications", []),
+        },
+        "analysis_result": {
+            "effectiveness_score": _parse_score(str(overall.get("effectiveness_score") or ""), int(fallback["analysis_result"]["effectiveness_score"])),
+            "safety_score": _parse_score(str(overall.get("safety_score") or ""), int(fallback["analysis_result"]["safety_score"])),
+            "compatibility_score": _parse_score(str(overall.get("compatibility_score") or ""), int(fallback["analysis_result"]["compatibility_score"])),
+        },
+    }
+
+
+def _generate_structured_analysis(
+    client: OpenAI,
+    analysis_text: str,
+    sections: list[SupplementSection],
+    conditions: str,
+    goals: str,
+    request_id: str,
+) -> dict[str, object]:
+    fallback = _structured_analysis_fallback(sections, conditions, goals)
+    try:
+        response = _response_with_rate_limit_retry(
+            client,
+            model=SUPPLEMENT_ANALYSIS_MODEL,
+            request_id=request_id,
+            trigger_source="supplement_structured_analysis",
+            input_payload=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": _build_structured_analysis_prompt(analysis_text, sections, conditions, goals),
+                        }
+                    ],
+                }
+            ],
+        )
+        parsed = _extract_first_json_object((response.output_text or "").strip())
+        if parsed is None:
+            logger.warning("Structured supplement analysis returned non-JSON output.")
+            return fallback
+        return _normalize_structured_analysis(parsed, fallback)
+    except Exception as exc:
+        logger.warning("Structured supplement analysis failed: %s", exc)
+        return fallback
 
 
 def _cache_key(image_bytes: bytes, conditions: str, goals: str) -> str:
@@ -508,6 +987,7 @@ def analyze_supplement(
             sections=cached.sections,
             infographic_image_data_url=cached.infographic_image_data_url,
             detected_drugs=cached.detected_drugs,
+            structured_analysis=cached.structured_analysis,
             text_generation_started_at=now,
             text_generation_completed_at=now,
             image_generation_started_at=now if cached.infographic_image_data_url else None,
@@ -557,31 +1037,52 @@ def analyze_supplement(
     if not analysis_text:
         raise RuntimeError("The model returned an empty analysis response.")
     text_completed_at = time.time()
+    sections = _parse_sections(analysis_text)
 
     infographic_key = _infographic_cache_key(analysis_text, normalized_conditions, normalized_goals)
     infographic_image_data_url = _infographic_cache.get(infographic_key) if generate_infographic else ""
     image_started_at: float | None = None
     image_completed_at: float | None = None
-    if generate_infographic and infographic_image_data_url is None:
-        image_started_at = time.time()
-        infographic_image_data_url = _generate_infographic_data_url(
-            client=client,
-            analysis_text=analysis_text,
-            conditions=normalized_conditions,
-            goals=normalized_goals,
-        )
-        image_completed_at = time.time()
-        _infographic_cache[infographic_key] = infographic_image_data_url
-    elif generate_infographic and infographic_image_data_url:
+    structured_analysis = _structured_analysis_fallback(sections, normalized_conditions, normalized_goals)
+    if generate_infographic and infographic_image_data_url:
         now = time.time()
         image_started_at = now
         image_completed_at = now
+    elif generate_infographic:
+        image_started_at = time.time()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        structured_future = executor.submit(
+            _generate_structured_analysis,
+            client,
+            analysis_text,
+            sections,
+            normalized_conditions,
+            normalized_goals,
+            request_id,
+        )
+        infographic_future = None
+        if generate_infographic and not infographic_image_data_url:
+            infographic_future = executor.submit(
+                _generate_infographic_data_url,
+                client,
+                analysis_text,
+                normalized_conditions,
+                normalized_goals,
+            )
+
+        structured_analysis = structured_future.result()
+        if infographic_future is not None:
+            infographic_image_data_url = infographic_future.result()
+            image_completed_at = time.time()
+            _infographic_cache[infographic_key] = infographic_image_data_url
 
     result = SupplementAnalysisResult(
         analysis_text=analysis_text,
-        sections=_parse_sections(analysis_text),
+        sections=sections,
         infographic_image_data_url=infographic_image_data_url,
         detected_drugs=detect_drugs_in_text(analysis_text),
+        structured_analysis=structured_analysis,
         text_generation_started_at=text_started_at,
         text_generation_completed_at=text_completed_at,
         image_generation_started_at=image_started_at,
@@ -630,6 +1131,7 @@ def analyze_supplement_by_name(
             sections=cached.sections,
             infographic_image_data_url=cached.infographic_image_data_url,
             detected_drugs=cached.detected_drugs,
+            structured_analysis=cached.structured_analysis,
             text_generation_started_at=now,
             text_generation_completed_at=now,
             image_generation_started_at=now if cached.infographic_image_data_url else None,
@@ -665,31 +1167,52 @@ def analyze_supplement_by_name(
     if not analysis_text:
         raise RuntimeError("The model returned an empty analysis response.")
     text_completed_at = time.time()
+    sections = _parse_sections(analysis_text)
 
     infographic_key = _infographic_cache_key(analysis_text, normalized_conditions, normalized_goals)
     infographic_image_data_url = _infographic_cache.get(infographic_key) if generate_infographic else ""
     image_started_at: float | None = None
     image_completed_at: float | None = None
-    if generate_infographic and infographic_image_data_url is None:
-        image_started_at = time.time()
-        infographic_image_data_url = _generate_infographic_data_url(
-            client=client,
-            analysis_text=analysis_text,
-            conditions=normalized_conditions,
-            goals=normalized_goals,
-        )
-        image_completed_at = time.time()
-        _infographic_cache[infographic_key] = infographic_image_data_url
-    elif generate_infographic and infographic_image_data_url:
+    structured_analysis = _structured_analysis_fallback(sections, normalized_conditions, normalized_goals)
+    if generate_infographic and infographic_image_data_url:
         now = time.time()
         image_started_at = now
         image_completed_at = now
+    elif generate_infographic:
+        image_started_at = time.time()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        structured_future = executor.submit(
+            _generate_structured_analysis,
+            client,
+            analysis_text,
+            sections,
+            normalized_conditions,
+            normalized_goals,
+            request_id,
+        )
+        infographic_future = None
+        if generate_infographic and not infographic_image_data_url:
+            infographic_future = executor.submit(
+                _generate_infographic_data_url,
+                client,
+                analysis_text,
+                normalized_conditions,
+                normalized_goals,
+            )
+
+        structured_analysis = structured_future.result()
+        if infographic_future is not None:
+            infographic_image_data_url = infographic_future.result()
+            image_completed_at = time.time()
+            _infographic_cache[infographic_key] = infographic_image_data_url
 
     result = SupplementAnalysisResult(
         analysis_text=analysis_text,
-        sections=_parse_sections(analysis_text),
+        sections=sections,
         infographic_image_data_url=infographic_image_data_url,
         detected_drugs=detect_drugs_in_text(analysis_text),
+        structured_analysis=structured_analysis,
         text_generation_started_at=text_started_at,
         text_generation_completed_at=text_completed_at,
         image_generation_started_at=image_started_at,

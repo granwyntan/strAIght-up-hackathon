@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { collection, deleteDoc, doc, getDocs, getFirestore, setDoc } from "firebase/firestore";
 
 import { firebaseApp } from "../lib/firebaseClient";
+import { compactIsoId } from "../utils/dateTime";
 
 const SUPPLEMENT_HISTORY_KEY = "gramwin.supplement.history.v1";
 const MAX_HISTORY_ITEMS = 10;
@@ -35,7 +36,7 @@ function normalizeEntry(input) {
 }
 
 function makeScannerDocId(isoString = new Date().toISOString()) {
-  return isoString.replace(/[-:.TZ]/g, "").slice(0, 17);
+  return compactIsoId(isoString);
 }
 
 function toFirestoreRecord(entry) {

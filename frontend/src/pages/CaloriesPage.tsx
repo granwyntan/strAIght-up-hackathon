@@ -6,8 +6,10 @@ import * as ImagePicker from "expo-image-picker";
 import { palette } from "../data";
 import CalorieForm from "../components/calories/CalorieForm";
 import CalorieResult from "../components/calories/CalorieResult";
+import ToolHeader from "../components/shared/ToolHeader";
 import CalorieHistoryPage from "./CalorieHistoryPage";
 import { loadProfile, saveProfile } from "../storage/profileStorage";
+import { formatDisplayTime } from "../utils/dateTime";
 import {
   addCalorieEntry,
   clearCalorieDay,
@@ -124,6 +126,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
 
   const selectedImageAspectRatio = selectedAsset?.width && selectedAsset?.height ? selectedAsset.width / selectedAsset.height : 1.4;
   const canUseWebcam = Platform.OS === "web";
+  const progressWidth = loading ? Math.min(92, 26 + Math.floor((calcElapsedMs || 0) / 900) * 12) : 100;
   const bmiCategory = useMemo(() => {
     const bmi = Number(values.bmi);
     if (!Number.isFinite(bmi) || bmi <= 0) {
@@ -606,16 +609,13 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
 
   return (
     <View style={styles.pageStack}>
-      <View style={styles.heroPanel}>
-        <Text style={styles.chip}>Calorie calculator</Text>
-        <View style={styles.heroTitleRow}>
-          <Text style={styles.heroTitle}>Meal calorie estimator</Text>
-          <Pressable style={styles.guideButton} onPress={openGuide} accessibilityRole="button" accessibilityLabel="Open calorie calculator guide">
-            <Text style={styles.guideButtonText}>?</Text>
-          </Pressable>
-        </View>
-        <Text style={styles.heroSubtitle}>Upload a meal photo and profile inputs to estimate per-item calories and compare against a personalized daily target.</Text>
-      </View>
+      <ToolHeader
+        eyebrow="Consultant tool"
+        icon="food-apple-outline"
+        title="Meal calorie estimator"
+        subtitle="Upload a meal photo with your profile inputs to get a calmer calorie estimate, daily-target context, and nutrition notes."
+        onPressHelp={openGuide}
+      />
 
       <View style={styles.segmentRow}>
         <Pressable style={[styles.segmentButton, activeSubPage === "calculator" && styles.segmentButtonSelected]} onPress={() => setActiveSubPage("calculator")}>
@@ -649,7 +649,16 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
 
           {calcStartedAt && calcElapsedMs !== null ? (
             <View style={styles.calcMetaCard}>
-              <Text style={styles.calcMetaText}>Started: {new Date(calcStartedAt).toLocaleTimeString()}</Text>
+              <View style={styles.calcMetaHeader}>
+                <View style={styles.calcMetaCopy}>
+                  <Text style={styles.calcMetaTitle}>{loading ? "Analyzing meal" : "Latest calculation"}</Text>
+                  <Text style={styles.calcMetaText}>Started: {formatDisplayTime(calcStartedAt)}</Text>
+                </View>
+                <Text style={styles.calcMetaBadge}>{loading ? "In progress" : "Done"}</Text>
+              </View>
+              <View style={styles.calcMetaTrack}>
+                <View style={[styles.calcMetaProgress, { width: `${progressWidth}%` }]} />
+              </View>
               <Text style={styles.calcMetaText}>
                 {loading ? "Time elapsed: " : "Time taken: "}
                 {(calcElapsedMs / 1000).toFixed(1)} seconds
@@ -760,18 +769,18 @@ const styles = StyleSheet.create({
   chip: {
     alignSelf: "flex-start",
     borderRadius: 999,
-    backgroundColor: "#eef8df",
-    color: "#4c6f2b",
+    backgroundColor: palette.primarySoft,
+    color: palette.primary,
     paddingHorizontal: 12,
     paddingVertical: 5,
     fontSize: 12,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   heroTitle: {
     color: palette.ink,
     fontSize: 23,
     lineHeight: 30,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     flex: 1
   },
   guideButton: {
@@ -780,20 +789,21 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: "#eef3fc",
+    backgroundColor: palette.surfaceSoft,
     alignItems: "center",
     justifyContent: "center"
   },
   guideButtonText: {
-    color: palette.blue,
+    color: palette.primary,
     fontSize: 18,
     lineHeight: 20,
-    fontWeight: "800"
+    fontFamily: "Poppins_700Bold"
   },
   heroSubtitle: {
     color: palette.muted,
     fontSize: 14,
-    lineHeight: 21
+    lineHeight: 21,
+    fontFamily: "Poppins_400Regular"
   },
   segmentRow: {
     flexDirection: "row",
@@ -808,29 +818,64 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14
   },
   segmentButtonSelected: {
-    borderColor: palette.blue,
-    backgroundColor: "#e8effb"
+    borderColor: palette.primary,
+    backgroundColor: palette.primarySoft
   },
   segmentText: {
     color: palette.ink,
-    fontWeight: "600"
+    fontFamily: "Poppins_600SemiBold"
   },
   segmentTextSelected: {
-    color: palette.blue
+    color: palette.primary
   },
   calcMetaCard: {
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: "#f7f3ec",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 2
+    backgroundColor: palette.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8
+  },
+  calcMetaHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10
+  },
+  calcMetaCopy: {
+    flex: 1,
+    gap: 4
+  },
+  calcMetaTitle: {
+    color: palette.ink,
+    fontSize: 14,
+    fontFamily: "Poppins_600SemiBold"
+  },
+  calcMetaBadge: {
+    borderRadius: 999,
+    backgroundColor: palette.primarySoft,
+    color: palette.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold"
+  },
+  calcMetaTrack: {
+    height: 8,
+    overflow: "hidden",
+    borderRadius: 999,
+    backgroundColor: palette.primarySoft
+  },
+  calcMetaProgress: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: palette.primary
   },
   calcMetaText: {
     color: palette.ink,
     fontSize: 12,
-    fontWeight: "600"
+    fontFamily: "Poppins_400Regular"
   },
   modalBackdrop: {
     flex: 1,
@@ -851,16 +896,18 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     color: palette.ink,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     fontSize: 16
   },
   modalBody: {
     color: palette.ink,
-    fontSize: 14
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular"
   },
   modalPrompt: {
     color: palette.muted,
-    lineHeight: 20
+    lineHeight: 20,
+    fontFamily: "Poppins_400Regular"
   },
   modalError: {
     color: palette.red,
@@ -873,13 +920,13 @@ const styles = StyleSheet.create({
   },
   modalPrimary: {
     borderRadius: 10,
-    backgroundColor: palette.blue,
+    backgroundColor: palette.primary,
     paddingVertical: 10,
     paddingHorizontal: 16
   },
   modalPrimaryText: {
     color: palette.surface,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   modalSecondary: {
     borderRadius: 10,
@@ -891,7 +938,7 @@ const styles = StyleSheet.create({
   },
   modalSecondaryText: {
     color: palette.ink,
-    fontWeight: "600"
+    fontFamily: "Poppins_600SemiBold"
   },
   modalButtonDisabled: {
     opacity: 0.5
@@ -930,13 +977,13 @@ const styles = StyleSheet.create({
   },
   guideCloseButtonText: {
     color: palette.ink,
-    fontWeight: "800",
+    fontFamily: "Poppins_700Bold",
     fontSize: 14
   },
   guideTitle: {
     color: palette.ink,
     fontSize: 17,
-    fontWeight: "800",
+    fontFamily: "Poppins_700Bold",
     textAlign: "center",
     marginBottom: 10
   },
@@ -947,20 +994,21 @@ const styles = StyleSheet.create({
     gap: 10
   },
   guideStepLabel: {
-    color: "#4c6f2b",
+    color: palette.primary,
     fontSize: 12,
-    fontWeight: "800"
+    fontFamily: "Poppins_600SemiBold"
   },
   guidePageTitle: {
     color: palette.ink,
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "800"
+    fontFamily: "Poppins_700Bold"
   },
   guidePageBody: {
     color: palette.muted,
     fontSize: 14,
-    lineHeight: 21
+    lineHeight: 21,
+    fontFamily: "Poppins_400Regular"
   },
   guideFooter: {
     alignItems: "center",
@@ -969,6 +1017,6 @@ const styles = StyleSheet.create({
   guideFooterText: {
     color: palette.muted,
     fontSize: 12,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   }
 });

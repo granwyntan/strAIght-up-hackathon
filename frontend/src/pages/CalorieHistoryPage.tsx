@@ -4,22 +4,17 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 
 import { palette } from "../data";
 import WeeklyCalorieGraph from "../components/calories/WeeklyCalorieGraph";
+import { formatDisplayDate, formatDisplayDateLabel } from "../utils/dateTime";
 
 function formatRange(start, end) {
   if (!start || !end) {
     return "";
   }
-  const a = new Date(`${start}T00:00:00`);
-  const b = new Date(`${end}T00:00:00`);
-  return `${a.toLocaleDateString()} - ${b.toLocaleDateString()}`;
+  return `${formatDisplayDate(`${start}T00:00:00`)} - ${formatDisplayDate(`${end}T00:00:00`)}`;
 }
 
 function formatDayLabel(isoDate) {
-  const date = new Date(`${isoDate}T00:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return isoDate;
-  }
-  return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  return formatDisplayDateLabel(`${isoDate}T00:00:00`) || isoDate;
 }
 
 export default function CalorieHistoryPage({
@@ -271,23 +266,24 @@ const styles = StyleSheet.create({
   chip: {
     alignSelf: "flex-start",
     borderRadius: 999,
-    backgroundColor: "#eef8df",
-    color: "#4c6f2b",
+    backgroundColor: palette.primarySoft,
+    color: palette.primary,
     paddingHorizontal: 12,
     paddingVertical: 5,
     fontSize: 12,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   heroTitle: {
     color: palette.ink,
     fontSize: 21,
     lineHeight: 28,
-    fontWeight: "700"
+    fontFamily: "Poppins_700Bold"
   },
   heroSubtitle: {
     color: palette.muted,
     fontSize: 13,
-    lineHeight: 20
+    lineHeight: 20,
+    fontFamily: "Poppins_400Regular"
   },
   weekNavRow: {
     marginTop: 4,
@@ -309,13 +305,13 @@ const styles = StyleSheet.create({
   arrowText: {
     color: palette.ink,
     fontSize: 18,
-    fontWeight: "700"
+    fontFamily: "Poppins_700Bold"
   },
   weekRange: {
     flex: 1,
     textAlign: "center",
     color: palette.ink,
-    fontWeight: "600"
+    fontFamily: "Poppins_600SemiBold"
   },
   statsCard: {
     borderRadius: 14,
@@ -326,11 +322,12 @@ const styles = StyleSheet.create({
   },
   statTitle: {
     color: palette.muted,
-    fontSize: 12
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular"
   },
   statValue: {
     color: palette.ink,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     fontSize: 24
   },
   listCard: {
@@ -343,7 +340,7 @@ const styles = StyleSheet.create({
   },
   listTitle: {
     color: palette.ink,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     fontSize: 14
   },
   dayRow: {
@@ -363,11 +360,11 @@ const styles = StyleSheet.create({
   },
   dayDate: {
     color: palette.ink,
-    fontWeight: "600"
+    fontFamily: "Poppins_600SemiBold"
   },
   dayCalories: {
-    color: palette.blue,
-    fontWeight: "700"
+    color: palette.primary,
+    fontFamily: "Poppins_700Bold"
   },
   modalBackdrop: {
     flex: 1,
@@ -386,12 +383,13 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     color: palette.ink,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     fontSize: 16
   },
   modalSubtitle: {
     color: palette.muted,
-    fontSize: 13
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular"
   },
   addCard: {
     borderRadius: 12,
@@ -403,7 +401,7 @@ const styles = StyleSheet.create({
   },
   addTitle: {
     color: palette.ink,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     fontSize: 13
   },
   input: {
@@ -413,7 +411,8 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     backgroundColor: palette.surface,
     color: palette.ink,
-    paddingHorizontal: 10
+    paddingHorizontal: 10,
+    fontFamily: "Poppins_400Regular"
   },
   modalHeaderActions: {
     flexDirection: "row",
@@ -434,11 +433,12 @@ const styles = StyleSheet.create({
   },
   entryMeal: {
     color: palette.ink,
-    fontWeight: "600"
+    fontFamily: "Poppins_600SemiBold"
   },
   entryMeta: {
     color: palette.muted,
-    fontSize: 12
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular"
   },
   entryActionRow: {
     flexDirection: "row",
@@ -450,14 +450,14 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     borderRadius: 8,
-    backgroundColor: palette.blue,
+    backgroundColor: palette.primary,
     paddingHorizontal: 10,
     paddingVertical: 7
   },
   actionButtonText: {
     color: palette.surface,
     fontSize: 12,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   ghostButton: {
     borderRadius: 8,
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
   ghostButtonText: {
     color: palette.ink,
     fontSize: 12,
-    fontWeight: "600"
+    fontFamily: "Poppins_600SemiBold"
   },
   dangerButton: {
     borderRadius: 8,
@@ -481,13 +481,14 @@ const styles = StyleSheet.create({
   dangerButtonText: {
     color: palette.surface,
     fontSize: 12,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   buttonDisabled: {
     opacity: 0.5
   },
   errorText: {
     color: palette.red,
-    fontSize: 12
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular"
   }
 });

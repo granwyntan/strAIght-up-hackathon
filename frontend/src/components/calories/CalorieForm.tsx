@@ -37,9 +37,6 @@ export default function CalorieForm({
 }) {
   return (
     <View style={styles.card}>
-      <Text style={styles.cardTitle}>Calorie calculator inputs</Text>
-      <Text style={styles.cardBody}>Add profile inputs and meal image to generate an estimated calorie breakdown with practical daily intake context.</Text>
-
       <View style={styles.row}>
         <View style={styles.half}>
           <Text style={styles.label}>Age</Text>
@@ -156,21 +153,12 @@ export default function CalorieForm({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
     padding: 18,
     gap: 12
-  },
-  cardTitle: {
-    color: palette.ink,
-    fontWeight: "700",
-    fontSize: 16
-  },
-  cardBody: {
-    color: palette.muted,
-    lineHeight: 20
   },
   row: {
     flexDirection: "row",
@@ -182,26 +170,28 @@ const styles = StyleSheet.create({
   },
   label: {
     color: palette.ink,
-    fontWeight: "600",
+    fontFamily: "Poppins_600SemiBold",
     fontSize: 13
   },
   input: {
     minHeight: 46,
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
     color: palette.ink,
     paddingHorizontal: 12,
-    paddingVertical: 10
+    paddingVertical: 10,
+    fontFamily: "Poppins_400Regular"
   },
   hintText: {
     color: palette.muted,
-    fontSize: 12
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular"
   },
   readOnlyValue: {
     minHeight: 46,
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
@@ -211,12 +201,13 @@ const styles = StyleSheet.create({
   },
   readOnlyValueText: {
     color: palette.ink,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     fontSize: 16
   },
   readOnlyHint: {
     color: palette.muted,
-    fontSize: 11
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular"
   },
   segmentRow: {
     flexDirection: "row",
@@ -232,19 +223,19 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surfaceSoft
   },
   segmentButtonSelected: {
-    borderColor: palette.blue,
-    backgroundColor: "#e8effb"
+    borderColor: palette.primary,
+    backgroundColor: palette.primarySoft
   },
   segmentButtonText: {
     color: palette.ink,
     fontSize: 12,
-    fontWeight: "600"
+    fontFamily: "Poppins_600SemiBold"
   },
   segmentButtonTextSelected: {
-    color: palette.blue
+    color: palette.primary
   },
   pickButton: {
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
@@ -253,7 +244,7 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   webcamPanel: {
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
@@ -263,7 +254,7 @@ const styles = StyleSheet.create({
   webcamVideo: {
     width: "100%",
     aspectRatio: 16 / 9,
-    borderRadius: 10,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: "#000"
@@ -273,19 +264,19 @@ const styles = StyleSheet.create({
     gap: 8
   },
   webcamPrimaryButton: {
-    borderRadius: 10,
-    backgroundColor: palette.blue,
+    borderRadius: 14,
+    backgroundColor: palette.primary,
     paddingVertical: 10,
     paddingHorizontal: 14,
     alignItems: "center"
   },
   webcamPrimaryText: {
     color: palette.surface,
-    fontWeight: "700",
+    fontFamily: "Poppins_600SemiBold",
     fontSize: 12
   },
   webcamSecondaryButton: {
-    borderRadius: 10,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
@@ -295,24 +286,24 @@ const styles = StyleSheet.create({
   },
   webcamSecondaryText: {
     color: palette.ink,
-    fontWeight: "600",
+    fontFamily: "Poppins_600SemiBold",
     fontSize: 12
   },
   pickButtonText: {
-    color: palette.blue,
-    fontWeight: "700"
+    color: palette.primary,
+    fontFamily: "Poppins_600SemiBold"
   },
   previewImage: {
     width: "100%",
     maxHeight: 260,
-    borderRadius: 14,
-    backgroundColor: "#f8f4ee",
+    borderRadius: 18,
+    backgroundColor: palette.surfaceSoft,
     borderWidth: 1,
     borderColor: palette.border
   },
   submitButton: {
-    borderRadius: 12,
-    backgroundColor: palette.blue,
+    borderRadius: 16,
+    backgroundColor: palette.primary,
     paddingVertical: 12,
     alignItems: "center"
   },
@@ -321,11 +312,12 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     color: palette.surface,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   errorText: {
     color: palette.red,
     fontSize: 13,
-    lineHeight: 18
+    lineHeight: 18,
+    fontFamily: "Poppins_400Regular"
   }
 });

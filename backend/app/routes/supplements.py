@@ -39,6 +39,7 @@ class SupplementAnalysisResponse(BaseModel):
     sections: list[SupplementSectionResponse]
     infographicImageDataUrl: str
     detectedDrugs: list[str]
+    structuredAnalysis: dict[str, object] | None = None
     generationTiming: dict[str, float | None]
 
 
@@ -166,6 +167,7 @@ async def analyze_supplement_endpoint(
         sections=[_to_section_payload(item) for item in result.sections],
         infographicImageDataUrl=result.infographic_image_data_url,
         detectedDrugs=result.detected_drugs,
+        structuredAnalysis=result.structured_analysis,
         generationTiming={
             "textStartedAt": result.text_generation_started_at,
             "textCompletedAt": result.text_generation_completed_at,
@@ -223,6 +225,7 @@ def search_supplement_endpoint(
         sections=[_to_section_payload(item) for item in result.sections],
         infographicImageDataUrl=result.infographic_image_data_url,
         detectedDrugs=result.detected_drugs,
+        structuredAnalysis=result.structured_analysis,
         generationTiming={
             "textStartedAt": result.text_generation_started_at,
             "textCompletedAt": result.text_generation_completed_at,

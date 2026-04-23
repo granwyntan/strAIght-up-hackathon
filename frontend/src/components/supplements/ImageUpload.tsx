@@ -41,12 +41,7 @@ export default function ImageUpload({
   onAnalyze,
 }: ImageUploadProps) {
   return (
-    <View className="gap-3 rounded-[28px] border border-line bg-card p-5 shadow-panel">
-      <Text className="font-['Poppins_700Bold'] text-base text-ink">Upload supplement image</Text>
-      <Text className="font-['Poppins_400Regular'] leading-6 text-muted">
-        Pick a product label photo and GramWIN will review ingredient fit, likely benefits, cautions, and whether the product matches your goals.
-      </Text>
-
+    <View className="gap-3 rounded-[22px] border border-line bg-card p-5 shadow-panel">
       {showCameraButton ? (
         <Pressable className={`items-center rounded-2xl border border-line px-4 py-3 ${disableImageOptions ? "bg-soft/60 opacity-50" : "bg-soft"}`} onPress={onCaptureImage} disabled={loading || disableImageOptions}>
           <Text className="font-['Poppins_600SemiBold'] text-sage">Use webcam / camera</Text>

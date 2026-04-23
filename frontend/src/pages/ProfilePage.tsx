@@ -6,6 +6,8 @@ import * as ImagePicker from "expo-image-picker";
 import { palette } from "../data";
 import { emptyProfile, loadProfile, loadProfileLastSynced, saveProfile } from "../storage/profileStorage";
 import AuthGate from "../components/auth/AuthGate";
+import ToolHeader from "../components/shared/ToolHeader";
+import { formatDisplayDateTime } from "../utils/dateTime";
 
 const GENDER_OPTIONS = ["Male", "Female", "Other", "Prefer not to say"];
 const TABS = ["overview", "settings"];
@@ -206,10 +208,6 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
   }, [webcamStream]);
 
   const onSave = async () => {
-    if (!accountId) {
-      Alert.alert("Account required", "Please login or create an account to save your profile.");
-      return;
-    }
     if (savingProfile || loadingProfile) {
       return;
     }
@@ -221,7 +219,7 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
       setProfile(saved);
       setLastSyncedAt(syncedAt);
       setSaveSuccess(true);
-      Alert.alert("Saved", "Your profile has been saved on this device.");
+      Alert.alert("Saved", accountId ? "Your profile has been saved and synced." : "Your profile has been saved on this device.");
       setTimeout(() => {
         setSaveSuccess(false);
       }, 1500);
@@ -235,7 +233,7 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
 
   const displayName = profile.name.trim() || "Your name";
   const displayGoals = profile.goals.trim() || "Add your health goals in Settings so they appear here.";
-  const lastSyncedLabel = lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "Not synced yet";
+  const lastSyncedLabel = lastSyncedAt ? formatDisplayDateTime(lastSyncedAt) : "Not synced yet";
   const initials = displayName
     .split(/\s+/)
     .filter(Boolean)
@@ -257,15 +255,13 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
 
   return (
     <KeyboardAvoidingView style={styles.pageStack} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <View style={styles.heroPanel}>
-        <View style={styles.heroTitleRow}>
-          <Text style={styles.heroTitle}>Personal health profile</Text>
-          <Pressable style={styles.guideButton} onPress={openGuide} accessibilityRole="button" accessibilityLabel="Open profile guide">
-            <Text style={styles.guideButtonText}>?</Text>
-          </Pressable>
-        </View>
-        <Text style={styles.heroSubtitle}>Add and save your profile details locally so your health context is available whenever you reopen the app.</Text>
-      </View>
+      <ToolHeader
+        eyebrow="Consultant tool"
+        icon="account-heart-outline"
+        title="Personal health profile"
+        subtitle="Add and save your health context locally so the consultant, nutrition, and supplement tools can respond with better-fit guidance."
+        onPressHelp={openGuide}
+      />
 
       <View style={styles.panel}>
         {activeAccount ? (
@@ -284,10 +280,19 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
               <Text style={styles.syncMetaValue}>{lastSyncedLabel}</Text>
             </View>
           </View>
-        ) : null}
+        ) : (
+          <View style={styles.accountPanel}>
+            <View style={styles.accountRow}>
+              <View style={styles.accountBadge}>
+                <Text style={styles.accountBadgeText}>Local profile</Text>
+              </View>
+              <Text style={styles.accountEmail}>You can keep using GramWIN without signing in.</Text>
+              <Text style={styles.syncMetaValue}>Save works locally on this device. Sign in only if you want synced profile data and history later.</Text>
+            </View>
+          </View>
+        )}
 
-        {activeAccount ? (
-          <>
+        <>
             <View style={styles.tabRow}>
               {TABS.map((tab) => {
                 const isActive = activeTab === tab;
@@ -439,18 +444,18 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
               >
                 {savingProfile ? <ActivityIndicator color="#fffdfa" size="small" /> : null}
                 <Text style={styles.saveButtonText}>
-                  {loadingProfile ? "Loading profile..." : saveSuccess ? "Saved ✓" : "Save"}
+                  {loadingProfile ? "Loading profile..." : saveSuccess ? "Saved ✓" : activeAccount ? "Save and sync" : "Save locally"}
                 </Text>
               </Pressable>
             ) : null}
-          </>
-        ) : (
-          <View style={styles.lockedCard}>
-            <Text style={styles.lockedTitle}>Profile is locked</Text>
-            <Text style={styles.lockedBody}>Login or create an account below to access Overview and Settings.</Text>
-            <AuthGate onAuthenticate={onAuthenticate} loading={authLoading} />
-          </View>
-        )}
+          {!activeAccount ? (
+            <View style={styles.lockedCard}>
+              <Text style={styles.lockedTitle}>Optional sign-in</Text>
+              <Text style={styles.lockedBody}>Local saving is already active. Sign in below only if you want synced profile and scanner history across devices.</Text>
+              <AuthGate onAuthenticate={onAuthenticate} loading={authLoading} />
+            </View>
+          ) : null}
+        </>
       </View>
 
       {Platform.OS === "web" ? (
@@ -605,14 +610,14 @@ const styles = StyleSheet.create({
     paddingVertical: 4
   },
   accountBadgeText: {
-    color: "#4c6f2b",
+    color: palette.primary,
     fontSize: 12,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   accountEmail: {
     color: palette.ink,
     fontSize: 14,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   accountLogoutButton: {
     alignSelf: "flex-start",
@@ -627,7 +632,7 @@ const styles = StyleSheet.create({
   accountLogoutText: {
     color: palette.ink,
     fontSize: 13,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   syncMetaRow: {
     borderWidth: 1,
@@ -640,7 +645,7 @@ const styles = StyleSheet.create({
   syncMetaLabel: {
     color: palette.muted,
     fontSize: 11,
-    fontWeight: "700",
+    fontFamily: "Poppins_600SemiBold",
     textTransform: "uppercase",
     letterSpacing: 0.25
   },
@@ -648,7 +653,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
     color: palette.ink,
     fontSize: 13,
-    fontWeight: "600"
+    fontFamily: "Poppins_500Medium"
   },
   lockedCard: {
     paddingTop: 2,
@@ -657,12 +662,13 @@ const styles = StyleSheet.create({
   lockedTitle: {
     color: palette.ink,
     fontSize: 15,
-    fontWeight: "800"
+    fontFamily: "Poppins_700Bold"
   },
   lockedBody: {
     color: palette.muted,
     fontSize: 13,
-    lineHeight: 19
+    lineHeight: 19,
+    fontFamily: "Poppins_400Regular"
   },
   webcamBackdrop: {
     flex: 1,
@@ -684,7 +690,7 @@ const styles = StyleSheet.create({
   webcamTitle: {
     color: palette.ink,
     fontSize: 16,
-    fontWeight: "700"
+    fontFamily: "Poppins_700Bold"
   },
   webcamVideo: {
     width: "100%",
@@ -704,14 +710,14 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 40,
     borderRadius: 10,
-    backgroundColor: palette.blue,
+    backgroundColor: palette.primary,
     alignItems: "center",
     justifyContent: "center"
   },
   webcamPrimaryText: {
     color: "#fffdfa",
     fontSize: 14,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   webcamSecondary: {
     flex: 1,
@@ -726,7 +732,7 @@ const styles = StyleSheet.create({
   webcamSecondaryText: {
     color: palette.ink,
     fontSize: 14,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   cardTitle: {
     color: palette.ink,
@@ -748,12 +754,12 @@ const styles = StyleSheet.create({
     borderRadius: 10
   },
   tabButtonActive: {
-    backgroundColor: palette.blue
+    backgroundColor: palette.primary
   },
   tabButtonText: {
     color: palette.ink,
     fontSize: 14,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   tabButtonTextActive: {
     color: "#fffdfa"
@@ -780,14 +786,14 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: "#dde8ff",
+    backgroundColor: palette.primarySoft,
     alignItems: "center",
     justifyContent: "center"
   },
   profileImageFallbackText: {
-    color: palette.blue,
+    color: palette.primary,
     fontSize: 24,
-    fontWeight: "800"
+    fontFamily: "Poppins_700Bold"
   },
   nameBlock: {
     flex: 1,
@@ -796,14 +802,14 @@ const styles = StyleSheet.create({
   overviewLabel: {
     color: palette.muted,
     fontSize: 12,
-    fontWeight: "700",
+    fontFamily: "Poppins_600SemiBold",
     textTransform: "uppercase",
     letterSpacing: 0.3
   },
   overviewName: {
     color: palette.ink,
     fontSize: 22,
-    fontWeight: "800"
+    fontFamily: "Poppins_700Bold"
   },
   overviewGoalsCard: {
     borderWidth: 1,
@@ -816,7 +822,8 @@ const styles = StyleSheet.create({
   overviewGoalsText: {
     color: palette.ink,
     fontSize: 15,
-    lineHeight: 21
+    lineHeight: 21,
+    fontFamily: "Poppins_400Regular"
   },
   fieldStack: {
     gap: 12
@@ -827,7 +834,7 @@ const styles = StyleSheet.create({
   label: {
     color: palette.ink,
     fontSize: 14,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   input: {
     minHeight: 52,
@@ -858,7 +865,7 @@ const styles = StyleSheet.create({
     width: 74,
     height: 74,
     borderRadius: 37,
-    backgroundColor: "#dde8ff",
+    backgroundColor: palette.primarySoft,
     alignItems: "center",
     justifyContent: "center"
   },
@@ -874,13 +881,13 @@ const styles = StyleSheet.create({
     minHeight: 36,
     paddingHorizontal: 12,
     borderRadius: 12,
-    backgroundColor: palette.blue,
+    backgroundColor: palette.primary,
     justifyContent: "center"
   },
   photoActionText: {
     color: "#fffdfa",
     fontSize: 13,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   photoActionButtonAlt: {
     minHeight: 36,
@@ -894,7 +901,7 @@ const styles = StyleSheet.create({
   photoActionAltText: {
     color: palette.ink,
     fontSize: 13,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   genderRow: {
     flexDirection: "row",
@@ -912,13 +919,13 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   genderButtonSelected: {
-    backgroundColor: palette.blue,
-    borderColor: palette.blue
+    backgroundColor: palette.primary,
+    borderColor: palette.primary
   },
   genderText: {
-    color: palette.blue,
+    color: palette.primary,
     fontSize: 13,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   },
   genderTextSelected: {
     color: "#fffdfa"
@@ -941,7 +948,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: "#fffdfa",
     fontSize: 17,
-    fontWeight: "800"
+    fontFamily: "Poppins_700Bold"
   },
   guideBackdrop: {
     flex: 1,
@@ -977,13 +984,13 @@ const styles = StyleSheet.create({
   },
   guideCloseButtonText: {
     color: palette.ink,
-    fontWeight: "800",
+    fontFamily: "Poppins_700Bold",
     fontSize: 14
   },
   guideTitle: {
     color: palette.ink,
     fontSize: 17,
-    fontWeight: "800",
+    fontFamily: "Poppins_700Bold",
     textAlign: "center",
     marginBottom: 10
   },
@@ -994,20 +1001,21 @@ const styles = StyleSheet.create({
     gap: 10
   },
   guideStepLabel: {
-    color: palette.blue,
+    color: palette.primary,
     fontSize: 12,
-    fontWeight: "800"
+    fontFamily: "Poppins_600SemiBold"
   },
   guidePageTitle: {
     color: palette.ink,
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "800"
+    fontFamily: "Poppins_700Bold"
   },
   guidePageBody: {
     color: palette.muted,
     fontSize: 14,
-    lineHeight: 21
+    lineHeight: 21,
+    fontFamily: "Poppins_400Regular"
   },
   guideFooter: {
     alignItems: "center",
@@ -1016,6 +1024,6 @@ const styles = StyleSheet.create({
   guideFooterText: {
     color: palette.muted,
     fontSize: 12,
-    fontWeight: "700"
+    fontFamily: "Poppins_600SemiBold"
   }
 });
