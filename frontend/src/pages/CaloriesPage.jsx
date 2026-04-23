@@ -6,7 +6,7 @@ import { palette } from "../data";
 import CalorieForm from "../components/calories/CalorieForm";
 import CalorieResult from "../components/calories/CalorieResult";
 import CalorieHistoryPage from "./CalorieHistoryPage";
-import { loadProfile } from "../storage/profileStorage";
+import { loadProfile, saveProfile } from "../storage/profileStorage";
 import {
   addCalorieEntry,
   clearCalorieDay,
@@ -349,9 +349,10 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
       .filter(Boolean);
     const finalLine = lines.length > 0 ? lines[lines.length - 1] : "";
     if (/total estimated calories/i.test(finalLine)) {
-      const finalMatch = finalLine.match(/(-?\d+)/);
+      const finalMatch = finalLine.match(/-?\d[\d,]*/);
       if (finalMatch) {
-        return String(Math.max(0, Number(finalMatch[1]) || 0));
+        const normalized = finalMatch[0].replace(/,/g, "");
+        return String(Math.max(0, Number(normalized) || 0));
       }
     }
     return "";
@@ -428,6 +429,25 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
 
       const payload = await response.json();
       setResult(payload);
+      if (accountId && accountEmail) {
+        const dailyTarget = Number(payload?.calorieContext?.dailyTarget);
+        if (Number.isFinite(dailyTarget) && dailyTarget > 0) {
+          try {
+            const existingProfile = await loadProfile(accountId, accountEmail);
+            await saveProfile(
+              {
+                ...existingProfile,
+                dailyCalorieTarget: String(Math.round(dailyTarget)),
+                dailyCalorieUpdatedAt: new Date().toISOString()
+              },
+              accountId,
+              accountEmail
+            );
+          } catch (profileError) {
+            console.warn("Unable to save calculated daily calorie target to profile", profileError);
+          }
+        }
+      }
       const inferred = inferCaloriesFromResult(payload);
       const inferredMealName = inferFoodNameFromResult(payload);
       if (inferred) {

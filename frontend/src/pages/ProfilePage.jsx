@@ -39,6 +39,7 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
   const [guidePageWidth, setGuidePageWidth] = useState(320);
   const [activeGuidePage, setActiveGuidePage] = useState(0);
   const guideScrollRef = useRef(null);
+  const webcamVideoRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
@@ -116,12 +117,6 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         setWebcamStream(stream);
         setWebcamVisible(true);
-        setTimeout(() => {
-          const videoElement = document.getElementById("profile-webcam-video");
-          if (videoElement) {
-            videoElement.srcObject = stream;
-          }
-        }, 0);
       } catch {
         setWebcamError("Could not access webcam. Please allow camera permission.");
       }
@@ -157,7 +152,7 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
   };
 
   const captureWebcamPhoto = async () => {
-    const videoElement = document.getElementById("profile-webcam-video");
+    const videoElement = webcamVideoRef.current;
     if (!videoElement) {
       setWebcamError("Unable to access webcam preview.");
       return;
@@ -192,6 +187,12 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
       { text: "Cancel", style: "cancel" }
     ]);
   };
+
+  useEffect(() => {
+    if (Platform.OS === "web" && webcamVisible && webcamVideoRef.current && webcamStream) {
+      webcamVideoRef.current.srcObject = webcamStream;
+    }
+  }, [webcamVisible, webcamStream]);
 
   useEffect(() => {
     return () => {
@@ -456,7 +457,7 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
           <View style={styles.webcamBackdrop}>
             <View style={styles.webcamCard}>
               <Text style={styles.webcamTitle}>Webcam capture</Text>
-              <video id="profile-webcam-video" autoPlay playsInline muted style={StyleSheet.flatten(styles.webcamVideo)} />
+              <video ref={webcamVideoRef} autoPlay playsInline muted style={StyleSheet.flatten(styles.webcamVideo)} />
               {webcamError ? <Text style={styles.webcamError}>{webcamError}</Text> : null}
               <View style={styles.webcamActions}>
                 <Pressable style={styles.webcamPrimary} onPress={() => void captureWebcamPhoto()}>

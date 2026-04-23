@@ -4,6 +4,7 @@ import {
   Alert,
   Animated,
   Easing,
+  Image,
   Linking,
   Modal,
   NativeModules,
@@ -23,6 +24,10 @@ import CaloriesPage from "./src/pages/CaloriesPage";
 import ProfilePage from "./src/pages/ProfilePage";
 import ScannerPage from "./src/pages/SupplementsPage";
 import { loginOrRegisterAccount, logoutActiveSession, subscribeToActiveSession } from "./src/storage/accountStorage";
+import { loadCalorieWeek } from "./src/storage/calorieTrackerStorage";
+import { addExerciseEntry, loadExerciseEntries } from "./src/storage/exerciseStorage";
+import { loadProfile } from "./src/storage/profileStorage";
+import { formatLocalIsoDate, loadHomeVitals, saveHomeVitalForDate } from "./src/storage/homeVitalsStorage";
 
 import {
   defaultBootstrap,
@@ -189,23 +194,35 @@ const androidStatusInset = Platform.OS === "android" ? StatusBar.currentHeight ?
 const bottomBarOffset = Platform.OS === "android" ? 24 : 18;
 const contentBottomPadding = Platform.OS === "android" ? 164 : 144;
 
-const healthSnapshot = [
-  { label: "Heart rate", value: "68 bpm", note: "Resting average", tone: "red" as Tone, icon: "heart" as IconKind },
-  { label: "Sleep", value: "7h 42m", note: "Last night", tone: "blue" as Tone, icon: "sleep" as IconKind },
-  { label: "Steps", value: "8,420", note: "Daily activity", tone: "lime" as Tone, icon: "steps" as IconKind },
-  { label: "Hydration", value: "2.1 L", note: "Today", tone: "aqua" as Tone, icon: "water" as IconKind }
-];
-
-const mealLogs = [
-  { title: "Breakfast", subtitle: "Greek yogurt, berries, chia, coffee", time: "08:10", tone: "blue" as Tone, icon: "meal" as IconKind },
-  { title: "Lunch", subtitle: "Salmon bowl with rice, greens, avocado", time: "13:05", tone: "aqua" as Tone, icon: "meal" as IconKind },
-  { title: "Snack", subtitle: "Apple and mixed nuts", time: "16:20", tone: "lime" as Tone, icon: "meal" as IconKind }
-];
-
-const medicationLogs = [
-  { title: "Vitamin D3", subtitle: "1 capsule · with breakfast", time: "08:15", tone: "lime" as Tone, icon: "medicine" as IconKind },
-  { title: "Omega-3", subtitle: "2 softgels · with lunch", time: "13:10", tone: "aqua" as Tone, icon: "medicine" as IconKind },
-  { title: "Cetirizine", subtitle: "10 mg · evening as needed", time: "21:00", tone: "blue" as Tone, icon: "medicine" as IconKind }
+const homeMetricDefs = [
+  {
+    key: "restingHeartRate",
+    label: "Resting heart rate",
+    icon: "heart" as IconKind,
+    tone: "red" as Tone,
+    placeholder: "e.g. 64 bpm"
+  },
+  {
+    key: "sleep",
+    label: "Sleep",
+    icon: "sleep" as IconKind,
+    tone: "blue" as Tone,
+    placeholder: "e.g. 7h 30m"
+  },
+  {
+    key: "steps",
+    label: "Steps",
+    icon: "steps" as IconKind,
+    tone: "lime" as Tone,
+    placeholder: "e.g. 8500"
+  },
+  {
+    key: "hydration",
+    label: "Hydration",
+    icon: "water" as IconKind,
+    tone: "aqua" as Tone,
+    placeholder: "e.g. 2.3 L"
+  }
 ];
 
 const pipelineStageMeta: Array<{ key: string; title: string; icon: IconKind }> = [
@@ -228,6 +245,7 @@ export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(resolveApiBaseUrl);
   const [activeAccount, setActiveAccount] = useState<{ id: string; email: string; createdAt?: string } | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [topBarProfilePicture, setTopBarProfilePicture] = useState("");
   const [apiError, setApiError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>("home");
   const [bootstrap, setBootstrap] = useState<BootstrapPayload>(defaultBootstrap);
@@ -254,6 +272,32 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const hydrateTopBarProfile = async () => {
+      if (!activeAccount?.id) {
+        if (mounted) {
+          setTopBarProfilePicture("");
+        }
+        return;
+      }
+      try {
+        const profile = await loadProfile(activeAccount.id, activeAccount.email);
+        if (mounted) {
+          setTopBarProfilePicture(typeof profile?.profilePicture === "string" ? profile.profilePicture : "");
+        }
+      } catch {
+        if (mounted) {
+          setTopBarProfilePicture("");
+        }
+      }
+    };
+    void hydrateTopBarProfile();
+    return () => {
+      mounted = false;
+    };
+  }, [activeAccount?.id, activeAccount?.email, activeTab]);
 
   useEffect(() => {
     void warmApiConnection();
@@ -573,14 +617,17 @@ export default function App() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <TopBar brand={bootstrap.brand.name} tagline={bootstrap.brand.tagline} />
+          <TopBar
+            brand={bootstrap.brand.name}
+            tagline={bootstrap.brand.tagline}
+            activeAccount={activeAccount}
+            profilePicture={topBarProfilePicture}
+          />
 
           {activeTab === "home" ? (
             <HomeScreen
-              bootstrap={bootstrap}
-              loadingBootstrap={loadingBootstrap}
-              history={history}
-              onUseClaim={applyFeaturedClaim}
+              accountId={activeAccount?.id}
+              accountEmail={activeAccount?.email}
               onOpenInvestigate={() => setActiveTab("consultant")}
             />
           ) : activeTab === "consultant" ? (
@@ -648,7 +695,19 @@ export default function App() {
   );
 }
 
-function TopBar({ brand, tagline }: { brand: string; tagline: string }) {
+function TopBar({
+  brand,
+  tagline,
+  activeAccount,
+  profilePicture
+}: {
+  brand: string;
+  tagline: string;
+  activeAccount: { id: string; email: string; createdAt?: string } | null;
+  profilePicture: string;
+}) {
+  const showAvatar = Boolean(activeAccount);
+  const fallbackInitial = safeUpper(activeAccount?.email?.charAt(0) || "U");
   return (
     <View style={styles.topBar}>
       <View style={{ flex: 1 }}>
@@ -656,107 +715,561 @@ function TopBar({ brand, tagline }: { brand: string; tagline: string }) {
         <Text style={styles.topBarSubtitle}>{tagline}</Text>
       </View>
 
-      <View style={styles.avatarShell}>
-        <View style={styles.avatarGlow} />
-        <Text style={styles.avatarText}>AI</Text>
-      </View>
+      {showAvatar ? (
+        <View style={styles.avatarShell}>
+          <View style={styles.avatarGlow} />
+          {profilePicture ? (
+            <Image source={{ uri: profilePicture }} style={styles.topBarAvatarImage} />
+          ) : (
+            <Text style={styles.avatarText}>{fallbackInitial}</Text>
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }
 
 function HomeScreen({
-  bootstrap,
-  loadingBootstrap,
-  history,
-  onUseClaim,
+  accountId,
+  accountEmail,
   onOpenInvestigate
 }: {
-  bootstrap: BootstrapPayload;
-  loadingBootstrap: boolean;
-  history: InvestigationSummary[];
-  onUseClaim: (item: FeaturedClaim) => void;
+  accountId?: string;
+  accountEmail?: string;
   onOpenInvestigate: () => void;
 }) {
-  const latest = history[0];
+  const [vitalsByDate, setVitalsByDate] = useState<Record<string, Record<string, string>>>({});
+  const [loadingVitals, setLoadingVitals] = useState(true);
+  const [editorVisible, setEditorVisible] = useState(false);
+  const [editorMetricKey, setEditorMetricKey] = useState<string>("restingHeartRate");
+  const [editorValue, setEditorValue] = useState("");
+  const [savingEditor, setSavingEditor] = useState(false);
+  const [editorError, setEditorError] = useState("");
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [mealEntriesToday, setMealEntriesToday] = useState<Array<{ id: string; mealName: string; calories: number; createdAt: string }>>([]);
+  const [loadingMeals, setLoadingMeals] = useState(true);
+  const [dailyCalorieTarget, setDailyCalorieTarget] = useState<number | null>(null);
+  const [exerciseEntries, setExerciseEntries] = useState<Array<{ id: string; title: string; duration: string; intensity: string; notes: string; createdAt: string; date: string }>>([]);
+  const [loadingExercises, setLoadingExercises] = useState(true);
+  const [exerciseTitle, setExerciseTitle] = useState("");
+  const [exerciseDuration, setExerciseDuration] = useState("");
+  const [exerciseIntensity, setExerciseIntensity] = useState("");
+  const [exerciseNotes, setExerciseNotes] = useState("");
+  const [exerciseError, setExerciseError] = useState("");
+  const [savingExercise, setSavingExercise] = useState(false);
+  const [expandedExerciseId, setExpandedExerciseId] = useState("");
+  const todayDate = formatLocalIsoDate(new Date());
+  const todaysRecord = vitalsByDate[todayDate] || {};
+  const toVitalsMap = (input: unknown): Record<string, Record<string, string>> => {
+    if (!input || typeof input !== "object") {
+      return {};
+    }
+    const map: Record<string, Record<string, string>> = {};
+    for (const [date, values] of Object.entries(input as Record<string, unknown>)) {
+      if (!values || typeof values !== "object") {
+        continue;
+      }
+      const normalized: Record<string, string> = {};
+      for (const [key, value] of Object.entries(values as Record<string, unknown>)) {
+        if (typeof value === "string") {
+          normalized[key] = value;
+        }
+      }
+      map[date] = normalized;
+    }
+    return map;
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    const hydrate = async () => {
+      if (mounted) {
+        setLoadingVitals(true);
+      }
+      try {
+        const payload = await loadHomeVitals(accountId, accountEmail);
+        if (mounted) {
+          setVitalsByDate(toVitalsMap(payload));
+        }
+      } catch (error) {
+        console.warn("Unable to load home vitals", error);
+        if (mounted) {
+          setVitalsByDate({});
+        }
+      } finally {
+        if (mounted) {
+          setLoadingVitals(false);
+        }
+      }
+    };
+    void hydrate();
+    return () => {
+      mounted = false;
+    };
+  }, [accountId, accountEmail]);
+
+  useEffect(() => {
+    let mounted = true;
+    const parseNumber = (value: string) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const estimateDailyTargetFromProfile = (profile: {
+      age?: string;
+      weight?: string;
+      height?: string;
+      gender?: string;
+    }): number | null => {
+      const age = parseNumber(profile?.age || "");
+      const weight = parseNumber(profile?.weight || "");
+      const height = parseNumber(profile?.height || "");
+      const sex = (profile?.gender || "").trim().toLowerCase();
+      if (age && weight && height) {
+        let bmr = 10 * weight + 6.25 * height - 5 * age;
+        if (sex === "male") {
+          bmr += 5;
+        } else if (sex === "female") {
+          bmr -= 161;
+        } else {
+          bmr -= 78;
+        }
+        const target = Math.max(1200, Math.round(Math.max(1000, bmr) * 1.55));
+        return target;
+      }
+      if (weight && height) {
+        const bmi = weight / ((height / 100) * (height / 100));
+        let target = 2000;
+        if (bmi < 18.5) {
+          target = 2400;
+        } else if (bmi < 25) {
+          target = 2000;
+        } else if (bmi < 30) {
+          target = 1750;
+        } else {
+          target = 1550;
+        }
+        const ageForAdjust = age || 25;
+        if (ageForAdjust < 18) {
+          target += 200;
+        } else if (ageForAdjust >= 65) {
+          target -= 250;
+        } else if (ageForAdjust >= 50) {
+          target -= 150;
+        }
+        return Math.max(1200, Math.round(target));
+      }
+      return null;
+    };
+    const hydrateMeals = async () => {
+      if (mounted) {
+        setLoadingMeals(true);
+      }
+      try {
+        const weekPayload = await loadCalorieWeek(accountId, new Date(), accountEmail);
+        const weekEntries = Array.isArray(weekPayload?.entries) ? weekPayload.entries : [];
+        const todaysMeals = weekEntries
+          .filter((entry) => entry?.date === todayDate)
+          .map((entry) => ({
+            id: typeof entry?.id === "string" ? entry.id : `meal-${Math.random().toString(36).slice(2, 8)}`,
+            mealName: typeof entry?.mealName === "string" ? entry.mealName : "",
+            calories: Number(entry?.calories) || 0,
+            createdAt: typeof entry?.createdAt === "string" ? entry.createdAt : ""
+          }))
+          .sort((a, b) => {
+            const aTime = Date.parse(a.createdAt || "");
+            const bTime = Date.parse(b.createdAt || "");
+            if (Number.isFinite(aTime) && Number.isFinite(bTime)) {
+              return aTime - bTime;
+            }
+            return 0;
+          });
+        if (mounted) {
+          setMealEntriesToday(todaysMeals);
+        }
+      } catch (error) {
+        console.warn("Unable to load today's calorie entries", error);
+        if (mounted) {
+          setMealEntriesToday([]);
+        }
+      } finally {
+        if (mounted) {
+          setLoadingMeals(false);
+        }
+      }
+      try {
+        const profile = await loadProfile(accountId, accountEmail);
+        const savedTarget = parseNumber(typeof profile?.dailyCalorieTarget === "string" ? profile.dailyCalorieTarget : "");
+        const target = savedTarget || estimateDailyTargetFromProfile(profile);
+        if (mounted) {
+          setDailyCalorieTarget(target);
+        }
+      } catch {
+        if (mounted) {
+          setDailyCalorieTarget(null);
+        }
+      }
+    };
+    void hydrateMeals();
+    return () => {
+      mounted = false;
+    };
+  }, [accountId, accountEmail, todayDate]);
+
+  useEffect(() => {
+    let mounted = true;
+    const hydrateExercises = async () => {
+      if (mounted) {
+        setLoadingExercises(true);
+      }
+      try {
+        const entries = await loadExerciseEntries(accountId, accountEmail);
+        if (mounted) {
+          setExerciseEntries(Array.isArray(entries) ? entries : []);
+        }
+      } catch (error) {
+        console.warn("Unable to load exercise history", error);
+        if (mounted) {
+          setExerciseEntries([]);
+        }
+      } finally {
+        if (mounted) {
+          setLoadingExercises(false);
+        }
+      }
+    };
+    void hydrateExercises();
+    return () => {
+      mounted = false;
+    };
+  }, [accountId, accountEmail]);
+
+  const openMetricEditor = (metricKey: string) => {
+    const currentValue = typeof todaysRecord?.[metricKey] === "string" ? todaysRecord[metricKey] : "";
+    setEditorMetricKey(metricKey);
+    setEditorValue(currentValue);
+    setEditorError("");
+    setEditorVisible(true);
+  };
+
+  const saveMetricValue = async () => {
+    const trimmed = editorValue.trim();
+    if (!trimmed) {
+      setEditorError("Please enter a value.");
+      return;
+    }
+    setSavingEditor(true);
+    setEditorError("");
+    try {
+      const updated = await saveHomeVitalForDate(accountId, accountEmail, todayDate, editorMetricKey, trimmed);
+      setVitalsByDate(toVitalsMap(updated));
+      setEditorVisible(false);
+    } catch (error) {
+      setEditorError(error instanceof Error ? error.message : "Unable to save this metric.");
+    } finally {
+      setSavingEditor(false);
+    }
+  };
+
+  const datedEntries = useMemo(
+    () =>
+      Object.entries(vitalsByDate)
+        .sort(([a], [b]) => (a > b ? -1 : 1))
+        .map(([date, values]) => ({ date, values: values || {} })),
+    [vitalsByDate]
+  );
+  const metricConfig = homeMetricDefs.find((item) => item.key === editorMetricKey) || homeMetricDefs[0];
+  const classifyMealWindow = (createdAt: string) => {
+    const parsed = new Date(createdAt || "");
+    const hours = Number.isNaN(parsed.getTime()) ? 12 : parsed.getHours();
+    if (hours >= 4 && hours < 11) {
+      return "Breakfast";
+    }
+    if (hours >= 11 && hours < 15) {
+      return "Lunch";
+    }
+    if (hours >= 15 && hours < 24) {
+      return "Dinner";
+    }
+    return "Night snack";
+  };
+  const formatEntryTime = (createdAt: string) => {
+    const parsed = new Date(createdAt || "");
+    if (Number.isNaN(parsed.getTime())) {
+      return "--:--";
+    }
+    return `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
+  };
+  const todaysMealCalories = mealEntriesToday.reduce((sum, entry) => sum + (Number(entry.calories) || 0), 0);
+  const showIntakeSummary = Boolean(accountId && accountEmail);
+  const dailyIntakeText = dailyCalorieTarget ? `${todaysMealCalories}/${dailyCalorieTarget} kcal` : `${todaysMealCalories}/-- kcal`;
+  const todaysExerciseEntries = exerciseEntries
+    .filter((entry) => entry?.date === todayDate)
+    .sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""));
+  const exerciseEntriesByDate = exerciseEntries.reduce((accumulator, entry) => {
+    const key = typeof entry?.date === "string" ? entry.date : "";
+    if (!key) {
+      return accumulator;
+    }
+    if (!accumulator[key]) {
+      accumulator[key] = [];
+    }
+    accumulator[key].push(entry);
+    return accumulator;
+  }, {} as Record<string, Array<{ id: string; title: string; duration: string; intensity: string; notes: string; createdAt: string; date: string }>>);
+  const exerciseHistoryDates = Object.keys(exerciseEntriesByDate).sort((a, b) => (a > b ? -1 : 1));
+
+  const saveExercise = async () => {
+    const title = exerciseTitle.trim();
+    const duration = exerciseDuration.trim();
+    const intensity = exerciseIntensity.trim();
+    const notes = exerciseNotes.trim();
+    if (!title || !duration || !intensity) {
+      setExerciseError("Please fill in exercise title, duration and intensity.");
+      return;
+    }
+    setSavingExercise(true);
+    setExerciseError("");
+    try {
+      const createdAt = new Date().toISOString();
+      const entry = {
+        title,
+        duration,
+        intensity,
+        notes,
+        createdAt,
+        date: todayDate
+      };
+      const saved = await addExerciseEntry(accountId, entry, accountEmail);
+      setExerciseEntries((current) => [saved, ...current].sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || "")));
+      setExerciseTitle("");
+      setExerciseDuration("");
+      setExerciseIntensity("");
+      setExerciseNotes("");
+    } catch (error) {
+      setExerciseError(error instanceof Error ? error.message : "Unable to save exercise entry.");
+    } finally {
+      setSavingExercise(false);
+    }
+  };
 
   return (
     <View style={styles.pageStack}>
       <View style={styles.heroPanel}>
         <View style={styles.heroTopRow}>
-          <Chip label="Daily health view" tone="lime" />
-          <Chip label="Claim investigator" tone="aqua" />
+          <Chip label="Home dashboard" tone="lime" />
+          <Chip label="Daily logging" tone="aqua" />
         </View>
 
-        <Text style={styles.heroTitle}>Daily health signals with claim-checking when you need it</Text>
-        <Text style={styles.heroSubtitle}>
-          GramWIN can track lightweight wellness context on the home screen, then switch into a stricter evidence-review flow whenever you want to investigate a new health claim.
-        </Text>
+        <Text style={styles.heroTitle}>Track key health signals every day</Text>
+        <Text style={styles.heroSubtitle}>Tap any metric to log today’s value. If a metric has not been logged yet, it shows Missing to prompt completion.</Text>
 
         <View style={styles.heroActionRow}>
-          <PrimaryButton label="Run investigation" onPress={onOpenInvestigate} icon={<AppIcon kind="play" color="#fffdfa" size={18} />} />
-          <SecondaryButton
-            label={latest ? `${statusLabel(latest.status)} latest run` : "No runs yet"}
-            onPress={onOpenInvestigate}
-            icon={<AppIcon kind="insights" color={palette.blue} size={18} />}
-          />
-        </View>
-
-        <View style={styles.statsRow}>
-          <MetricTile label="Saved Runs" value={String(history.length)} tone="blue" />
-          <MetricTile label="Meals Logged" value={String(mealLogs.length)} tone="lime" />
-          <MetricTile label="Medications" value={String(medicationLogs.length)} tone="aqua" />
+          <PrimaryButton label="Open investigator" onPress={onOpenInvestigate} icon={<AppIcon kind="play" color="#fffdfa" size={18} />} />
         </View>
       </View>
 
-      <SectionHeader title="Today’s health snapshot" body="A simple daily view for common wellness metrics while the deeper evidence workflow lives in the consultant tab." />
+      <SectionHeader title={`Today · ${todayDate}`} body="These values reset naturally each new day. Previous days remain in history below by date." />
 
       <View style={styles.statsRow}>
-        {healthSnapshot.map((item) => (
-          <HealthMetricCard key={item.label} {...item} />
-        ))}
+        {homeMetricDefs.map((item) => {
+          const value = typeof todaysRecord?.[item.key] === "string" ? todaysRecord[item.key] : "";
+          const missing = !value;
+          return (
+            <Pressable key={item.key} style={{ flex: 1, minWidth: 160 }} onPress={() => openMetricEditor(item.key)}>
+              <HealthMetricCard
+                label={item.label}
+                value={missing ? "Missing" : value}
+                note={missing ? "Tap to add today" : "Tap to update"}
+                tone={item.tone}
+                icon={item.icon}
+              />
+            </Pressable>
+          );
+        })}
       </View>
 
-      <SectionHeader title="Meals log" body="A clean placeholder meal history with enough detail to make the home screen feel like a real health app." />
+      <Pressable style={styles.secondaryButton} onPress={() => setHistoryVisible(true)}>
+        <Text style={styles.secondaryButtonText}>History</Text>
+      </Pressable>
 
-      <View style={styles.cardStack}>
-        {mealLogs.map((item) => (
-          <LogCard key={`${item.title}-${item.time}`} {...item} />
-        ))}
-      </View>
-
-      <SectionHeader title="Medication log" body="Today’s routine medications and supplements can live here without crowding the evidence experience." />
-
-      <View style={styles.cardStack}>
-        {medicationLogs.map((item) => (
-          <LogCard key={`${item.title}-${item.time}`} {...item} />
-        ))}
-      </View>
-
-      <SectionHeader title="Claim ideas" body={loadingBootstrap ? "Loading starting prompts..." : "Tap one to seed the investigator immediately."} />
-
-      <View style={styles.quickPromptGrid}>
-        {bootstrap.featuredClaims.map((item, index) => (
-          <Pressable
-            key={item.id}
-            style={[styles.quickPromptCard, index === 0 ? toneStyles.lime.soft : index === 1 ? toneStyles.aqua.soft : toneStyles.blue.soft]}
-            onPress={() => onUseClaim(item)}
-          >
-            <Text style={styles.quickPromptText}>{item.claim}</Text>
-            <Text style={styles.quickPromptSubtext}>{item.whyItIsInteresting}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <SectionHeader title="Agent team" body="Each specialist has a clear role, and major AI reasoning stages now include a second checker before the result settles." />
-
-      <View style={styles.cardStack}>
-        {bootstrap.architecture.map((block, index) => (
-          <View key={block.id} style={[styles.infoCard, index % 3 === 0 ? toneStyles.blue.soft : index % 3 === 1 ? toneStyles.lime.soft : toneStyles.aqua.soft]}>
-            <Text style={styles.infoCardTitle}>{block.title}</Text>
-            <Text style={styles.infoCardBody}>{block.summary}</Text>
+      <View style={styles.panel}>
+        <View style={styles.mealHeaderRow}>
+          <Text style={styles.subSectionTitle}>Meal Log</Text>
+          {showIntakeSummary ? <Text style={styles.mealIntakeText}>{dailyIntakeText}</Text> : null}
+        </View>
+        {loadingMeals ? (
+          <Text style={styles.sectionBody}>Loading meals...</Text>
+        ) : mealEntriesToday.length > 0 ? (
+          <View style={styles.mealList}>
+            {mealEntriesToday.map((entry) => (
+              <View key={entry.id} style={styles.mealRow}>
+                <View style={styles.mealInfo}>
+                  <Text style={styles.mealLabel}>
+                    {classifyMealWindow(entry.createdAt)} • {entry.calories} kcal
+                  </Text>
+                  <Text style={styles.mealName}>{entry.mealName || "Meal entry"}</Text>
+                </View>
+                <Text style={styles.mealTime}>{formatEntryTime(entry.createdAt)}</Text>
+              </View>
+            ))}
           </View>
-        ))}
+        ) : (
+          <Text style={styles.sectionBody}>No meals logged for today yet.</Text>
+        )}
       </View>
+
+      <View style={styles.panel}>
+        <Text style={styles.subSectionTitle}>Exercise Tracker</Text>
+        <TextInput
+          style={styles.primaryInput}
+          value={exerciseTitle}
+          onChangeText={setExerciseTitle}
+          placeholder="Title of exercise"
+          placeholderTextColor={palette.muted}
+          editable={!savingExercise}
+        />
+        <View style={styles.exerciseInputRow}>
+          <TextInput
+            style={[styles.primaryInput, styles.exerciseInputHalf]}
+            value={exerciseDuration}
+            onChangeText={setExerciseDuration}
+            placeholder="Duration (e.g. 35 min)"
+            placeholderTextColor={palette.muted}
+            editable={!savingExercise}
+          />
+          <TextInput
+            style={[styles.primaryInput, styles.exerciseInputHalf]}
+            value={exerciseIntensity}
+            onChangeText={setExerciseIntensity}
+            placeholder="Intensity"
+            placeholderTextColor={palette.muted}
+            editable={!savingExercise}
+          />
+        </View>
+        <TextInput
+          style={styles.notesInput}
+          value={exerciseNotes}
+          onChangeText={setExerciseNotes}
+          placeholder="Personal notes (optional)"
+          placeholderTextColor={palette.muted}
+          editable={!savingExercise}
+          multiline
+        />
+        {exerciseError ? <Text style={styles.modalError}>{exerciseError}</Text> : null}
+        <Pressable style={[styles.modalPrimary, savingExercise && styles.modalButtonDisabled]} onPress={() => void saveExercise()} disabled={savingExercise}>
+          <Text style={styles.modalPrimaryText}>{savingExercise ? "Saving..." : "Add exercise"}</Text>
+        </Pressable>
+
+        {loadingExercises ? (
+          <Text style={styles.sectionBody}>Loading today&apos;s exercise...</Text>
+        ) : todaysExerciseEntries.length > 0 ? (
+          <View style={styles.exerciseList}>
+            {todaysExerciseEntries.map((entry) => {
+              const expanded = expandedExerciseId === entry.id;
+              return (
+                <View key={entry.id} style={styles.exerciseRow}>
+                  <Pressable onPress={() => setExpandedExerciseId(expanded ? "" : entry.id)} style={styles.exerciseRowMain}>
+                    <View style={styles.exerciseInfo}>
+                      <Text style={styles.exerciseTitle}>{entry.title || "Exercise"}</Text>
+                      <Text style={styles.exerciseMeta}>
+                        {entry.duration || "--"} • {entry.intensity || "--"} • {formatEntryTime(entry.createdAt)}
+                      </Text>
+                    </View>
+                    <Text style={styles.exerciseDate}>{entry.date}</Text>
+                  </Pressable>
+                  {expanded ? <Text style={styles.exerciseNotes}>{entry.notes || "No personal notes."}</Text> : null}
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <Text style={styles.sectionBody}>No exercise logged for today yet.</Text>
+        )}
+      </View>
+
+      <Modal visible={editorVisible} transparent animationType="fade" onRequestClose={() => setEditorVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Update {metricConfig?.label || "metric"}</Text>
+            <Text style={styles.modalPrompt}>Date: {todayDate}</Text>
+            <TextInput
+              style={styles.primaryInput}
+              value={editorValue}
+              onChangeText={setEditorValue}
+              placeholder={metricConfig?.placeholder || "Enter value"}
+              placeholderTextColor={palette.muted}
+              editable={!savingEditor}
+            />
+            {editorError ? <Text style={styles.modalError}>{editorError}</Text> : null}
+            <View style={styles.modalActions}>
+              <Pressable style={[styles.modalPrimary, savingEditor && styles.modalButtonDisabled]} onPress={() => void saveMetricValue()} disabled={savingEditor}>
+                <Text style={styles.modalPrimaryText}>{savingEditor ? "Saving..." : "Save"}</Text>
+              </Pressable>
+              <Pressable style={[styles.modalSecondary, savingEditor && styles.modalButtonDisabled]} onPress={() => setEditorVisible(false)} disabled={savingEditor}>
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal visible={historyVisible} transparent animationType="fade" onRequestClose={() => setHistoryVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>History by date</Text>
+              <Pressable onPress={() => setHistoryVisible(false)}>
+                <Text style={styles.modalCloseText}>x</Text>
+              </Pressable>
+            </View>
+            {loadingVitals ? (
+              <Text style={styles.sectionBody}>Loading history...</Text>
+            ) : datedEntries.length > 0 || exerciseHistoryDates.length > 0 ? (
+              <ScrollView style={styles.modalHistoryScroll} contentContainerStyle={styles.modalHistoryStack}>
+                <Text style={styles.modalSubheading}>Trackers</Text>
+                {datedEntries.map((entry) => (
+                  <View key={entry.date} style={styles.homeHistoryCard}>
+                    <Text style={styles.homeHistoryDate}>{entry.date === todayDate ? `${entry.date} (today)` : entry.date}</Text>
+                    <View style={styles.homeHistoryMetrics}>
+                      {homeMetricDefs.map((metric) => {
+                        const value = typeof entry.values?.[metric.key] === "string" ? entry.values[metric.key] : "";
+                        return (
+                          <View key={`${entry.date}-${metric.key}`} style={styles.homeHistoryMetricRow}>
+                            <Text style={styles.homeHistoryMetricLabel}>{metric.label}</Text>
+                            <Text style={styles.homeHistoryMetricValue}>{value || "Missing"}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))}
+                <Text style={styles.modalSubheading}>Exercise</Text>
+                {exerciseHistoryDates.length > 0 ? (
+                  exerciseHistoryDates.map((date) => (
+                    <View key={`exercise-${date}`} style={styles.homeHistoryCard}>
+                      <Text style={styles.homeHistoryDate}>{date === todayDate ? `${date} (today)` : date}</Text>
+                      <View style={styles.exerciseHistoryStack}>
+                        {(exerciseEntriesByDate[date] || []).map((entry) => (
+                          <View key={`${date}-${entry.id}`} style={styles.exerciseHistoryRow}>
+                            <Text style={styles.exerciseHistoryTitle}>{entry.title || "Exercise"}</Text>
+                            <Text style={styles.exerciseHistoryMeta}>
+                              {entry.duration || "--"} • {entry.intensity || "--"} • {formatEntryTime(entry.createdAt)}
+                            </Text>
+                            {entry.notes ? <Text style={styles.exerciseHistoryNotes}>{entry.notes}</Text> : null}
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.sectionBody}>No exercise history yet.</Text>
+                )}
+              </ScrollView>
+            ) : (
+              <Text style={styles.sectionBody}>No daily metrics yet.</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2104,6 +2617,11 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: "#effad6"
   },
+  topBarAvatarImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 999
+  },
   avatarText: {
     color: palette.green,
     fontSize: 17,
@@ -2360,6 +2878,134 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontSize: 13,
     lineHeight: 18
+  },
+  homeHistoryCard: {
+    borderRadius: 22,
+    backgroundColor: "#faf7f1",
+    borderWidth: 1,
+    borderColor: palette.border,
+    padding: 16,
+    gap: 12
+  },
+  homeHistoryDate: {
+    color: palette.ink,
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  homeHistoryMetrics: {
+    gap: 10
+  },
+  homeHistoryMetricRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  homeHistoryMetricLabel: {
+    color: palette.muted,
+    fontSize: 14,
+    fontWeight: "700"
+  },
+  homeHistoryMetricValue: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: "900",
+    textAlign: "right",
+    flexShrink: 1
+  },
+  mealHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  mealIntakeText: {
+    color: palette.blue,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  mealList: {
+    gap: 10
+  },
+  mealRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#faf7f1",
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  mealInfo: {
+    flex: 1,
+    gap: 3
+  },
+  mealLabel: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  mealName: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 18
+  },
+  mealTime: {
+    color: palette.blue,
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  exerciseInputRow: {
+    flexDirection: "row",
+    gap: 10
+  },
+  exerciseInputHalf: {
+    flex: 1
+  },
+  exerciseList: {
+    gap: 10
+  },
+  exerciseRow: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#faf7f1",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8
+  },
+  exerciseRowMain: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  exerciseInfo: {
+    flex: 1,
+    gap: 4
+  },
+  exerciseTitle: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  exerciseMeta: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 18
+  },
+  exerciseDate: {
+    color: palette.blue,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  exerciseNotes: {
+    color: palette.ink,
+    fontSize: 13,
+    lineHeight: 19
   },
   logCard: {
     flexDirection: "row",
@@ -3105,6 +3751,124 @@ const styles = StyleSheet.create({
     color: palette.blue,
     fontSize: 12,
     fontWeight: "800"
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(23, 42, 87, 0.25)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 18
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 420,
+    borderRadius: 24,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.border,
+    padding: 18,
+    gap: 12,
+    ...shadow
+  },
+  modalTitle: {
+    color: palette.ink,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  modalPrompt: {
+    color: palette.muted,
+    fontSize: 14
+  },
+  modalError: {
+    color: palette.red,
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4
+  },
+  modalHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  modalCloseText: {
+    color: palette.blue,
+    fontSize: 18,
+    fontWeight: "800"
+  },
+  modalHistoryScroll: {
+    maxHeight: 420
+  },
+  modalHistoryStack: {
+    gap: 10,
+    paddingBottom: 4
+  },
+  modalSubheading: {
+    color: palette.blue,
+    fontSize: 13,
+    fontWeight: "800"
+  },
+  exerciseHistoryStack: {
+    gap: 10
+  },
+  exerciseHistoryRow: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#fffdf9",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 4
+  },
+  exerciseHistoryTitle: {
+    color: palette.ink,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  exerciseHistoryMeta: {
+    color: palette.muted,
+    fontSize: 12,
+    lineHeight: 17
+  },
+  exerciseHistoryNotes: {
+    color: palette.ink,
+    fontSize: 12,
+    lineHeight: 17
+  },
+  modalPrimary: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 16,
+    backgroundColor: palette.ink,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  modalPrimaryText: {
+    color: "#fffdfa",
+    fontSize: 15,
+    fontWeight: "800"
+  },
+  modalSecondary: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 16,
+    backgroundColor: "#f7f3ec",
+    borderWidth: 1,
+    borderColor: palette.border,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  modalSecondaryText: {
+    color: palette.blue,
+    fontSize: 15,
+    fontWeight: "800"
+  },
+  modalButtonDisabled: {
+    opacity: 0.6
   },
   sheetBackdrop: {
     flex: 1,

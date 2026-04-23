@@ -40,7 +40,9 @@ function toFirestoreProfile(profile) {
     goals: profile.goals,
     current_medication: profile.medicationsOrSupplements,
     conditions: profile.medicalConditions,
-    medical_history: profile.medicalHistory
+    medical_history: profile.medicalHistory,
+    daily_calorie_target: profile.dailyCalorieTarget,
+    daily_calorie_updated_at: profile.dailyCalorieUpdatedAt
   };
 }
 
@@ -54,7 +56,9 @@ function fromFirestoreProfile(source) {
     goals: normalizeString(source?.goals),
     medicationsOrSupplements: normalizeString(source?.current_medication),
     medicalConditions: normalizeString(source?.conditions),
-    medicalHistory: normalizeString(source?.medical_history)
+    medicalHistory: normalizeString(source?.medical_history),
+    dailyCalorieTarget: normalizeString(source?.daily_calorie_target),
+    dailyCalorieUpdatedAt: normalizeString(source?.daily_calorie_updated_at)
   });
 }
 
@@ -68,7 +72,9 @@ export const emptyProfile = {
   goals: "",
   medicationsOrSupplements: "",
   medicalConditions: "",
-  medicalHistory: ""
+  medicalHistory: "",
+  dailyCalorieTarget: "",
+  dailyCalorieUpdatedAt: ""
 };
 
 function normalizeString(value) {
@@ -87,7 +93,9 @@ export function normalizeProfile(input) {
     goals: normalizeString(source.goals),
     medicationsOrSupplements: normalizeString(source.medicationsOrSupplements),
     medicalConditions: normalizeString(source.medicalConditions),
-    medicalHistory: normalizeString(source.medicalHistory)
+    medicalHistory: normalizeString(source.medicalHistory),
+    dailyCalorieTarget: normalizeString(source.dailyCalorieTarget),
+    dailyCalorieUpdatedAt: normalizeString(source.dailyCalorieUpdatedAt)
   };
 }
 

@@ -21,8 +21,18 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      // Home dashboard vitals stored at users/{userId}/daily_health/{date}
+      match /daily_health/{date} {
+        allow read, write: if isOwner(userId);
+      }
+
       // Supplement scanner history stored at users/{userId}/scanner_history/{date+time}
       match /scanner_history/{entryId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Exercise tracker history stored at users/{userId}/exercise_history/{entryId}
+      match /exercise_history/{entryId} {
         allow read, write: if isOwner(userId);
       }
     }
