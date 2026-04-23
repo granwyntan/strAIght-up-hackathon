@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import { palette } from "../data";
@@ -15,6 +15,29 @@ import {
 
 const DEFAULT_CONDITIONS = "NIL";
 const DEFAULT_GOALS = "Reduce belly fat, Improve cognitive power";
+const SCANNER_GUIDE_PAGES = [
+  {
+    title: "Welcome",
+    body: "Welcome to medicine and supplement analyser."
+  },
+  {
+    title: "Choose a search method",
+    body: "Choose how you want to scan: search by name, camera capture, or upload image."
+  },
+  {
+    title: "How analysis works",
+    body:
+      "The text is analysed by ChatGPT first, then an infographic image is generated from that output. Estimated completion time: text analysis 10-25 seconds, infographic generation 20-45 seconds."
+  },
+  {
+    title: "Share your result",
+    body: "You can share the text report or download the infographic image to educate your friends and family."
+  },
+  {
+    title: "Use history",
+    body: "Open the History tab to view recent supplement searches, then tap an item to reopen that previous result."
+  }
+];
 
 function composeConditionsFromProfile(profile) {
   const lines = [];
@@ -96,11 +119,16 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
   const [webcamActive, setWebcamActive] = useState(false);
   const [webcamError, setWebcamError] = useState("");
   const [infographicEnabled, setInfographicEnabled] = useState(true);
+  const [guideVisible, setGuideVisible] = useState(false);
+  const [guidePageWidth, setGuidePageWidth] = useState(320);
+  const [activeGuidePage, setActiveGuidePage] = useState(0);
+  const [selectedHistoryEntryId, setSelectedHistoryEntryId] = useState("");
   const canCallApi = useMemo(() => typeof requestApi === "function", [requestApi]);
   const selectedImageAspectRatio = selectedAsset?.width && selectedAsset?.height ? selectedAsset.width / selectedAsset.height : 1.4;
   const streamRef = useRef(null);
   const videoRef = useRef(null);
   const objectUrlRef = useRef(null);
+  const guideScrollRef = useRef(null);
   const trimmedSearchQuery = searchQuery.trim();
   const hasImageInput = Boolean(selectedAsset) || webcamActive;
   const hasSearchInput = Boolean(trimmedSearchQuery);
@@ -278,6 +306,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
       return;
     }
 
+    setSelectedHistoryEntryId("");
     setSelectedAsset(pickerResult.assets[0]);
     setResult(null);
   };
@@ -323,6 +352,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
       return;
     }
 
+    setSelectedHistoryEntryId("");
     setSelectedAsset(cameraResult.assets[0]);
     setResult(null);
   };
@@ -344,6 +374,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
     }
     closeWebcam();
     setSelectedAsset(null);
+    setSelectedHistoryEntryId("");
   };
 
   const captureWebcamFrame = async () => {
@@ -385,6 +416,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
       width,
       height
     });
+    setSelectedHistoryEntryId("");
     setResult(null);
     closeWebcam();
   };
@@ -402,6 +434,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
     setLoading(true);
     beginApiCallTimer();
     setError("");
+    setSelectedHistoryEntryId("");
 
     try {
       const clientActionId = buildClientActionId("supplement-image");
@@ -476,6 +509,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
     beginApiCallTimer();
     setError("");
     setSelectedAsset(null);
+    setSelectedHistoryEntryId("");
     closeWebcam();
 
     try {
@@ -537,6 +571,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
 
   const clearSearchInput = () => {
     setSearchQuery("");
+    setSelectedHistoryEntryId("");
   };
 
   const openHistoryEntry = (entry) => {
@@ -548,8 +583,32 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
     setError("");
     setSearchQuery("");
     setResult(entry.result);
+    setSelectedHistoryEntryId(entry.id || "history");
     applyGenerationStatusFromPayload(entry.result);
     setActiveSubPage("analyzer");
+  };
+
+  const closeGuide = () => {
+    setGuideVisible(false);
+  };
+
+  const openGuide = () => {
+    setActiveGuidePage(0);
+    setGuideVisible(true);
+    setTimeout(() => {
+      guideScrollRef.current?.scrollTo?.({ x: 0, animated: false });
+    }, 0);
+  };
+
+  const exitHistoryPreviewMode = () => {
+    setSelectedHistoryEntryId("");
+    setResult(null);
+    setError("");
+    setApiCallStartedAt(null);
+    setApiCallElapsedMs(0);
+    setApiCallInFlight(false);
+    setTextGenerationStatus("idle");
+    setImageGenerationStatus("idle");
   };
 
   const formatDateTime = (isoValue) => {
@@ -560,11 +619,35 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
     return date.toLocaleString();
   };
 
+  const requestDrugInfo = async (drugName) => {
+    if (!canCallApi) {
+      throw new Error("Supplements API is not configured in this screen.");
+    }
+    const normalized = typeof drugName === "string" ? drugName.trim() : "";
+    if (!normalized) {
+      throw new Error("Drug name is required.");
+    }
+    const response = await requestApi("/api/supplements/drug-info", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ drugName: normalized })
+    });
+    if (!response.ok) {
+      throw new Error(await readApiError(response, "Unable to fetch drug information right now."));
+    }
+    return response.json();
+  };
+
   return (
     <View style={styles.pageStack}>
       <View style={styles.heroPanel}>
         <Text style={styles.chip}>Supplement scanner</Text>
-        <Text style={styles.heroTitle}>Medicine and supplement analyzer</Text>
+        <View style={styles.heroTitleRow}>
+          <Text style={styles.heroTitle}>Medicine and supplement analyzer</Text>
+          <Pressable style={styles.guideButton} onPress={openGuide} accessibilityRole="button" accessibilityLabel="Open scanner guide">
+            <Text style={styles.guideButtonText}>?</Text>
+          </Pressable>
+        </View>
         <Text style={styles.heroSubtitle}>Upload a supplement label to review key ingredients, expected benefits, contraindications, and goal fit in one guided report.</Text>
       </View>
 
@@ -579,97 +662,88 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
 
       {activeSubPage === "analyzer" ? (
         <>
-          <View style={styles.searchCard}>
-            <Text style={styles.searchTitle}>Search supplement by name</Text>
-            <TextInput
-              style={[styles.searchInput, searchOptionsDisabled && styles.searchInputDisabled]}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="e.g. magnesium glycinate"
-              editable={!loading && !searchOptionsDisabled}
-              returnKeyType="search"
-              onSubmitEditing={() => void searchSupplementByName()}
-            />
-            {hasSearchInput ? (
-              <Pressable style={styles.clearMiniButton} onPress={clearSearchInput} disabled={loading}>
-                <Text style={styles.clearMiniButtonText}>Clear search</Text>
+          {selectedHistoryEntryId ? (
+            <View style={styles.historyPreviewBanner}>
+              <Text style={styles.historyPreviewText}>Viewing a past supplement search.</Text>
+              <Pressable style={styles.historyPreviewButton} onPress={exitHistoryPreviewMode}>
+                <Text style={styles.historyPreviewButtonText}>Start a new analysis</Text>
               </Pressable>
-            ) : null}
-          </View>
-
-          {Platform.OS === "web" ? (
-            <View style={styles.webcamPanel}>
-              <Text style={styles.webcamTitle}>Webcam capture</Text>
-              <Text style={styles.webcamBody}>Use your browser webcam for instant supplement scanning.</Text>
-              {webcamActive ? (
-                <>
-                  <video ref={videoRef} autoPlay playsInline muted style={StyleSheet.flatten(styles.webcamVideo)} />
-                  <View style={styles.webcamButtonRow}>
-                    <Pressable style={styles.webcamButton} onPress={captureWebcamFrame} disabled={loading}>
-                      <Text style={styles.webcamButtonText}>Capture frame</Text>
-                    </Pressable>
-                    <Pressable style={styles.webcamSecondaryButton} onPress={closeWebcam} disabled={loading}>
-                      <Text style={styles.webcamSecondaryButtonText}>Close webcam</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <Pressable style={[styles.webcamButton, imageOptionsDisabled && styles.webcamButtonDisabled]} onPress={captureImage} disabled={loading || imageOptionsDisabled}>
-                  <Text style={styles.webcamButtonText}>Open webcam</Text>
-                </Pressable>
-              )}
-              {webcamError ? <Text style={styles.webcamError}>{webcamError}</Text> : null}
             </View>
-          ) : null}
+          ) : (
+            <>
+              <View style={styles.searchCard}>
+                <Text style={styles.searchTitle}>Search supplement by name</Text>
+                <TextInput
+                  style={[styles.searchInput, searchOptionsDisabled && styles.searchInputDisabled]}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="e.g. magnesium glycinate"
+                  editable={!loading && !searchOptionsDisabled}
+                  returnKeyType="search"
+                  onSubmitEditing={() => void searchSupplementByName()}
+                />
+                {hasSearchInput ? (
+                  <Pressable style={styles.clearMiniButton} onPress={clearSearchInput} disabled={loading}>
+                    <Text style={styles.clearMiniButtonText}>Clear search</Text>
+                  </Pressable>
+                ) : null}
+              </View>
 
-          <ImageUpload
+              <ImageUpload
+                selectedImageUri={selectedAsset?.uri || ""}
+                selectedImageAspectRatio={selectedImageAspectRatio}
+                conditions={conditions}
+                onChangeConditions={setConditions}
+                goals={goals}
+                onChangeGoals={setGoals}
+                loading={loading}
+                error={error}
+                showCameraButton
+                disableImageOptions={imageOptionsDisabled}
+                onClearImageSelection={clearImageSelection}
+                clearImageSelectionLabel="Clear image"
+                onCaptureImage={captureImage}
+                onPickImage={pickImage}
+              />
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleTextWrap}>
+                  <Text style={styles.toggleTitle}>Generate infographic</Text>
+                  <Text style={styles.toggleBody}>Disable to speed up supplement analysis.</Text>
+                </View>
+                <Switch value={infographicEnabled} onValueChange={setInfographicEnabled} disabled={loading} />
+              </View>
+
+              <Pressable
+                style={[styles.searchButton, (loading || selectedMode === "none") && styles.searchButtonDisabled]}
+                onPress={() => void (selectedMode === "search" ? searchSupplementByName() : analyzeSupplement())}
+                disabled={loading || selectedMode === "none"}
+              >
+                <Text style={styles.searchButtonText}>
+                  {loading ? "Analyzing..." : selectedMode === "search" ? "Search and analyze supplement" : "Analyze supplement"}
+                </Text>
+              </Pressable>
+              {apiCallStartedAt ? (
+                <View style={styles.callMetaCard}>
+                  <Text style={styles.callMetaText}>Call started: {new Date(apiCallStartedAt).toLocaleTimeString()}</Text>
+                  <Text style={styles.callMetaText}>
+                    {apiCallInFlight ? "Elapsed (live): " : "Elapsed: "}
+                    {formatElapsed(apiCallElapsedMs)}
+                  </Text>
+                  <Text style={styles.callMetaText}>{textStatusLabel}</Text>
+                  <Text style={styles.callMetaText}>{imageStatusLabel}</Text>
+                  {textDuration ? <Text style={styles.callMetaTextMuted}>{textDuration}</Text> : null}
+                  {imageDuration ? <Text style={styles.callMetaTextMuted}>{imageDuration}</Text> : null}
+                </View>
+              ) : null}
+            </>
+          )}
+
+          <AnalysisResult
+            result={result}
             selectedImageUri={selectedAsset?.uri || ""}
             selectedImageAspectRatio={selectedImageAspectRatio}
-            conditions={conditions}
-            onChangeConditions={setConditions}
-            goals={goals}
-            onChangeGoals={setGoals}
-            loading={loading}
-            error={error}
-            showCameraButton
-            disableImageOptions={imageOptionsDisabled}
-            onClearImageSelection={clearImageSelection}
-            clearImageSelectionLabel="Clear image"
-            onCaptureImage={captureImage}
-            onPickImage={pickImage}
+            onRequestDrugInfo={requestDrugInfo}
           />
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleTextWrap}>
-              <Text style={styles.toggleTitle}>Generate infographic</Text>
-              <Text style={styles.toggleBody}>Disable to speed up supplement analysis.</Text>
-            </View>
-            <Switch value={infographicEnabled} onValueChange={setInfographicEnabled} disabled={loading} />
-          </View>
-
-          <Pressable
-            style={[styles.searchButton, (loading || selectedMode === "none") && styles.searchButtonDisabled]}
-            onPress={() => void (selectedMode === "search" ? searchSupplementByName() : analyzeSupplement())}
-            disabled={loading || selectedMode === "none"}
-          >
-            <Text style={styles.searchButtonText}>
-              {loading ? "Analyzing..." : selectedMode === "search" ? "Search and analyze supplement" : "Analyze supplement"}
-            </Text>
-          </Pressable>
-          {apiCallStartedAt ? (
-            <View style={styles.callMetaCard}>
-              <Text style={styles.callMetaText}>Call started: {new Date(apiCallStartedAt).toLocaleTimeString()}</Text>
-              <Text style={styles.callMetaText}>
-                {apiCallInFlight ? "Elapsed (live): " : "Elapsed: "}
-                {formatElapsed(apiCallElapsedMs)}
-              </Text>
-              <Text style={styles.callMetaText}>{textStatusLabel}</Text>
-              <Text style={styles.callMetaText}>{imageStatusLabel}</Text>
-              {textDuration ? <Text style={styles.callMetaTextMuted}>{textDuration}</Text> : null}
-              {imageDuration ? <Text style={styles.callMetaTextMuted}>{imageDuration}</Text> : null}
-            </View>
-          ) : null}
-
-          <AnalysisResult result={result} selectedImageUri={selectedAsset?.uri || ""} selectedImageAspectRatio={selectedImageAspectRatio} />
         </>
       ) : (
         <View style={styles.historyCard}>
@@ -701,6 +775,68 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail })
           ))}
         </View>
       )}
+
+      <Modal visible={guideVisible} transparent animationType="fade" onRequestClose={closeGuide}>
+        <View style={styles.guideBackdrop}>
+          <View style={styles.guideCard}>
+            <Pressable style={styles.guideCloseButton} onPress={closeGuide} accessibilityRole="button" accessibilityLabel="Close scanner guide">
+              <Text style={styles.guideCloseButtonText}>x</Text>
+            </Pressable>
+            <Text style={styles.guideTitle}>Scanner guide</Text>
+            <ScrollView
+              ref={guideScrollRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onLayout={(event) => {
+                const width = Math.max(280, Math.floor(event.nativeEvent.layout.width));
+                setGuidePageWidth(width);
+              }}
+              onScroll={(event) => {
+                const width = guidePageWidth || 1;
+                const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
+                if (nextIndex !== activeGuidePage) {
+                  setActiveGuidePage(nextIndex);
+                }
+              }}
+              scrollEventThrottle={16}
+            >
+              {SCANNER_GUIDE_PAGES.map((page, index) => (
+                <View key={page.title} style={[styles.guidePage, { width: guidePageWidth }]}>
+                  <Text style={styles.guideStepLabel}>Page {index + 1}</Text>
+                  <Text style={styles.guidePageTitle}>{page.title}</Text>
+                  <Text style={styles.guidePageBody}>{page.body}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            <View style={styles.guideFooter}>
+              <Text style={styles.guideFooterText}>
+                {activeGuidePage + 1} / {SCANNER_GUIDE_PAGES.length}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {Platform.OS === "web" ? (
+        <Modal visible={webcamActive} transparent animationType="fade" onRequestClose={closeWebcam}>
+          <View style={styles.webcamBackdrop}>
+            <View style={styles.webcamCard}>
+              <Text style={styles.webcamModalTitle}>Webcam capture</Text>
+              <video ref={videoRef} autoPlay playsInline muted style={StyleSheet.flatten(styles.webcamVideo)} />
+              {webcamError ? <Text style={styles.webcamError}>{webcamError}</Text> : null}
+              <View style={styles.webcamButtonRow}>
+                <Pressable style={styles.webcamButton} onPress={captureWebcamFrame} disabled={loading}>
+                  <Text style={styles.webcamButtonText}>Capture frame</Text>
+                </Pressable>
+                <Pressable style={styles.webcamSecondaryButton} onPress={closeWebcam} disabled={loading}>
+                  <Text style={styles.webcamSecondaryButtonText}>Close</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </View>
   );
 }
@@ -717,6 +853,12 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     gap: 8
   },
+  heroTitleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10
+  },
   chip: {
     alignSelf: "flex-start",
     borderRadius: 999,
@@ -731,7 +873,24 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 23,
     lineHeight: 30,
-    fontWeight: "700"
+    fontWeight: "700",
+    flex: 1
+  },
+  guideButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#eef3fc",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  guideButtonText: {
+    color: palette.blue,
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: "800"
   },
   heroSubtitle: {
     color: palette.muted,
@@ -844,6 +1003,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600"
   },
+  historyPreviewBanner: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#c8d8ef",
+    backgroundColor: "#eef4ff",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8
+  },
+  historyPreviewText: {
+    color: "#23456f",
+    fontSize: 13,
+    fontWeight: "600"
+  },
+  historyPreviewButton: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    backgroundColor: palette.blue,
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  historyPreviewButtonText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "700"
+  },
   clearMiniButton: {
     alignSelf: "flex-start",
     borderRadius: 999,
@@ -858,22 +1043,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700"
   },
-  webcamPanel: {
-    borderRadius: 20,
+  webcamBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 18
+  },
+  webcamCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
-    padding: 16,
+    padding: 14,
     gap: 10
   },
-  webcamTitle: {
+  webcamModalTitle: {
     color: palette.ink,
     fontWeight: "700",
     fontSize: 16
-  },
-  webcamBody: {
-    color: palette.muted,
-    lineHeight: 20
   },
   webcamVideo: {
     width: "100%",
@@ -893,9 +1083,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
     alignItems: "center"
-  },
-  webcamButtonDisabled: {
-    opacity: 0.5
   },
   webcamButtonText: {
     color: "#ffffff",
@@ -985,6 +1172,81 @@ const styles = StyleSheet.create({
   },
   clearOneButtonText: {
     color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  guideBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 20, 34, 0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 18
+  },
+  guideCard: {
+    width: "86%",
+    maxWidth: 420,
+    minHeight: 400,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    paddingTop: 16,
+    paddingBottom: 12
+  },
+  guideCloseButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2
+  },
+  guideCloseButtonText: {
+    color: palette.ink,
+    fontWeight: "800",
+    fontSize: 14
+  },
+  guideTitle: {
+    color: palette.ink,
+    fontSize: 17,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 10
+  },
+  guidePage: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    minHeight: 300,
+    gap: 10
+  },
+  guideStepLabel: {
+    color: "#0f5b69",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  guidePageTitle: {
+    color: palette.ink,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "800"
+  },
+  guidePageBody: {
+    color: palette.muted,
+    fontSize: 14,
+    lineHeight: 21
+  },
+  guideFooter: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  guideFooterText: {
+    color: palette.muted,
     fontSize: 12,
     fontWeight: "700"
   }

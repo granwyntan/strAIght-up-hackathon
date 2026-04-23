@@ -9,6 +9,8 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from threading import Lock
 
 from openai import APIConnectionError, APIError, APITimeoutError, OpenAI, RateLimitError
@@ -23,9 +25,11 @@ DEFAULT_GOALS = "Reduce belly fat, Improve cognitive power"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 SUPPLEMENT_ANALYSIS_MODEL = "gpt-5.4-mini"
 SUPPLEMENT_INFOGRAPHIC_MODEL = "gpt-image-1"
+SUPPLEMENT_DRUG_INFO_MODEL = "gpt-5.4-mini"
 SUPPLEMENT_INFOGRAPHIC_TIMEOUT_SECONDS = 60.0
 OPENAI_RETRY_ATTEMPTS = 3
 OPENAI_RETRY_BASE_SECONDS = 0.8
+DRUGS_FILE_PATH = Path(__file__).resolve().parents[3] / "drugs_clean.txt"
 
 _analysis_cache: dict[str, "SupplementAnalysisResult"] = {}
 _infographic_cache: dict[str, str] = {}
@@ -200,10 +204,117 @@ class SupplementAnalysisResult:
     analysis_text: str
     sections: list[SupplementSection]
     infographic_image_data_url: str
+    detected_drugs: list[str]
     text_generation_started_at: float | None = None
     text_generation_completed_at: float | None = None
     image_generation_started_at: float | None = None
     image_generation_completed_at: float | None = None
+
+
+@dataclass(slots=True)
+class DrugInfoResult:
+    drug: str
+    usage: str
+    side_effects: str
+
+
+def _normalize_drug_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9\-]+", "", (value or "").strip().lower())
+
+
+@lru_cache(maxsize=1)
+def _load_known_drug_names() -> set[str]:
+    if not DRUGS_FILE_PATH.exists():
+        logger.warning("Drug list file not found at %s", DRUGS_FILE_PATH)
+        return set()
+
+    try:
+        raw = DRUGS_FILE_PATH.read_text(encoding="utf-8", errors="ignore")
+    except OSError as exc:
+        logger.warning("Unable to read drug list file %s: %s", DRUGS_FILE_PATH, exc)
+        return set()
+
+    names: set[str] = set()
+    for token in re.split(r"[\s,]+", raw):
+        normalized = _normalize_drug_name(token)
+        if normalized:
+            names.add(normalized)
+    return names
+
+
+def detect_drugs_in_text(analysis_text: str) -> list[str]:
+    known_drugs = _load_known_drug_names()
+    if not analysis_text.strip() or not known_drugs:
+        return []
+
+    seen: set[str] = set()
+    matches: list[str] = []
+    for token in re.findall(r"[A-Za-z][A-Za-z0-9\-]{1,}", analysis_text):
+        normalized = _normalize_drug_name(token)
+        if normalized and normalized in known_drugs and normalized not in seen:
+            seen.add(normalized)
+            matches.append(normalized)
+    return matches
+
+
+def fetch_drug_info(drug_name: str, request_id: str | None = None) -> DrugInfoResult:
+    request_id = request_id or str(uuid.uuid4())
+    normalized = _normalize_drug_name(drug_name)
+    if not normalized:
+        raise ValueError("Please provide a drug name.")
+
+    known_drugs = _load_known_drug_names()
+    if known_drugs and normalized not in known_drugs:
+        raise ValueError(f"Drug '{drug_name}' is not recognized in the configured drug list.")
+    if not settings.openai_api_key:
+        raise RuntimeError("Drug lookup is unavailable because OPENAI_API_KEY is not configured.")
+
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_api_base_url,
+        timeout=settings.llm_timeout_seconds,
+        max_retries=0,
+    )
+    prompt = (
+        "You are a concise medical assistant. Provide a brief educational summary for the given drug. "
+        "Keep each field short (1 sentence each). "
+        "Return exactly this format and nothing else:\n"
+        "Drug: <name>\n"
+        "Usage: <brief usage>\n"
+        "Side Effects: <brief side effects and risk note>"
+    )
+    try:
+        response = _response_with_rate_limit_retry(
+            client,
+            model=SUPPLEMENT_DRUG_INFO_MODEL,
+            request_id=request_id,
+            trigger_source="supplement_drug_info",
+            input_payload=[
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": f"{prompt}\n\nDrug: {normalized}"}],
+                }
+            ],
+        )
+    except RateLimitError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"Drug lookup provider call failed: {exc}") from exc
+
+    output = (response.output_text or "").strip()
+    if not output:
+        raise RuntimeError("Drug lookup returned an empty response.")
+
+    def _extract(prefix: str, fallback: str) -> str:
+        match = re.search(rf"^{prefix}:\s*(.+)$", output, flags=re.IGNORECASE | re.MULTILINE)
+        if match:
+            return match.group(1).strip()
+        return fallback
+
+    drug = _extract("Drug", normalized)
+    usage = _extract("Usage", "General therapeutic use unavailable.")
+    side_effects = _extract("Side Effects", "Side effect summary unavailable.")
+    return DrugInfoResult(drug=drug, usage=usage, side_effects=side_effects)
 
 
 def _build_analysis_prompt(conditions: str, goals: str) -> str:
@@ -396,6 +507,7 @@ def analyze_supplement(
             analysis_text=cached.analysis_text,
             sections=cached.sections,
             infographic_image_data_url=cached.infographic_image_data_url,
+            detected_drugs=cached.detected_drugs,
             text_generation_started_at=now,
             text_generation_completed_at=now,
             image_generation_started_at=now if cached.infographic_image_data_url else None,
@@ -469,6 +581,7 @@ def analyze_supplement(
         analysis_text=analysis_text,
         sections=_parse_sections(analysis_text),
         infographic_image_data_url=infographic_image_data_url,
+        detected_drugs=detect_drugs_in_text(analysis_text),
         text_generation_started_at=text_started_at,
         text_generation_completed_at=text_completed_at,
         image_generation_started_at=image_started_at,
@@ -516,6 +629,7 @@ def analyze_supplement_by_name(
             analysis_text=cached.analysis_text,
             sections=cached.sections,
             infographic_image_data_url=cached.infographic_image_data_url,
+            detected_drugs=cached.detected_drugs,
             text_generation_started_at=now,
             text_generation_completed_at=now,
             image_generation_started_at=now if cached.infographic_image_data_url else None,
@@ -575,6 +689,7 @@ def analyze_supplement_by_name(
         analysis_text=analysis_text,
         sections=_parse_sections(analysis_text),
         infographic_image_data_url=infographic_image_data_url,
+        detected_drugs=detect_drugs_in_text(analysis_text),
         text_generation_started_at=text_started_at,
         text_generation_completed_at=text_completed_at,
         image_generation_started_at=image_started_at,

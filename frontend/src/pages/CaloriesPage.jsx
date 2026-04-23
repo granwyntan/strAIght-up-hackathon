@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import { palette } from "../data";
@@ -24,6 +24,36 @@ const DEFAULT_VALUES = {
   sex: "female",
   medicalHistory: ""
 };
+const CALORIE_GUIDE_PAGES = [
+  {
+    title: "Welcome to Calorie Calculator",
+    body: "Welcome to Calorie Calculator."
+  },
+  {
+    title: "Add your details",
+    body: "Add your age, height, weight, sex, and activity level to determine your suggested daily intake."
+  },
+  {
+    title: "Select a search option",
+    body: "Choose how you want to scan your meal: upload image or camera."
+  },
+  {
+    title: "How calories are calculated",
+    body: "The app analyzes your meal photo, estimates foods and portions, then calculates calories using nutrition references and your personal profile context."
+  },
+  {
+    title: "Add to daily intake",
+    body: "After calculation, add the food into your daily calorie intake tracker."
+  },
+  {
+    title: "Use history tab",
+    body: "In the History tab, you can view your weekly and daily calorie intake."
+  },
+  {
+    title: "Manage day details",
+    body: "Click a day detail to add, edit, or delete entries."
+  }
+];
 
 function mapProfileGenderToSex(gender) {
   const normalized = (gender || "").trim().toLowerCase();
@@ -83,9 +113,13 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [suggestedMealName, setSuggestedMealName] = useState("");
   const [suggestedCalories, setSuggestedCalories] = useState("");
+  const [guideVisible, setGuideVisible] = useState(false);
+  const [guidePageWidth, setGuidePageWidth] = useState(320);
+  const [activeGuidePage, setActiveGuidePage] = useState(0);
   const streamRef = useRef(null);
   const videoRef = useRef(null);
   const objectUrlRef = useRef(null);
+  const guideScrollRef = useRef(null);
 
   const selectedImageAspectRatio = selectedAsset?.width && selectedAsset?.height ? selectedAsset.width / selectedAsset.height : 1.4;
   const canUseWebcam = Platform.OS === "web";
@@ -537,11 +571,28 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
     });
   };
 
+  const closeGuide = () => {
+    setGuideVisible(false);
+  };
+
+  const openGuide = () => {
+    setActiveGuidePage(0);
+    setGuideVisible(true);
+    setTimeout(() => {
+      guideScrollRef.current?.scrollTo?.({ x: 0, animated: false });
+    }, 0);
+  };
+
   return (
     <View style={styles.pageStack}>
       <View style={styles.heroPanel}>
         <Text style={styles.chip}>Calorie calculator</Text>
-        <Text style={styles.heroTitle}>Meal calorie estimator</Text>
+        <View style={styles.heroTitleRow}>
+          <Text style={styles.heroTitle}>Meal calorie estimator</Text>
+          <Pressable style={styles.guideButton} onPress={openGuide} accessibilityRole="button" accessibilityLabel="Open calorie calculator guide">
+            <Text style={styles.guideButtonText}>?</Text>
+          </Pressable>
+        </View>
         <Text style={styles.heroSubtitle}>Upload a meal photo and profile inputs to estimate per-item calories and compare against a personalized daily target.</Text>
       </View>
 
@@ -621,6 +672,48 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={guideVisible} transparent animationType="fade" onRequestClose={closeGuide}>
+        <View style={styles.guideBackdrop}>
+          <View style={styles.guideCard}>
+            <Pressable style={styles.guideCloseButton} onPress={closeGuide} accessibilityRole="button" accessibilityLabel="Close calorie calculator guide">
+              <Text style={styles.guideCloseButtonText}>x</Text>
+            </Pressable>
+            <Text style={styles.guideTitle}>Calorie guide</Text>
+            <ScrollView
+              ref={guideScrollRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onLayout={(event) => {
+                const width = Math.max(280, Math.floor(event.nativeEvent.layout.width));
+                setGuidePageWidth(width);
+              }}
+              onScroll={(event) => {
+                const width = guidePageWidth || 1;
+                const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
+                if (nextIndex !== activeGuidePage) {
+                  setActiveGuidePage(nextIndex);
+                }
+              }}
+              scrollEventThrottle={16}
+            >
+              {CALORIE_GUIDE_PAGES.map((page, index) => (
+                <View key={page.title} style={[styles.guidePage, { width: guidePageWidth }]}>
+                  <Text style={styles.guideStepLabel}>Page {index + 1}</Text>
+                  <Text style={styles.guidePageTitle}>{page.title}</Text>
+                  <Text style={styles.guidePageBody}>{page.body}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            <View style={styles.guideFooter}>
+              <Text style={styles.guideFooterText}>
+                {activeGuidePage + 1} / {CALORIE_GUIDE_PAGES.length}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -637,6 +730,12 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     gap: 8
   },
+  heroTitleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10
+  },
   chip: {
     alignSelf: "flex-start",
     borderRadius: 999,
@@ -651,7 +750,24 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 23,
     lineHeight: 30,
-    fontWeight: "700"
+    fontWeight: "700",
+    flex: 1
+  },
+  guideButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#eef3fc",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  guideButtonText: {
+    color: palette.blue,
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: "800"
   },
   heroSubtitle: {
     color: palette.muted,
@@ -758,5 +874,80 @@ const styles = StyleSheet.create({
   },
   modalButtonDisabled: {
     opacity: 0.5
+  },
+  guideBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 20, 34, 0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 18
+  },
+  guideCard: {
+    width: "86%",
+    maxWidth: 420,
+    minHeight: 400,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    paddingTop: 16,
+    paddingBottom: 12
+  },
+  guideCloseButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2
+  },
+  guideCloseButtonText: {
+    color: palette.ink,
+    fontWeight: "800",
+    fontSize: 14
+  },
+  guideTitle: {
+    color: palette.ink,
+    fontSize: 17,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 10
+  },
+  guidePage: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    minHeight: 300,
+    gap: 10
+  },
+  guideStepLabel: {
+    color: "#4c6f2b",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  guidePageTitle: {
+    color: palette.ink,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "800"
+  },
+  guidePageBody: {
+    color: palette.muted,
+    fontSize: 14,
+    lineHeight: 21
+  },
+  guideFooter: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  guideFooterText: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: "700"
   }
 });

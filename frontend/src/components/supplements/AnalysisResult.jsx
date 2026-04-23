@@ -1,9 +1,35 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Image, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 import { palette } from "../../data";
 
-function renderInlineMarkdown(text, keyPrefix) {
+function renderPlainTextWithDrugLinks(text, keyPrefix, detectedDrugSet, onPressDrug) {
+  const content = typeof text === "string" ? text : "";
+  const parts = content.split(/([A-Za-z][A-Za-z0-9\-]{1,})/g).filter((part) => part !== "");
+
+  return parts.map((part, index) => {
+    const normalized = part.trim().toLowerCase();
+    const isDrug = Boolean(normalized) && detectedDrugSet.has(normalized);
+    if (!isDrug) {
+      return <Text key={`${keyPrefix}-plain-${index}`}>{part}</Text>;
+    }
+    return (
+      <Text
+        key={`${keyPrefix}-drug-${index}`}
+        style={styles.drugLinkText}
+        onPress={(event) => {
+          if (typeof onPressDrug === "function") {
+            onPressDrug(part, event);
+          }
+        }}
+      >
+        {part}
+      </Text>
+    );
+  });
+}
+
+function renderInlineMarkdown(text, keyPrefix, detectedDrugSet, onPressDrug) {
   const content = typeof text === "string" ? text : "";
   const chunks = content.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
 
@@ -11,22 +37,22 @@ function renderInlineMarkdown(text, keyPrefix) {
     if (chunk.startsWith("**") && chunk.endsWith("**")) {
       return (
         <Text key={`${keyPrefix}-b-${index}`} style={styles.inlineBold}>
-          {chunk.slice(2, -2)}
+          {renderPlainTextWithDrugLinks(chunk.slice(2, -2), `${keyPrefix}-b-inner-${index}`, detectedDrugSet, onPressDrug)}
         </Text>
       );
     }
     if (chunk.startsWith("*") && chunk.endsWith("*")) {
       return (
         <Text key={`${keyPrefix}-i-${index}`} style={styles.inlineItalic}>
-          {chunk.slice(1, -1)}
+          {renderPlainTextWithDrugLinks(chunk.slice(1, -1), `${keyPrefix}-i-inner-${index}`, detectedDrugSet, onPressDrug)}
         </Text>
       );
     }
-    return <Text key={`${keyPrefix}-t-${index}`}>{chunk}</Text>;
+    return <Text key={`${keyPrefix}-t-${index}`}>{renderPlainTextWithDrugLinks(chunk, `${keyPrefix}-t-inner-${index}`, detectedDrugSet, onPressDrug)}</Text>;
   });
 }
 
-function renderMarkdownBlock(content, keyPrefix) {
+function renderMarkdownBlock(content, keyPrefix, detectedDrugSet, onPressDrug) {
   const lines = (typeof content === "string" ? content : "").split("\n");
 
   return (
@@ -41,7 +67,7 @@ function renderMarkdownBlock(content, keyPrefix) {
         if (headingMatch) {
           return (
             <Text key={`${keyPrefix}-h-${index}`} style={styles.sectionSubheading}>
-              {renderInlineMarkdown(headingMatch[1], `${keyPrefix}-h-inline-${index}`)}
+              {renderInlineMarkdown(headingMatch[1], `${keyPrefix}-h-inline-${index}`, detectedDrugSet, onPressDrug)}
             </Text>
           );
         }
@@ -54,7 +80,7 @@ function renderMarkdownBlock(content, keyPrefix) {
             <View key={`${keyPrefix}-li-${index}`} style={styles.bulletRow}>
               <Text style={styles.bulletMarker}>•</Text>
               <Text style={styles.sectionBody}>
-                {renderInlineMarkdown(bulletText, `${keyPrefix}-li-inline-${index}`)}
+                {renderInlineMarkdown(bulletText, `${keyPrefix}-li-inline-${index}`, detectedDrugSet, onPressDrug)}
               </Text>
             </View>
           );
@@ -62,7 +88,7 @@ function renderMarkdownBlock(content, keyPrefix) {
 
         return (
           <Text key={`${keyPrefix}-p-${index}`} style={styles.sectionBody}>
-            {renderInlineMarkdown(line, `${keyPrefix}-p-inline-${index}`)}
+            {renderInlineMarkdown(line, `${keyPrefix}-p-inline-${index}`, detectedDrugSet, onPressDrug)}
           </Text>
         );
       })}
@@ -70,17 +96,37 @@ function renderMarkdownBlock(content, keyPrefix) {
   );
 }
 
-export default function AnalysisResult({ result, selectedImageUri, selectedImageAspectRatio }) {
+export default function AnalysisResult({ result, selectedImageUri, selectedImageAspectRatio, onRequestDrugInfo }) {
   const [zoom, setZoom] = useState(1);
   const [infographicLoadFailed, setInfographicLoadFailed] = useState(false);
+  const [popupCardHeight, setPopupCardHeight] = useState(170);
+  const [drugPopup, setDrugPopup] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    loading: false,
+    error: "",
+    drug: "",
+    usage: "",
+    sideEffects: ""
+  });
+  const drugInfoRequestIdRef = useRef(0);
   const infographicUri = typeof result?.infographicImageDataUrl === "string" ? result.infographicImageDataUrl : "";
   const hasInfographic = Boolean(infographicUri) && !infographicLoadFailed;
   const interactiveWidth = useMemo(() => Math.max(360, Math.round(620 * zoom)), [zoom]);
   const interactiveHeight = useMemo(() => Math.max(220, Math.round(390 * zoom)), [zoom]);
+  const { width: viewportWidthRaw, height: viewportHeightRaw } = useWindowDimensions();
+  const viewportWidth = Math.max(320, Number.isFinite(viewportWidthRaw) ? viewportWidthRaw : 360);
+  const viewportHeight = Math.max(360, Number.isFinite(viewportHeightRaw) ? viewportHeightRaw : 640);
+  const detectedDrugSet = useMemo(() => {
+    const source = Array.isArray(result?.detectedDrugs) ? result.detectedDrugs : [];
+    return new Set(source.map((item) => (typeof item === "string" ? item.trim().toLowerCase() : "")).filter(Boolean));
+  }, [result?.detectedDrugs]);
 
   useEffect(() => {
     setInfographicLoadFailed(false);
     setZoom(1);
+    setDrugPopup((previous) => ({ ...previous, visible: false, loading: false, error: "" }));
   }, [infographicUri, result?.analysisText]);
 
   if (!result) {
@@ -132,6 +178,78 @@ export default function AnalysisResult({ result, selectedImageUri, selectedImage
     }
   };
 
+  const closeDrugPopup = () => {
+    setDrugPopup((previous) => ({ ...previous, visible: false, loading: false, error: "" }));
+  };
+
+  const onPressDrug = async (drugLabel, event) => {
+    const raw = typeof drugLabel === "string" ? drugLabel : "";
+    const normalized = raw.trim().toLowerCase();
+    if (!normalized || !detectedDrugSet.has(normalized)) {
+      return;
+    }
+
+    const pageX = event?.nativeEvent?.pageX;
+    const pageY = event?.nativeEvent?.pageY;
+    const fallbackX = viewportWidth / 2;
+    const fallbackY = viewportHeight / 2;
+    const requestId = drugInfoRequestIdRef.current + 1;
+    drugInfoRequestIdRef.current = requestId;
+
+    setDrugPopup({
+      visible: true,
+      x: Number.isFinite(pageX) ? pageX : fallbackX,
+      y: Number.isFinite(pageY) ? pageY : fallbackY,
+      loading: true,
+      error: "",
+      drug: raw.trim(),
+      usage: "",
+      sideEffects: ""
+    });
+
+    try {
+      if (typeof onRequestDrugInfo !== "function") {
+        throw new Error("Drug information service is unavailable.");
+      }
+      const payload = await onRequestDrugInfo(normalized);
+      if (drugInfoRequestIdRef.current !== requestId) {
+        return;
+      }
+      setDrugPopup((previous) => ({
+        ...previous,
+        loading: false,
+        error: "",
+        drug: typeof payload?.drug === "string" && payload.drug.trim() ? payload.drug.trim() : previous.drug,
+        usage: typeof payload?.usage === "string" ? payload.usage.trim() : "",
+        sideEffects: typeof payload?.sideEffects === "string" ? payload.sideEffects.trim() : ""
+      }));
+    } catch (error) {
+      if (drugInfoRequestIdRef.current !== requestId) {
+        return;
+      }
+      setDrugPopup((previous) => ({
+        ...previous,
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to fetch drug info."
+      }));
+    }
+  };
+
+  const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+  const horizontalMargin = 12;
+  const verticalMargin = 12;
+  const verticalGap = 10;
+  const drugPopupWidth = Math.min(360, Math.max(240, viewportWidth - horizontalMargin * 2));
+  const safeLeftMax = Math.max(horizontalMargin, viewportWidth - drugPopupWidth - horizontalMargin);
+  const anchorX = Number.isFinite(drugPopup.x) ? drugPopup.x : viewportWidth / 2;
+  const anchorY = Number.isFinite(drugPopup.y) ? drugPopup.y : viewportHeight / 2;
+  const drugPopupLeft = clamp(anchorX - drugPopupWidth / 2, horizontalMargin, safeLeftMax);
+  const preferredTopAbove = anchorY - popupCardHeight - verticalGap;
+  const preferredTopBelow = anchorY + verticalGap;
+  const preferredTop = preferredTopAbove >= verticalMargin ? preferredTopAbove : preferredTopBelow;
+  const safeTopMax = Math.max(verticalMargin, viewportHeight - popupCardHeight - verticalMargin);
+  const drugPopupTop = clamp(preferredTop, verticalMargin, safeTopMax);
+
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>Analysis result</Text>
@@ -144,11 +262,11 @@ export default function AnalysisResult({ result, selectedImageUri, selectedImage
           result.sections.map((section, index) => (
             <View key={`${section.heading}-${index}`} style={styles.section}>
               <Text style={styles.sectionHeading}>{section.heading}</Text>
-              {renderMarkdownBlock(section.content || "-", `section-${index}`)}
+              {renderMarkdownBlock(section.content || "-", `section-${index}`, detectedDrugSet, onPressDrug)}
             </View>
           ))
         ) : (
-          renderMarkdownBlock(result.analysisText, "analysis-fallback")
+          renderMarkdownBlock(result.analysisText, "analysis-fallback", detectedDrugSet, onPressDrug)
         )}
       </ScrollView>
 
@@ -196,6 +314,34 @@ export default function AnalysisResult({ result, selectedImageUri, selectedImage
           <Text style={styles.emptyInfographicText}>Infographic is unavailable for this result.</Text>
         </View>
       )}
+
+      <Modal visible={drugPopup.visible} transparent animationType="fade" onRequestClose={closeDrugPopup}>
+        <View style={styles.drugPopupOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeDrugPopup} />
+          <View
+            style={[styles.drugPopupCard, { top: drugPopupTop, left: drugPopupLeft, width: drugPopupWidth }]}
+            onLayout={(event) => {
+              const nextHeight = Math.ceil(event?.nativeEvent?.layout?.height || 0);
+              if (nextHeight > 0) {
+                setPopupCardHeight((previous) => (Math.abs(previous - nextHeight) > 1 ? nextHeight : previous));
+              }
+            }}
+          >
+            <Pressable style={styles.drugPopupClose} onPress={closeDrugPopup}>
+              <Text style={styles.drugPopupCloseText}>x</Text>
+            </Pressable>
+            {drugPopup.loading ? (
+              <Text style={styles.drugPopupLoading}>Loading drug info...</Text>
+            ) : drugPopup.error ? (
+              <Text style={styles.drugPopupError}>{drugPopup.error}</Text>
+            ) : (
+              <Text style={styles.drugPopupBody}>
+                {`Drug: ${drugPopup.drug || "-"}\nUsage: ${drugPopup.usage || "-"}\nSide Effects: ${drugPopup.sideEffects || "-"}\n---`}
+              </Text>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -261,6 +407,11 @@ const styles = StyleSheet.create({
     lineHeight: 21
   },
   inlineBold: {
+    fontWeight: "700"
+  },
+  drugLinkText: {
+    color: "#0b5fff",
+    textDecorationLine: "underline",
     fontWeight: "700"
   },
   inlineItalic: {
@@ -352,5 +503,52 @@ const styles = StyleSheet.create({
   emptyInfographicText: {
     color: palette.muted,
     lineHeight: 20
+  },
+  drugPopupOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.08)"
+  },
+  drugPopupCard: {
+    position: "absolute",
+    width: 320,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#fffdf9",
+    padding: 10,
+    paddingTop: 22
+  },
+  drugPopupClose: {
+    position: "absolute",
+    top: 6,
+    right: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.surfaceSoft
+  },
+  drugPopupCloseText: {
+    color: palette.ink,
+    fontSize: 11,
+    fontWeight: "800"
+  },
+  drugPopupBody: {
+    color: palette.ink,
+    fontSize: 12,
+    lineHeight: 18
+  },
+  drugPopupLoading: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: "600"
+  },
+  drugPopupError: {
+    color: palette.red,
+    fontSize: 12,
+    lineHeight: 18
   }
 });

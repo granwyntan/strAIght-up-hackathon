@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
 import { palette } from "../data";
@@ -8,6 +8,22 @@ import AuthGate from "../components/auth/AuthGate";
 
 const GENDER_OPTIONS = ["Male", "Female", "Other", "Prefer not to say"];
 const TABS = ["overview", "settings"];
+const PROFILE_GUIDE_PAGES = [
+  {
+    title: "Welcome to GramWIN!",
+    body: "Welcome to GramWIN!"
+  },
+  {
+    title: "Why create an account",
+    body:
+      "Creating an account helps sync your data, including daily calorie intake, previous scanner searches, and your profile. This makes the app more convenient and easy to use without having to keep filling in information."
+  },
+  {
+    title: "Your data privacy",
+    body:
+      "Our Google Firebase Firestore database is encrypted and protected. You are free to share medical data, and we promise not to share your information with anyone else and to keep it private."
+  }
+];
 
 export default function ProfilePage({ history: _history, accountId, accountEmail, activeAccount, authLoading, onAuthenticate, onLogout }) {
   const [profile, setProfile] = useState(emptyProfile);
@@ -19,6 +35,10 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
   const [webcamVisible, setWebcamVisible] = useState(false);
   const [webcamError, setWebcamError] = useState("");
   const [webcamStream, setWebcamStream] = useState(null);
+  const [guideVisible, setGuideVisible] = useState(false);
+  const [guidePageWidth, setGuidePageWidth] = useState(320);
+  const [activeGuidePage, setActiveGuidePage] = useState(0);
+  const guideScrollRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
@@ -221,10 +241,27 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
 
+  const closeGuide = () => {
+    setGuideVisible(false);
+  };
+
+  const openGuide = () => {
+    setActiveGuidePage(0);
+    setGuideVisible(true);
+    setTimeout(() => {
+      guideScrollRef.current?.scrollTo?.({ x: 0, animated: false });
+    }, 0);
+  };
+
   return (
     <KeyboardAvoidingView style={styles.pageStack} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.heroPanel}>
-        <Text style={styles.heroTitle}>Personal health profile</Text>
+        <View style={styles.heroTitleRow}>
+          <Text style={styles.heroTitle}>Personal health profile</Text>
+          <Pressable style={styles.guideButton} onPress={openGuide} accessibilityRole="button" accessibilityLabel="Open profile guide">
+            <Text style={styles.guideButtonText}>?</Text>
+          </Pressable>
+        </View>
         <Text style={styles.heroSubtitle}>Add and save your profile details locally so your health context is available whenever you reopen the app.</Text>
       </View>
 
@@ -433,6 +470,48 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
           </View>
         </Modal>
       ) : null}
+
+      <Modal visible={guideVisible} transparent animationType="fade" onRequestClose={closeGuide}>
+        <View style={styles.guideBackdrop}>
+          <View style={styles.guideCard}>
+            <Pressable style={styles.guideCloseButton} onPress={closeGuide} accessibilityRole="button" accessibilityLabel="Close profile guide">
+              <Text style={styles.guideCloseButtonText}>x</Text>
+            </Pressable>
+            <Text style={styles.guideTitle}>Profile guide</Text>
+            <ScrollView
+              ref={guideScrollRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onLayout={(event) => {
+                const width = Math.max(280, Math.floor(event.nativeEvent.layout.width));
+                setGuidePageWidth(width);
+              }}
+              onScroll={(event) => {
+                const width = guidePageWidth || 1;
+                const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
+                if (nextIndex !== activeGuidePage) {
+                  setActiveGuidePage(nextIndex);
+                }
+              }}
+              scrollEventThrottle={16}
+            >
+              {PROFILE_GUIDE_PAGES.map((page, index) => (
+                <View key={page.title} style={[styles.guidePage, { width: guidePageWidth }]}>
+                  <Text style={styles.guideStepLabel}>Page {index + 1}</Text>
+                  <Text style={styles.guidePageTitle}>{page.title}</Text>
+                  <Text style={styles.guidePageBody}>{page.body}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            <View style={styles.guideFooter}>
+              <Text style={styles.guideFooterText}>
+                {activeGuidePage + 1} / {PROFILE_GUIDE_PAGES.length}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -463,11 +542,34 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     gap: 12
   },
+  heroTitleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10
+  },
   heroTitle: {
     color: palette.ink,
     fontSize: 25,
     lineHeight: 31,
-    fontWeight: "700"
+    fontWeight: "700",
+    flex: 1
+  },
+  guideButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#eef3fc",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  guideButtonText: {
+    color: palette.blue,
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: "800"
   },
   heroSubtitle: {
     color: palette.muted,
@@ -838,5 +940,80 @@ const styles = StyleSheet.create({
     color: "#fffdfa",
     fontSize: 17,
     fontWeight: "800"
+  },
+  guideBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 20, 34, 0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 18
+  },
+  guideCard: {
+    width: "86%",
+    maxWidth: 420,
+    minHeight: 380,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    paddingTop: 16,
+    paddingBottom: 12
+  },
+  guideCloseButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2
+  },
+  guideCloseButtonText: {
+    color: palette.ink,
+    fontWeight: "800",
+    fontSize: 14
+  },
+  guideTitle: {
+    color: palette.ink,
+    fontSize: 17,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 10
+  },
+  guidePage: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    minHeight: 280,
+    gap: 10
+  },
+  guideStepLabel: {
+    color: palette.blue,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  guidePageTitle: {
+    color: palette.ink,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "800"
+  },
+  guidePageBody: {
+    color: palette.muted,
+    fontSize: 14,
+    lineHeight: 21
+  },
+  guideFooter: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  guideFooterText: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: "700"
   }
 });
