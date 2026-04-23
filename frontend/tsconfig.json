@@ -25,7 +25,8 @@
     "**/*.ts",
     "**/*.tsx",
     "**/*.js",
-    "**/*.jsx"
+    "**/*.jsx",
+    "nativewind-env.d.ts"
   ],
   "extends": "expo/tsconfig.base"
 }
