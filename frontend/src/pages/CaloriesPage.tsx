@@ -610,9 +610,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
   return (
     <View style={styles.pageStack}>
       <ToolHeader
-        eyebrow="Consultant tool"
-        icon="food-apple-outline"
-        title="Meal calorie estimator"
+        title="Meal Calorie Estimator"
         subtitle="Upload a meal photo with your profile inputs to get a calmer calorie estimate, daily-target context, and nutrition notes."
         onPressHelp={openGuide}
       />

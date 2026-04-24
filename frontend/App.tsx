@@ -1634,7 +1634,7 @@ function GramwinApp() {
                 : activeTab === "nutrition"
                   ? "Nutrition insights"
                   : activeTab === "supplements"
-                    ? "Supplement analyzer"
+                    ? "Scanner"
                     : "Profile and settings"
             }
             body={
@@ -1894,7 +1894,7 @@ function HomeScreen({
           A cleaner health dashboard with daily logs, quick actions, and fast access to evidence reviews.
         </Text>
         <Text variant="bodyMedium" style={styles.heroBody}>
-          Use the Consultant tab when you want to fact-check a claim, then come back here for regular health data, meals, and medication tracking.
+          Use the Verify tab when you want to fact-check a claim, then come back here for regular health data, meals, and medication tracking.
         </Text>
         <View style={styles.heroActions}>
           <Button mode="contained" icon="stethoscope" onPress={onOpenInvestigate} buttonColor={palette.primary}>
@@ -2016,7 +2016,7 @@ function HomeScreen({
           </View>
         </TouchableRipple>
       ) : (
-        <EmptyState title="No investigations yet" body="Start one from the Consultant tab and it will show up here." />
+        <EmptyState title="No investigations yet" body="Start one from the Verify tab and it will show up here." />
       )}
     </View>
   );
@@ -2024,9 +2024,9 @@ function HomeScreen({
 
 function QuickLinks({ onOpenTab }: { onOpenTab: (tab: AppTab) => void }) {
   const links: Array<{ tab: AppTab; icon: string; label: string; body: string }> = [
-    { tab: "consultant", icon: "stethoscope", label: "Consultant", body: "Investigate claims and read evidence." },
+    { tab: "consultant", icon: "stethoscope", label: "Verify", body: "Investigate claims and read evidence." },
     { tab: "nutrition", icon: "silverware-fork-knife", label: "Nutrition", body: "Meals, hydration, and nutrient planning." },
-    { tab: "supplements", icon: "pill-multiple", label: "Supplements", body: "Supplement notes and medication workflows." },
+    { tab: "supplements", icon: "pill-multiple", label: "Scanner", body: "Label scans and medication workflows." },
     { tab: "profile", icon: "account-circle-outline", label: "Profile", body: "Health profile, goals, and context." },
   ];
 
@@ -2212,20 +2212,18 @@ function ConsultantScreen(props: ConsultantScreenProps) {
 
   return (
     <View style={styles.screenStack}>
-      <Card mode="contained" style={styles.segmentedCard}>
-        <Card.Content>
-          <SegmentedButtons
-            value={consultantView}
-            onValueChange={(value) => onConsultantViewChange(value as ConsultantView)}
-            density="small"
-            style={styles.segmentedButtons}
-            buttons={[
-              { value: "investigate", label: "Investigate", icon: "stethoscope" },
-              { value: "history", label: "History", icon: "history" },
-            ]}
-          />
-        </Card.Content>
-      </Card>
+      <View style={styles.segmentRow}>
+        <Pressable style={styles.segmentButton} onPress={() => onConsultantViewChange("investigate")}>
+          <Text variant="labelLarge" style={styles.segmentText}>
+            Investigate
+          </Text>
+        </Pressable>
+        <Pressable style={styles.segmentButton} onPress={() => onConsultantViewChange("history")}>
+          <Text variant="labelLarge" style={styles.segmentText}>
+            History
+          </Text>
+        </Pressable>
+      </View>
 
       {consultantView === "investigate" ? (
         <>
@@ -3530,7 +3528,7 @@ function SupplementsScreen({
             Upload a supplement label to review ingredient fit, risks, expected benefits, and practical cautions without affecting the claim-investigation workflow.
           </Text>
           <Button mode="outlined" icon="stethoscope" onPress={onOpenConsultant} textColor={palette.primary}>
-            Open Consultant for evidence review
+            Open Verify for evidence review
           </Button>
         </Card.Content>
       </Card>
@@ -4153,11 +4151,11 @@ function BottomTabs({
   onSelect: (tab: AppTab) => void;
   bottomInset: number;
 }) {
-  const tabs: Array<{ key: AppTab; label: string; icon: string }> = [
+  const tabs: Array<{ key: AppTab; label: string; icon: string; iconInactive?: string }> = [
     { key: "home", label: "Home", icon: "home-heart" },
-    { key: "consultant", label: "Consultant", icon: "stethoscope" },
+    { key: "consultant", label: "Verify", icon: "stethoscope" },
     { key: "nutrition", label: "Nutrition", icon: "silverware-fork-knife" },
-    { key: "supplements", label: "Supplements", icon: "pill-multiple" },
+    { key: "supplements", label: "Scanner", icon: "pill-multiple" },
     { key: "profile", label: "Profile", icon: "account-circle-outline" },
   ];
 
@@ -4166,10 +4164,14 @@ function BottomTabs({
       {tabs.map((tab) => {
         const selected = activeTab === tab.key;
         return (
-          <TouchableRipple key={tab.key} style={[styles.bottomTabItem, selected && styles.bottomTabItemSelected]} onPress={() => onSelect(tab.key)}>
+          <TouchableRipple key={tab.key} style={styles.bottomTabItem} onPress={() => onSelect(tab.key)}>
             <View style={styles.bottomTabContent}>
               <View style={[styles.bottomTabBubble, selected && styles.bottomTabBubbleSelected]}>
-                <MaterialCommunityIcons name={tab.icon as MaterialIconName} size={20} color={selected ? "#FFFFFF" : palette.primary} />
+                <MaterialCommunityIcons
+                  name={(selected ? tab.icon : tab.iconInactive || tab.icon) as MaterialIconName}
+                  size={20}
+                  color={selected ? "#FFFFFF" : palette.muted}
+                />
               </View>
               <Text variant="labelSmall" style={[styles.bottomTabLabel, selected && styles.bottomTabLabelSelected]}>
                 {tab.label}
@@ -4743,6 +4745,18 @@ const styles = StyleSheet.create({
     gap: 10,
     flexWrap: "wrap",
   },
+  segmentButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  segmentText: {
+    color: palette.ink,
+    fontFamily: "Poppins_600SemiBold",
+  },
   segmentChip: {
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
@@ -5196,9 +5210,6 @@ const styles = StyleSheet.create({
   bottomTabItem: {
     flex: 1,
     borderRadius: 16,
-  },
-  bottomTabItemSelected: {
-    backgroundColor: palette.primarySoft,
   },
   bottomTabContent: {
     alignItems: "center",

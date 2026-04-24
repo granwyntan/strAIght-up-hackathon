@@ -1,7 +1,7 @@
-import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth, initializeAuth } from "firebase/auth";
+import { getApps, initializeApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+import { getReactNativePersistence, initializeAuth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY || process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -18,24 +18,25 @@ function ensureFirebaseConfig() {
 }
 
 const firebaseAvailable = ensureFirebaseConfig();
-const firebaseApp = firebaseAvailable ? (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig)) : null;
+const firebaseGlobal = globalThis;
 
-let firebaseAuth = null;
-
-if (firebaseApp) {
-  if (Platform.OS === "web") {
-    firebaseAuth = getAuth(firebaseApp);
-  } else {
-    try {
-      // eslint-disable-next-line global-require
-      const { getReactNativePersistence } = require("firebase/auth/react-native");
-      firebaseAuth = initializeAuth(firebaseApp, {
-        persistence: getReactNativePersistence(AsyncStorage)
-      });
-    } catch {
-      firebaseAuth = getAuth(firebaseApp);
-    }
-  }
+if (firebaseAvailable && !firebaseGlobal.__GRAMWIN_FIREBASE_APP__) {
+  firebaseGlobal.__GRAMWIN_FIREBASE_APP__ = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 }
 
-export { firebaseApp, firebaseAuth, firebaseAvailable };
+const firebaseApp = firebaseAvailable ? firebaseGlobal.__GRAMWIN_FIREBASE_APP__ || null : null;
+
+if (firebaseApp && !firebaseGlobal.__GRAMWIN_FIREBASE_AUTH__) {
+  firebaseGlobal.__GRAMWIN_FIREBASE_AUTH__ = initializeAuth(firebaseApp, {
+    persistence: getReactNativePersistence(AsyncStorage)
+  });
+}
+
+if (firebaseApp && !firebaseGlobal.__GRAMWIN_FIREBASE_DB__) {
+  firebaseGlobal.__GRAMWIN_FIREBASE_DB__ = getFirestore(firebaseApp);
+}
+
+const auth = firebaseApp ? firebaseGlobal.__GRAMWIN_FIREBASE_AUTH__ || null : null;
+const db = firebaseApp ? firebaseGlobal.__GRAMWIN_FIREBASE_DB__ || null : null;
+
+export { firebaseApp, auth, db, firebaseAvailable };

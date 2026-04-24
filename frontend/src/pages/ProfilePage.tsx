@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform,
 import * as ImagePicker from "expo-image-picker";
 
 import { palette } from "../data";
+import { typography } from "../styles/typography";
 import { emptyProfile, loadProfile, loadProfileLastSynced, saveProfile } from "../storage/profileStorage";
 import AuthGate from "../components/auth/AuthGate";
 import ToolHeader from "../components/shared/ToolHeader";
@@ -256,10 +257,8 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
   return (
     <KeyboardAvoidingView style={styles.pageStack} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ToolHeader
-        eyebrow="Consultant tool"
-        icon="account-heart-outline"
-        title="Personal health profile"
-        subtitle="Add and save your health context locally so the consultant, nutrition, and supplement tools can respond with better-fit guidance."
+        title="Personal Health Profile"
+        subtitle="Add and save your health context locally so the app can respond with better-fit guidance."
         onPressHelp={openGuide}
       />
 
@@ -612,12 +611,12 @@ const styles = StyleSheet.create({
   accountBadgeText: {
     color: palette.primary,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   accountEmail: {
     color: palette.ink,
     fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   accountLogoutButton: {
     alignSelf: "flex-start",
@@ -632,7 +631,7 @@ const styles = StyleSheet.create({
   accountLogoutText: {
     color: palette.ink,
     fontSize: 13,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   syncMetaRow: {
     borderWidth: 1,
@@ -645,7 +644,7 @@ const styles = StyleSheet.create({
   syncMetaLabel: {
     color: palette.muted,
     fontSize: 11,
-    fontFamily: "Poppins_600SemiBold",
+    ...typography.semibold,
     textTransform: "uppercase",
     letterSpacing: 0.25
   },
@@ -653,7 +652,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
     color: palette.ink,
     fontSize: 13,
-    fontFamily: "Poppins_500Medium"
+    ...typography.medium
   },
   lockedCard: {
     paddingTop: 2,
@@ -662,13 +661,13 @@ const styles = StyleSheet.create({
   lockedTitle: {
     color: palette.ink,
     fontSize: 15,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   lockedBody: {
     color: palette.muted,
     fontSize: 13,
     lineHeight: 19,
-    fontFamily: "Poppins_400Regular"
+    ...typography.regular
   },
   webcamBackdrop: {
     flex: 1,
@@ -690,7 +689,7 @@ const styles = StyleSheet.create({
   webcamTitle: {
     color: palette.ink,
     fontSize: 16,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   webcamVideo: {
     width: "100%",
@@ -717,7 +716,7 @@ const styles = StyleSheet.create({
   webcamPrimaryText: {
     color: "#fffdfa",
     fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   webcamSecondary: {
     flex: 1,
@@ -732,7 +731,7 @@ const styles = StyleSheet.create({
   webcamSecondaryText: {
     color: palette.ink,
     fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   cardTitle: {
     color: palette.ink,
@@ -759,7 +758,7 @@ const styles = StyleSheet.create({
   tabButtonText: {
     color: palette.ink,
     fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   tabButtonTextActive: {
     color: "#fffdfa"
@@ -793,7 +792,7 @@ const styles = StyleSheet.create({
   profileImageFallbackText: {
     color: palette.primary,
     fontSize: 24,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   nameBlock: {
     flex: 1,
@@ -802,14 +801,14 @@ const styles = StyleSheet.create({
   overviewLabel: {
     color: palette.muted,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold",
+    ...typography.semibold,
     textTransform: "uppercase",
     letterSpacing: 0.3
   },
   overviewName: {
     color: palette.ink,
     fontSize: 22,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   overviewGoalsCard: {
     borderWidth: 1,
@@ -823,7 +822,7 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 15,
     lineHeight: 21,
-    fontFamily: "Poppins_400Regular"
+    ...typography.regular
   },
   fieldStack: {
     gap: 12
@@ -834,7 +833,7 @@ const styles = StyleSheet.create({
   label: {
     color: palette.ink,
     fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   input: {
     minHeight: 52,
@@ -887,7 +886,7 @@ const styles = StyleSheet.create({
   photoActionText: {
     color: "#fffdfa",
     fontSize: 13,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   photoActionButtonAlt: {
     minHeight: 36,
@@ -901,7 +900,7 @@ const styles = StyleSheet.create({
   photoActionAltText: {
     color: palette.ink,
     fontSize: 13,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   genderRow: {
     flexDirection: "row",
@@ -925,7 +924,7 @@ const styles = StyleSheet.create({
   genderText: {
     color: palette.primary,
     fontSize: 13,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   genderTextSelected: {
     color: "#fffdfa"
@@ -948,7 +947,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: "#fffdfa",
     fontSize: 17,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   guideBackdrop: {
     flex: 1,
@@ -984,13 +983,13 @@ const styles = StyleSheet.create({
   },
   guideCloseButtonText: {
     color: palette.ink,
-    fontFamily: "Poppins_700Bold",
+    ...typography.bold,
     fontSize: 14
   },
   guideTitle: {
     color: palette.ink,
     fontSize: 17,
-    fontFamily: "Poppins_700Bold",
+    ...typography.bold,
     textAlign: "center",
     marginBottom: 10
   },
@@ -1003,19 +1002,19 @@ const styles = StyleSheet.create({
   guideStepLabel: {
     color: palette.primary,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   guidePageTitle: {
     color: palette.ink,
     fontSize: 18,
     lineHeight: 24,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   guidePageBody: {
     color: palette.muted,
     fontSize: 14,
     lineHeight: 21,
-    fontFamily: "Poppins_400Regular"
+    ...typography.regular
   },
   guideFooter: {
     alignItems: "center",
@@ -1024,6 +1023,7 @@ const styles = StyleSheet.create({
   guideFooterText: {
     color: palette.muted,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   }
 });
+

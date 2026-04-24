@@ -1,10 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { collection, deleteDoc, doc, getDocs, getFirestore, setDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, setDoc } from "firebase/firestore";
 
-import { firebaseApp } from "../lib/firebaseClient";
+import { db } from "../lib/firebaseClient";
 
 const BASE_MEDICATION_KEY = "gramwin.medication.log.v1";
-const firestore = getFirestore(firebaseApp);
+const firestore = db;
 
 function toFirestoreUserId(email) {
   const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -79,7 +79,7 @@ function fromFirestoreRecord(id, data) {
 
 export async function loadMedicationEntries(accountId, accountEmail) {
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return loadLocalMedications(accountId);
   }
   try {
@@ -99,7 +99,7 @@ export async function addMedicationEntry(accountId, entry, accountEmail) {
   await saveLocalMedications(accountId, [...existing, next]);
 
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return next;
   }
   try {
@@ -128,7 +128,7 @@ export async function updateMedicationEntry(accountId, entryId, updates, account
 
   const userId = toFirestoreUserId(accountEmail);
   const target = updated.find((item) => item.id === entryId);
-  if (!userId || !target) {
+  if (!userId || !target || !firestore) {
     return;
   }
   try {
@@ -144,7 +144,7 @@ export async function deleteMedicationEntry(accountId, entryId, accountEmail) {
   await saveLocalMedications(accountId, updated);
 
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return;
   }
   try {

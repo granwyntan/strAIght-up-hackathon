@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Avatar, Button, Card, Chip, IconButton, SegmentedButtons, Text, TextInput, TouchableRipple } from "react-native-paper";
 
 import { palette, type AppTab, type InvestigationSummary } from "../data";
+import ToolHeader from "../components/shared/ToolHeader";
 import { loadProfile, saveProfile } from "../storage/profileStorage";
 import { formatLocalIsoDate, loadHomeVitals, saveHomeVitalForDate } from "../storage/homeVitalsStorage";
 import { loadCalorieWeek } from "../storage/calorieTrackerStorage";
@@ -727,27 +728,19 @@ export default function HomeDashboardPage({
 
   return (
     <View style={styles.screenStack}>
-      <Card mode="contained" style={styles.heroCard}>
-        <Card.Content style={styles.cardStack}>
-          <Chip compact icon="heart-plus" style={styles.heroChip} textStyle={styles.heroChipText}>
-            Daily overview
-          </Chip>
-          <Text variant="headlineMedium" style={styles.heroTitle}>
-            {safeTrim(welcomeName) ? `Welcome ${welcomeName}` : "A cleaner health dashboard with daily logs"}
-          </Text>
-          <Text variant="bodyMedium" style={styles.heroBody}>
-            Keep health data, meals, medications, exercise, routines, and investigations in one place.
-          </Text>
-          <View style={styles.heroActions}>
-            <Button mode="contained" icon="stethoscope" onPress={onOpenInvestigate} buttonColor={palette.primary}>
-              New investigation
-            </Button>
-            <Button mode="outlined" icon="account-circle" onPress={() => onOpenTab("profile")} textColor={palette.primary}>
-              Health profile
-            </Button>
-          </View>
-        </Card.Content>
-      </Card>
+      <ToolHeader
+        title={safeTrim(welcomeName) ? `Welcome ${welcomeName}` : "A cleaner health dashboard with daily logs"}
+        subtitle="Keep health data, meals, medications, exercise, routines, and investigations in one place."
+      />
+
+      <View style={styles.segmentRow}>
+        <Pressable style={styles.segmentButton} onPress={onOpenInvestigate}>
+          <Text style={styles.segmentText}>New Investigation</Text>
+        </Pressable>
+        <Pressable style={styles.segmentButton} onPress={() => onOpenTab("profile")}>
+          <Text style={styles.segmentText}>Health Profile</Text>
+        </Pressable>
+      </View>
 
       <SectionHeader
         eyebrow="Dashboard"
@@ -1072,7 +1065,7 @@ export default function HomeDashboardPage({
         <Card mode="contained" style={styles.sectionCard}>
           <Card.Content>
             <Text variant="bodyMedium" style={styles.sectionBody}>
-              No investigations yet. Start one from Consultant.
+              No investigations yet. Start one from 'Verify' tab.
             </Text>
           </Card.Content>
         </Card>
@@ -1314,7 +1307,7 @@ function SectionHeader({
   body,
   trailing,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   body: string;
   trailing?: React.ReactNode;
@@ -1322,9 +1315,6 @@ function SectionHeader({
   return (
     <View style={styles.sectionHeader}>
       <View style={styles.flexOne}>
-        <Text variant="labelLarge" style={styles.eyebrow}>
-          {eyebrow.toUpperCase()}
-        </Text>
         <Text variant="headlineSmall" style={styles.sectionTitle}>
           {title}
         </Text>
@@ -1343,35 +1333,24 @@ const styles = StyleSheet.create({
   screenStack: {
     gap: 22,
   },
-  cardStack: {
-    gap: 12,
-  },
-  heroCard: {
-    borderRadius: 16,
-    borderWidth: softBorderWidth,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
-  },
-  heroChip: {
-    alignSelf: "flex-start",
-    backgroundColor: palette.primarySoft,
-  },
-  heroChipText: {
-    color: palette.primary,
-    fontFamily: "Poppins_600SemiBold",
-  },
-  heroTitle: {
-    color: palette.text,
-    fontFamily: "Poppins_700Bold",
-  },
-  heroBody: {
-    color: palette.muted,
-    lineHeight: 22,
-  },
-  heroActions: {
+  segmentRow: {
     flexDirection: "row",
     gap: 10,
-    flexWrap: "wrap",
+  },
+  segmentButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  segmentText: {
+    color: palette.ink,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  cardStack: {
+    gap: 12,
   },
   sectionHeader: {
     flexDirection: "row",

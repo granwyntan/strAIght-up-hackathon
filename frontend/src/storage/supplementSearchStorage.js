@@ -1,12 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { collection, deleteDoc, doc, getDocs, getFirestore, setDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, setDoc } from "firebase/firestore";
 
-import { firebaseApp } from "../lib/firebaseClient";
+import { db } from "../lib/firebaseClient";
 import { compactIsoId } from "../utils/dateTime";
 
 const SUPPLEMENT_HISTORY_KEY = "gramwin.supplement.history.v1";
 const MAX_HISTORY_ITEMS = 10;
-const firestore = firebaseApp ? getFirestore(firebaseApp) : null;
+const firestore = db;
 
 function resolveSupplementHistoryKey(accountId) {
   const suffix = typeof accountId === "string" && accountId.trim() ? accountId.trim() : "guest";

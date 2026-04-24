@@ -5,7 +5,7 @@ import {
   signOut
 } from "firebase/auth";
 
-import { firebaseAuth } from "../lib/firebaseClient";
+import { auth } from "../lib/firebaseClient";
 
 function normalizeEmail(value) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -50,7 +50,7 @@ function toSessionAccount(user) {
 }
 
 export async function loginOrRegisterAccount(email, password) {
-  if (!firebaseAuth) {
+  if (!auth) {
     throw new Error("Firebase authentication is not configured for this build.");
   }
   const normalizedEmail = normalizeEmail(email);
@@ -60,7 +60,7 @@ export async function loginOrRegisterAccount(email, password) {
   }
 
   try {
-    const created = await createUserWithEmailAndPassword(firebaseAuth, normalizedEmail, normalizedPassword);
+    const created = await createUserWithEmailAndPassword(auth, normalizedEmail, normalizedPassword);
     return toSessionAccount(created.user);
   } catch (createError) {
     const createCode = typeof createError?.code === "string" ? createError.code : "";
@@ -70,7 +70,7 @@ export async function loginOrRegisterAccount(email, password) {
   }
 
   try {
-    const loggedIn = await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, normalizedPassword);
+    const loggedIn = await signInWithEmailAndPassword(auth, normalizedEmail, normalizedPassword);
     return toSessionAccount(loggedIn.user);
   } catch (signInError) {
     throw new Error(mapAuthError(signInError));
@@ -78,25 +78,25 @@ export async function loginOrRegisterAccount(email, password) {
 }
 
 export async function getActiveSessionAccount() {
-  if (!firebaseAuth) {
+  if (!auth) {
     return null;
   }
-  return toSessionAccount(firebaseAuth.currentUser);
+  return toSessionAccount(auth.currentUser);
 }
 
 export function subscribeToActiveSession(onChange) {
-  if (!firebaseAuth) {
+  if (!auth) {
     onChange?.(null);
     return () => {};
   }
-  return onAuthStateChanged(firebaseAuth, (user) => {
+  return onAuthStateChanged(auth, (user) => {
     onChange?.(toSessionAccount(user));
   });
 }
 
 export async function logoutActiveSession() {
-  if (!firebaseAuth) {
+  if (!auth) {
     return;
   }
-  await signOut(firebaseAuth);
+  await signOut(auth);
 }

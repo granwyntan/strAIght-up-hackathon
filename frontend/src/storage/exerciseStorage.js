@@ -1,11 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { collection, deleteDoc, doc, getDocs, getFirestore, setDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, setDoc } from "firebase/firestore";
 
-import { firebaseApp } from "../lib/firebaseClient";
+import { db } from "../lib/firebaseClient";
 
 const BASE_EXERCISE_KEY = "gramwin.exercise.history.v1";
 const MAX_EXERCISE_ITEMS = 500;
-const firestore = getFirestore(firebaseApp);
+const firestore = db;
 
 function toFirestoreUserId(email) {
   const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -95,7 +95,7 @@ function fromFirestoreRecord(id, data) {
 
 export async function loadExerciseEntries(accountId, accountEmail) {
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return loadLocalEntries(accountId);
   }
   try {
@@ -115,7 +115,7 @@ export async function addExerciseEntry(accountId, entry, accountEmail) {
   await saveLocalEntries(accountId, [next, ...existing]);
 
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return next;
   }
   try {
@@ -145,7 +145,7 @@ export async function updateExerciseEntry(accountId, entryId, updates, accountEm
   await saveLocalEntries(accountId, updated);
 
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return;
   }
   const target = updated.find((entry) => entry.id === entryId);
@@ -165,7 +165,7 @@ export async function deleteExerciseEntry(accountId, entryId, accountEmail) {
   await saveLocalEntries(accountId, updated);
 
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return;
   }
   try {

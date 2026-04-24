@@ -1,11 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { collection, doc, getDoc, getDocs, getFirestore, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 
-import { firebaseApp } from "../lib/firebaseClient";
+import { db } from "../lib/firebaseClient";
 
 const BASE_HOME_VITALS_KEY = "gramwin.home.vitals.v1";
 const MAX_LOCAL_DAYS = 180;
-const firestore = getFirestore(firebaseApp);
+const firestore = db;
 
 function toFirestoreUserId(email) {
   const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -104,7 +104,7 @@ function fromFirestoreDayRecord(record) {
 
 async function loadFirestoreVitalsMap(accountEmail) {
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return null;
   }
   const snapshot = await getDocs(collection(firestore, "users", userId, "daily_health"));
@@ -121,7 +121,7 @@ async function loadFirestoreVitalsMap(accountEmail) {
 
 export async function loadHomeVitals(accountId, accountEmail) {
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return loadLocalVitalsMap(accountId);
   }
   try {
