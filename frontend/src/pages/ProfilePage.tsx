@@ -6,7 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 import { palette } from "../data";
 import { emptyProfile, loadProfile, loadProfileLastSynced, saveProfile } from "../storage/profileStorage";
 import AuthGate from "../components/auth/AuthGate";
-import ToolHeader from "../components/shared/ToolHeader";
+import SectionTabs from "../components/shared/SectionTabs";
 import { formatDisplayDateTime } from "../utils/dateTime";
 
 const GENDER_OPTIONS = ["Male", "Female", "Other", "Prefer not to say"];
@@ -255,14 +255,6 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
 
   return (
     <KeyboardAvoidingView style={styles.pageStack} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ToolHeader
-        eyebrow="Consultant tool"
-        icon="account-heart-outline"
-        title="Personal health profile"
-        subtitle="Add and save your health context locally so the consultant, nutrition, and supplement tools can respond with better-fit guidance."
-        onPressHelp={openGuide}
-      />
-
       <View style={styles.panel}>
         {activeAccount ? (
           <View style={styles.accountPanel}>
@@ -293,17 +285,14 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
         )}
 
         <>
-            <View style={styles.tabRow}>
-              {TABS.map((tab) => {
-                const isActive = activeTab === tab;
-                const label = tab === "overview" ? "Overview" : "Settings";
-                return (
-                  <Pressable key={tab} style={[styles.tabButton, isActive && styles.tabButtonActive]} onPress={() => setActiveTab(tab)}>
-                    <Text style={[styles.tabButtonText, isActive && styles.tabButtonTextActive]}>{label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <SectionTabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as typeof activeTab)}
+              tabs={[
+                { value: "overview", label: "Overview", icon: "account-heart-outline" },
+                { value: "settings", label: "Settings", icon: "tune-variant" },
+              ]}
+            />
 
             {activeTab === "overview" ? (
               <View style={styles.overviewStack}>

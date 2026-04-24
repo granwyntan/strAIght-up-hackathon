@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth, initializeAuth } from "firebase/auth";
+import { getAuth, getReactNativePersistence, initializeAuth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY || process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -27,12 +27,17 @@ if (firebaseApp) {
     firebaseAuth = getAuth(firebaseApp);
   } else {
     try {
-      // eslint-disable-next-line global-require
-      const { getReactNativePersistence } = require("firebase/auth/react-native");
       firebaseAuth = initializeAuth(firebaseApp, {
         persistence: getReactNativePersistence(AsyncStorage)
       });
-    } catch {
+    } catch (error) {
+      if (typeof error?.message === "string" && error.message.toLowerCase().includes("already")) {
+        firebaseAuth = getAuth(firebaseApp);
+      } else {
+        firebaseAuth = getAuth(firebaseApp);
+      }
+    }
+    if (!firebaseAuth) {
       firebaseAuth = getAuth(firebaseApp);
     }
   }

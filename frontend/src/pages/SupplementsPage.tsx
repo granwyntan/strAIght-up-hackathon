@@ -6,7 +6,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { palette } from "../data";
 import AnalysisResult from "../components/supplements/AnalysisResult";
 import ImageUpload from "../components/supplements/ImageUpload";
-import ToolHeader from "../components/shared/ToolHeader";
+import SectionTabs from "../components/shared/SectionTabs";
+import TutorialSheet from "../components/shared/TutorialSheet";
 import { loadProfile } from "../storage/profileStorage";
 import { addSupplementHistoryEntry, clearSupplementHistory, loadSupplementHistory, removeSupplementHistoryEntry } from "../storage/supplementSearchStorage";
 import type { PickedSupplementAsset, RequestApi, SupplementAnalysisResult } from "../types/supplements";
@@ -150,7 +151,7 @@ function analysisProgressValue(textStatus: "idle" | "waiting" | "generating" | "
   return 0;
 }
 
-export default function SupplementsPage({ requestApi, accountId, accountEmail }: SupplementsPageProps) {
+export default function SupplementsPage({ requestApi, accountId, accountEmail, guideSignal = 0 }: SupplementsPageProps & { guideSignal?: number }) {
   const [selectedAsset, setSelectedAsset] = useState<PickedSupplementAsset | null>(null);
   const [conditions, setConditions] = useState(DEFAULT_CONDITIONS);
   const [goals, setGoals] = useState(DEFAULT_GOALS);
@@ -658,6 +659,12 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
     }, 0);
   }
 
+  useEffect(() => {
+    if (guideSignal > 0) {
+      openGuide();
+    }
+  }, [guideSignal]);
+
   function exitHistoryPreviewMode() {
     setSelectedHistoryEntryId("");
     setResult(null);
@@ -698,22 +705,14 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
 
   return (
     <View className="gap-4">
-      <ToolHeader
-        eyebrow="Consultant tool"
-        icon="pill-multiple"
-        title="Medicine and supplement analyzer"
-        subtitle="Use either bottle or label upload OR supplement-name search to get a calmer report on ingredients, benefits, cautions, interactions, and goal fit."
-        onPressHelp={openGuide}
+      <SectionTabs
+        value={activeSubPage}
+        onValueChange={(value) => setActiveSubPage(value as "analyzer" | "history")}
+        tabs={[
+          { value: "analyzer", label: "Analyze", icon: "pill-multiple" },
+          { value: "history", label: "History", icon: "history" },
+        ]}
       />
-
-      <View className="flex-row rounded-[18px] border border-line bg-card p-1 shadow-panel">
-        <Pressable className={`flex-1 items-center rounded-2xl px-4 py-3 ${activeSubPage === "analyzer" ? "bg-sage" : "bg-transparent"}`} onPress={() => setActiveSubPage("analyzer")}>
-          <Text className={`font-['Poppins_600SemiBold'] ${activeSubPage === "analyzer" ? "text-card" : "text-muted"}`}>Analyzer</Text>
-        </Pressable>
-        <Pressable className={`flex-1 items-center rounded-2xl px-4 py-3 ${activeSubPage === "history" ? "bg-sage" : "bg-transparent"}`} onPress={() => setActiveSubPage("history")}>
-          <Text className={`font-['Poppins_600SemiBold'] ${activeSubPage === "history" ? "text-card" : "text-muted"}`}>History</Text>
-        </Pressable>
-      </View>
 
       {activeSubPage === "analyzer" ? (
         <>
@@ -952,47 +951,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail }:
         </View>
       </Modal>
 
-      <Modal visible={guideVisible} transparent animationType="fade" onRequestClose={closeGuide}>
-        <View style={styles.guideBackdrop}>
-          <View style={styles.guideCard}>
-            <Pressable style={styles.guideCloseButton} onPress={closeGuide}>
-              <Text style={styles.guideCloseButtonText}>×</Text>
-            </Pressable>
-            <Text style={styles.guideTitle}>Supplement tutorial</Text>
-            <ScrollView
-              ref={guideScrollRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onLayout={(event) => {
-                const width = Math.max(280, Math.floor(event.nativeEvent.layout.width));
-                setGuidePageWidth(width);
-              }}
-              onScroll={(event) => {
-                const width = guidePageWidth || 1;
-                const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
-                if (nextIndex !== activeGuidePage) {
-                  setActiveGuidePage(nextIndex);
-                }
-              }}
-              scrollEventThrottle={16}
-            >
-              {SCANNER_GUIDE_PAGES.map((page, index) => (
-                <View key={page.title} style={[styles.guidePage, { width: guidePageWidth }]}>
-                  <Text style={styles.guideStepLabel}>Page {index + 1}</Text>
-                  <Text style={styles.guidePageTitle}>{page.title}</Text>
-                  <Text style={styles.guidePageBody}>{page.body}</Text>
-                </View>
-              ))}
-            </ScrollView>
-            <View style={styles.guideFooter}>
-              <Text style={styles.guideFooterText}>
-                {activeGuidePage + 1} / {SCANNER_GUIDE_PAGES.length}
-              </Text>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <TutorialSheet visible={guideVisible} title="Supplement tutorial" pages={SCANNER_GUIDE_PAGES} onClose={closeGuide} />
     </View>
   );
 }

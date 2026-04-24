@@ -6,7 +6,8 @@ import * as ImagePicker from "expo-image-picker";
 import { palette } from "../data";
 import CalorieForm from "../components/calories/CalorieForm";
 import CalorieResult from "../components/calories/CalorieResult";
-import ToolHeader from "../components/shared/ToolHeader";
+import SectionTabs from "../components/shared/SectionTabs";
+import TutorialSheet from "../components/shared/TutorialSheet";
 import CalorieHistoryPage from "./CalorieHistoryPage";
 import { loadProfile, saveProfile } from "../storage/profileStorage";
 import { formatDisplayTime } from "../utils/dateTime";
@@ -96,7 +97,7 @@ function formatLocalIsoDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
+export default function CaloriesPage({ requestApi, accountId, accountEmail, guideSignal = 0 }) {
   const [values, setValues] = useState(DEFAULT_VALUES);
   const [selectedAsset, setSelectedAsset] = useState(null);
   const [result, setResult] = useState(null);
@@ -234,6 +235,12 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
       void loadHistory(weekAnchor);
     }
   }, [activeSubPage, weekAnchor, accountId]);
+
+  useEffect(() => {
+    if (guideSignal > 0) {
+      openGuide();
+    }
+  }, [guideSignal]);
 
   useEffect(() => {
     if (!loading || !calcStartedAt) {
@@ -609,22 +616,14 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
 
   return (
     <View style={styles.pageStack}>
-      <ToolHeader
-        eyebrow="Consultant tool"
-        icon="food-apple-outline"
-        title="Meal calorie estimator"
-        subtitle="Upload a meal photo with your profile inputs to get a calmer calorie estimate, daily-target context, and nutrition notes."
-        onPressHelp={openGuide}
+      <SectionTabs
+        value={activeSubPage}
+        onValueChange={setActiveSubPage}
+        tabs={[
+          { value: "calculator", label: "Estimate", icon: "food-apple-outline" },
+          { value: "history", label: "History", icon: "history" },
+        ]}
       />
-
-      <View style={styles.segmentRow}>
-        <Pressable style={[styles.segmentButton, activeSubPage === "calculator" && styles.segmentButtonSelected]} onPress={() => setActiveSubPage("calculator")}>
-          <Text style={[styles.segmentText, activeSubPage === "calculator" && styles.segmentTextSelected]}>Calculator</Text>
-        </Pressable>
-        <Pressable style={[styles.segmentButton, activeSubPage === "history" && styles.segmentButtonSelected]} onPress={() => setActiveSubPage("history")}>
-          <Text style={[styles.segmentText, activeSubPage === "history" && styles.segmentTextSelected]}>History</Text>
-        </Pressable>
-      </View>
 
       {activeSubPage === "calculator" ? (
         <>
@@ -703,47 +702,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail }) {
         </View>
       </Modal>
 
-      <Modal visible={guideVisible} transparent animationType="fade" onRequestClose={closeGuide}>
-        <View style={styles.guideBackdrop}>
-          <View style={styles.guideCard}>
-            <Pressable style={styles.guideCloseButton} onPress={closeGuide} accessibilityRole="button" accessibilityLabel="Close calorie calculator guide">
-              <Text style={styles.guideCloseButtonText}>x</Text>
-            </Pressable>
-            <Text style={styles.guideTitle}>Calorie guide</Text>
-            <ScrollView
-              ref={guideScrollRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onLayout={(event) => {
-                const width = Math.max(280, Math.floor(event.nativeEvent.layout.width));
-                setGuidePageWidth(width);
-              }}
-              onScroll={(event) => {
-                const width = guidePageWidth || 1;
-                const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
-                if (nextIndex !== activeGuidePage) {
-                  setActiveGuidePage(nextIndex);
-                }
-              }}
-              scrollEventThrottle={16}
-            >
-              {CALORIE_GUIDE_PAGES.map((page, index) => (
-                <View key={page.title} style={[styles.guidePage, { width: guidePageWidth }]}>
-                  <Text style={styles.guideStepLabel}>Page {index + 1}</Text>
-                  <Text style={styles.guidePageTitle}>{page.title}</Text>
-                  <Text style={styles.guidePageBody}>{page.body}</Text>
-                </View>
-              ))}
-            </ScrollView>
-            <View style={styles.guideFooter}>
-              <Text style={styles.guideFooterText}>
-                {activeGuidePage + 1} / {CALORIE_GUIDE_PAGES.length}
-              </Text>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <TutorialSheet visible={guideVisible} title="Nutrition tutorial" pages={CALORIE_GUIDE_PAGES} onClose={closeGuide} />
     </View>
   );
 }

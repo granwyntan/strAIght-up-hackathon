@@ -66,10 +66,30 @@ import { addNotificationResponseListener, getLastNotificationResponseUrl, notifi
 import CaloriesPage from "./src/pages/CaloriesPage";
 import SupplementsPage from "./src/pages/SupplementsPage";
 import ProfilePage from "./src/pages/ProfilePage";
+import SectionTabs from "./src/components/shared/SectionTabs";
+import TutorialSheet from "./src/components/shared/TutorialSheet";
 import { getActiveSessionAccount, loginOrRegisterAccount, logoutActiveSession, subscribeToActiveSession } from "./src/storage/accountStorage";
 import { formatDisplayDateTime } from "./src/utils/dateTime";
 
 const BASE_SCREEN_WIDTH = 390;
+const CONSULTANT_TUTORIAL_PAGES = [
+  {
+    title: "Start with the claim",
+    body: "Enter the health claim you want checked. Keep it close to the wording you actually saw so the review can test the wording risk properly.",
+  },
+  {
+    title: "Add context only when needed",
+    body: "Optional context helps when the claim depends on a population, source, or scope. If it does not change what counts as relevant evidence, you can leave it blank.",
+  },
+  {
+    title: "Choose the depth",
+    body: "Quick gives you a fast pass, standard gives you a fuller review, and deep aims for the broadest source sweep with stronger cross-checking.",
+  },
+  {
+    title: "Read in layers",
+    body: "Start with the conclusion and key details, then open the evidence, workflow, and full source log only when you want the deeper trail.",
+  },
+];
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -853,6 +873,8 @@ function GramwinApp() {
   const [historySheetVisible, setHistorySheetVisible] = useState(false);
   const [historySheetLoading, setHistorySheetLoading] = useState(false);
   const [consultantTutorialVisible, setConsultantTutorialVisible] = useState(false);
+  const [nutritionGuideSignal, setNutritionGuideSignal] = useState(0);
+  const [supplementsGuideSignal, setSupplementsGuideSignal] = useState(0);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [loadingSelected, setLoadingSelected] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -1649,7 +1671,15 @@ function GramwinApp() {
             }
             apiError={apiError}
             onRetry={retryBackendConnection}
-            onPressHelp={activeTab === "consultant" && consultantView !== "history" ? () => setConsultantTutorialVisible(true) : undefined}
+            onPressHelp={
+              activeTab === "consultant" && consultantView !== "history"
+                ? () => setConsultantTutorialVisible(true)
+                : activeTab === "nutrition"
+                  ? () => setNutritionGuideSignal((current) => current + 1)
+                  : activeTab === "supplements"
+                    ? () => setSupplementsGuideSignal((current) => current + 1)
+                    : undefined
+            }
           />
         )}
 
@@ -1718,8 +1748,8 @@ function GramwinApp() {
           />
         )}
 
-        {activeTab === "nutrition" && <CaloriesPage requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000)} accountId={activeAccount?.id} accountEmail={activeAccount?.email} />}
-        {activeTab === "supplements" && <SupplementsPage requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000)} accountId={activeAccount?.id} accountEmail={activeAccount?.email} />}
+        {activeTab === "nutrition" && <CaloriesPage requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000)} accountId={activeAccount?.id} accountEmail={activeAccount?.email} guideSignal={nutritionGuideSignal} />}
+        {activeTab === "supplements" && <SupplementsPage requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 180000)} accountId={activeAccount?.id} accountEmail={activeAccount?.email} guideSignal={supplementsGuideSignal} />}
         {activeTab === "profile" && (
           <ProfilePage
             history={history}
@@ -1746,38 +1776,7 @@ function GramwinApp() {
         cancellingIds={cancellingIds}
       />
 
-      <Modal visible={consultantTutorialVisible} transparent animationType="fade" onRequestClose={() => setConsultantTutorialVisible(false)}>
-        <View style={styles.sheetBackdrop}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setConsultantTutorialVisible(false)} />
-          <Surface style={styles.tutorialModal} elevation={0}>
-            <View style={styles.sheetHeader}>
-              <View style={styles.flexOne}>
-                <Text variant="titleLarge" style={styles.formTitle}>
-                  Claim consultant tutorial
-                </Text>
-                <Text variant="bodySmall" style={styles.historyMetaLine}>
-                  Start with a health claim, choose the review depth, then read the conclusion before drilling into evidence.
-                </Text>
-              </View>
-              <IconButton icon="close" onPress={() => setConsultantTutorialVisible(false)} iconColor={palette.primary} />
-            </View>
-            <View style={styles.tutorialList}>
-              <Text variant="bodyMedium" style={styles.tutorialItem}>
-                1. Enter the health claim you want checked.
-              </Text>
-              <Text variant="bodyMedium" style={styles.tutorialItem}>
-                2. Add optional context only if it changes what counts as relevant evidence.
-              </Text>
-              <Text variant="bodyMedium" style={styles.tutorialItem}>
-                3. Choose quick, standard, or deep depending on how broad you want the evidence sweep to be.
-              </Text>
-              <Text variant="bodyMedium" style={styles.tutorialItem}>
-                4. Read the conclusion first, then open evidence and workflow sections for the deeper trail.
-              </Text>
-            </View>
-          </Surface>
-        </View>
-      </Modal>
+      <TutorialSheet visible={consultantTutorialVisible} title="Claim consultant tutorial" pages={CONSULTANT_TUTORIAL_PAGES} onClose={() => setConsultantTutorialVisible(false)} />
 
       <Snackbar
         visible={snackbar.visible}
@@ -2208,20 +2207,14 @@ function ConsultantScreen(props: ConsultantScreenProps) {
 
   return (
     <View style={styles.screenStack}>
-      <Card mode="contained" style={styles.segmentedCard}>
-        <Card.Content>
-          <SegmentedButtons
-            value={consultantView}
-            onValueChange={(value) => onConsultantViewChange(value as ConsultantView)}
-            density="small"
-            style={styles.segmentedButtons}
-            buttons={[
-              { value: "investigate", label: "Investigate", icon: "stethoscope" },
-              { value: "history", label: "History", icon: "history" },
-            ]}
-          />
-        </Card.Content>
-      </Card>
+      <SectionTabs
+        value={consultantView}
+        onValueChange={(value) => onConsultantViewChange(value as ConsultantView)}
+        tabs={[
+          { value: "investigate", label: "Investigate", icon: "stethoscope" },
+          { value: "history", label: "History", icon: "history" },
+        ]}
+      />
 
       {consultantView === "investigate" ? (
         <>
