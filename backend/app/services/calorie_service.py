@@ -328,7 +328,8 @@ def _build_prompt(context: CalorieContext) -> str:
         "Provide concise markdown with these H2 sections: "
         "Meal Summary, Itemized Breakdown, Daily Intake Context, Recommendation. "
         "In Itemized Breakdown, use bullet points with item, grams, and calories. "
-        "Include a final line: Total Estimated Calories.\n\n"
+        "Include a final line: Total Estimated Calories.\n"
+        "In that final line, write calories as digits only with NO commas or separators (for example 1000, not 1,000).\n\n"
         f"User age: {context.age:.0f}\n"
         f"User BMI: {context.bmi:.1f}\n"
         f"Activity level: {context.activity_level}\n"
@@ -390,11 +391,11 @@ def _extract_total_estimated_calories_from_final_line(analysis_text: str) -> int
     final_line = lines[-1]
     if "total estimated calories" not in final_line.lower():
         return None
-    match = re.search(r"(-?\d+)", final_line)
+    match = re.search(r"(-?\d[\d,]*)", final_line)
     if not match:
         return None
     try:
-        parsed = int(match.group(1))
+        parsed = int(match.group(1).replace(",", ""))
     except ValueError:
         return None
     return max(0, parsed)

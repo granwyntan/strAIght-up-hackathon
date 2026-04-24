@@ -66,6 +66,7 @@ import { addNotificationResponseListener, getLastNotificationResponseUrl, notifi
 import CaloriesPage from "./src/pages/CaloriesPage";
 import SupplementsPage from "./src/pages/SupplementsPage";
 import ProfilePage from "./src/pages/ProfilePage";
+import HomeDashboardPage from "./src/pages/HomeDashboardPage";
 import { getActiveSessionAccount, loginOrRegisterAccount, logoutActiveSession, subscribeToActiveSession } from "./src/storage/accountStorage";
 import { formatDisplayDateTime } from "./src/utils/dateTime";
 
@@ -1654,14 +1655,17 @@ function GramwinApp() {
         )}
 
         {activeTab === "home" && (
-          <HomeScreen
+          <HomeDashboardPage
             history={history}
+            accountId={activeAccount?.id}
+            accountEmail={activeAccount?.email}
             onOpenInvestigate={() => {
               setConsultantView("investigate");
               setActiveTab("consultant");
             }}
             onOpenHistory={(id) => void openHistorySheet(id)}
             onOpenTab={setActiveTab}
+            requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000)}
           />
         )}
 
