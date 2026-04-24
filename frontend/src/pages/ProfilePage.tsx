@@ -256,12 +256,6 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
 
   return (
     <KeyboardAvoidingView style={styles.pageStack} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ToolHeader
-        title="Personal Health Profile"
-        subtitle="Add and save your health context locally so the app can respond with better-fit guidance."
-        onPressHelp={openGuide}
-      />
-
       <View style={styles.panel}>
         {activeAccount ? (
           <View style={styles.accountPanel}>

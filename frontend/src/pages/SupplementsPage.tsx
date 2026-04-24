@@ -13,7 +13,6 @@ import { loadProfile } from "../storage/profileStorage";
 import { addSupplementHistoryEntry, clearSupplementHistory, loadSupplementHistory, removeSupplementHistoryEntry } from "../storage/supplementSearchStorage";
 import type { PickedSupplementAsset, RequestApi, SupplementAnalysisResult } from "../types/supplements";
 import { compactIsoId, formatDisplayDateTime, formatDisplayTime } from "../utils/dateTime";
-import ToolHeader from "../components/shared/ToolHeader";
 
 const DEFAULT_CONDITIONS = "NIL";
 const DEFAULT_GOALS = "Reduce belly fat, Improve cognitive power";
@@ -707,22 +706,16 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ToolHeader
-        title="Medicine and Supplement Analyzer"
-        subtitle="Use either bottle or label upload OR supplement-name search to get a calmer report on ingredients, benefits, cautions, interactions, and goal fit."
-        onPressHelp={openGuide}
+      <SectionTabs
+        value={activeSubPage}
+        onValueChange={(value) => setActiveSubPage(value as "analyzer" | "history")}
+        tabs={[
+          { value: "analyzer", label: "Analyze", icon: "pill-multiple" },
+          { value: "history", label: "History", icon: "history" },
+        ]}
       />
 
-      <View className="flex-row rounded-[18px] border border-line bg-card p-1 shadow-panel">
-        <Pressable className={`flex-1 items-center rounded-2xl px-4 py-3 ${activeSubPage === "analyzer" ? "bg-sage" : "bg-transparent"}`} onPress={() => setActiveSubPage("analyzer")}>
-          <Text style={typography.semibold} className={`font-['Poppins_600SemiBold'] ${activeSubPage === "analyzer" ? "text-card" : "text-muted"}`}>Analyzer</Text>
-        </Pressable>
-        <Pressable className={`flex-1 items-center rounded-2xl px-4 py-3 ${activeSubPage === "history" ? "bg-sage" : "bg-transparent"}`} onPress={() => setActiveSubPage("history")}>
-          <Text style={typography.semibold} className={`font-['Poppins_600SemiBold'] ${activeSubPage === "history" ? "text-card" : "text-muted"}`}>History</Text>
-        </Pressable>
-      </View>
-
-      {activeSubPage === "analyzer" ? (
+      <View style={activeSubPage === "analyzer" ? undefined : styles.hiddenSection}>
         <>
           {selectedHistoryEntryId ? (
             <View className="gap-2 rounded-[18px] border border-line bg-soft px-4 py-4">
@@ -857,7 +850,8 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
 
           <AnalysisResult result={result} selectedImageUri={selectedAsset?.uri || ""} selectedImageAspectRatio={selectedImageAspectRatio} />
         </>
-      ) : (
+      </View>
+      <View style={activeSubPage === "history" ? undefined : styles.hiddenSection}>
         <View className="gap-4 rounded-[22px] border border-line bg-card p-5 shadow-panel">
           <View className="flex-row items-center justify-between gap-3">
             <View className="flex-row items-center gap-2">
@@ -908,7 +902,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
             </Pressable>
           ))}
         </View>
-      )}
+      </View>
 
       <Modal visible={Boolean(historyModalEntry)} transparent animationType="slide" onRequestClose={closeHistoryModal}>
         <View style={styles.guideBackdrop}>
@@ -964,6 +958,9 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
 }
 
 const styles = StyleSheet.create({
+  hiddenSection: {
+    display: "none",
+  },
   webcamVideo: {
     width: "100%",
     aspectRatio: 16 / 9,

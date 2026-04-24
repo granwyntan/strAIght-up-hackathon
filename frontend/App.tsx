@@ -2211,18 +2211,14 @@ function ConsultantScreen(props: ConsultantScreenProps) {
 
   return (
     <View style={styles.screenStack}>
-      <View style={styles.segmentRow}>
-        <Pressable style={styles.segmentButton} onPress={() => onConsultantViewChange("investigate")}>
-          <Text variant="labelLarge" style={styles.segmentText}>
-            Investigate
-          </Text>
-        </Pressable>
-        <Pressable style={styles.segmentButton} onPress={() => onConsultantViewChange("history")}>
-          <Text variant="labelLarge" style={styles.segmentText}>
-            History
-          </Text>
-        </Pressable>
-      </View>
+      <SectionTabs
+        value={consultantView}
+        onValueChange={(value) => onConsultantViewChange(value as ConsultantView)}
+        tabs={[
+          { value: "investigate", label: "Investigate", icon: "stethoscope" },
+          { value: "history", label: "History", icon: "history" },
+        ]}
+      />
 
       {consultantView === "investigate" ? (
         <>
@@ -2928,7 +2924,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
     <View style={styles.cardStack}>
       <Card mode="contained" style={styles.resultHero}>
         <Card.Content style={styles.cardStack}>
-          <View style={[styles.rowBetween, compactLayout && styles.rowBetweenStacked]}>
+          <View style={styles.resultHeroTopRow}>
             <VerdictPill verdict={investigation.verdict} />
             <Chip compact style={[styles.scoreChip, { backgroundColor: scoreMeta.background }]} textStyle={[styles.scoreChipText, { color: scoreMeta.color }]}>
               {investigation.overallScore ?? "--"}/100
@@ -4089,7 +4085,7 @@ function HistorySheet({
                 Review the saved report, reopen the evidence, or run the claim again.
               </Text>
             </View>
-            <IconButton icon="close" onPress={onClose} iconColor={palette.primary} />
+            <IconButton icon="close" onPress={onClose} iconColor={palette.text} />
           </View>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.cardStack}>
             {loading ? (
@@ -4186,9 +4182,12 @@ function BottomTabs({
 function VerdictPill({ verdict }: { verdict: InvestigationSummary["verdict"] | InvestigationDetail["verdict"] }) {
   const meta = verdictMeta(verdict);
   return (
-    <Chip compact icon={meta.icon} style={{ backgroundColor: meta.background }} textStyle={{ color: meta.color, fontFamily: "Poppins_600SemiBold" }}>
-      {meta.label}
-    </Chip>
+    <View style={[styles.verdictPill, { backgroundColor: meta.background }]}>
+      <MaterialCommunityIcons name={meta.icon as MaterialIconName} size={16} color={meta.color} />
+      <Text variant="labelMedium" style={[styles.verdictPillText, { color: meta.color }]}>
+        {meta.label}
+      </Text>
+    </View>
   );
 }
 
@@ -4672,6 +4671,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12,
   },
+  resultHeroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
   rowBetweenStacked: {
     flexDirection: "column",
     alignItems: "stretch",
@@ -4754,6 +4759,18 @@ const styles = StyleSheet.create({
   },
   segmentText: {
     color: palette.ink,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  verdictPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  verdictPillText: {
     fontFamily: "Poppins_600SemiBold",
   },
   segmentChip: {

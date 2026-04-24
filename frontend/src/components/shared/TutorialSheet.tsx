@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Animated, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { palette } from "../../data";
 
@@ -19,25 +19,55 @@ export default function TutorialSheet({ visible, title, pages, onClose }: Tutori
   const guideScrollRef = useRef<ScrollView | null>(null);
   const [pageWidth, setPageWidth] = useState(320);
   const [activePage, setActivePage] = useState(0);
+  const translateY = useRef(new Animated.Value(360)).current;
 
   useEffect(() => {
-    if (!visible) {
-      return;
+    if (visible) {
+      setActivePage(0);
+      setTimeout(() => {
+        guideScrollRef.current?.scrollTo?.({ x: 0, animated: false });
+      }, 0);
+      Animated.spring(translateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 72,
+        friction: 10,
+      }).start();
+    } else {
+      translateY.setValue(360);
     }
-    setActivePage(0);
-    setTimeout(() => {
-      guideScrollRef.current?.scrollTo?.({ x: 0, animated: false });
-    }, 0);
-  }, [visible]);
+  }, [translateY, visible]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+        onPanResponderMove: (_, gesture) => {
+          translateY.setValue(Math.max(0, gesture.dy));
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dy > 120 || gesture.vy > 1.2) {
+            onClose();
+            return;
+          }
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        },
+      }),
+    [onClose, translateY]
+  );
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Pressable style={styles.closeButton} onPress={onClose} accessibilityRole="button" accessibilityLabel={`Close ${title}`}>
-            <Text style={styles.closeButtonText}>×</Text>
-          </Pressable>
-          <Text style={styles.title}>{title}</Text>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Animated.View style={[styles.card, { transform: [{ translateY }] }]} {...panResponder.panHandlers}>
+          <View style={styles.handle} />
+          <View style={styles.header}>
+            <Text style={styles.title}>{title}</Text>
+            <Pressable style={styles.closeButton} onPress={onClose} accessibilityRole="button" accessibilityLabel={`Close ${title}`}>
+              <Text style={styles.closeButtonText}>×</Text>
+            </Pressable>
+          </View>
           <ScrollView
             ref={guideScrollRef}
             horizontal
@@ -69,7 +99,7 @@ export default function TutorialSheet({ visible, title, pages, onClose }: Tutori
               {activePage + 1} / {pages.length}
             </Text>
           </View>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -82,20 +112,34 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 0,
   },
   card: {
     width: "100%",
-    maxWidth: 420,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    maxWidth: 860,
+    maxHeight: "86%",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     backgroundColor: palette.surface,
-    padding: 20,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 40,
     gap: 12,
   },
+  handle: {
+    alignSelf: "center",
+    width: 54,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: "#D1D5DB",
+    marginBottom: 10,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+  },
   closeButton: {
-    alignSelf: "flex-end",
     width: 34,
     height: 34,
     borderRadius: 17,
@@ -104,7 +148,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surfaceSoft,
   },
   closeButtonText: {
-    color: palette.primary,
+    color: palette.text,
     fontSize: 20,
     lineHeight: 22,
     fontFamily: "Poppins_700Bold",
@@ -117,7 +161,7 @@ const styles = StyleSheet.create({
   },
   page: {
     gap: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
   stepLabel: {
     color: palette.primary,
@@ -140,6 +184,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     alignItems: "flex-end",
+    paddingBottom: 2,
   },
   footerText: {
     color: palette.muted,

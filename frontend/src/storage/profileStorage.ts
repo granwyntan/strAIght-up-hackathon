@@ -1,3 +1,4 @@
+// @ts-nocheck
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebaseClient";

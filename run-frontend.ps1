@@ -222,10 +222,16 @@ if (-not $NoStart) {
         }
     }
 
-    $launchDevClient = $UseDevClient -and -not $UseExpoGo
+    $launchDevClient = $UseDevClient
+    $launchExpoGo = -not $launchDevClient
+
+    Remove-Item Env:EXPO_USE_DEV_CLIENT -ErrorAction SilentlyContinue
 
     if ($launchDevClient) {
         $expoArgs += "--dev-client"
+        $env:EXPO_USE_DEV_CLIENT = "1"
+    } elseif ($UseExpoGo -or $launchExpoGo) {
+        $expoArgs += "--go"
     }
 
     Push-Location $frontendDir

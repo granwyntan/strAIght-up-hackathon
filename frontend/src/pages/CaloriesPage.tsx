@@ -231,10 +231,8 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
   }
 
   useEffect(() => {
-    if (activeSubPage === "history") {
-      void loadHistory(weekAnchor);
-    }
-  }, [activeSubPage, weekAnchor, accountId]);
+    void loadHistory(weekAnchor);
+  }, [weekAnchor, accountId]);
 
   useEffect(() => {
     if (guideSignal > 0) {
@@ -616,22 +614,16 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
 
   return (
     <View style={styles.pageStack}>
-      <ToolHeader
-        title="Meal Calorie Estimator"
-        subtitle="Upload a meal photo with your profile inputs to get a calmer calorie estimate, daily-target context, and nutrition notes."
-        onPressHelp={openGuide}
+      <SectionTabs
+        value={activeSubPage}
+        onValueChange={setActiveSubPage}
+        tabs={[
+          { value: "calculator", label: "Estimate", icon: "food-apple-outline" },
+          { value: "history", label: "History", icon: "history" },
+        ]}
       />
 
-      <View style={styles.segmentRow}>
-        <Pressable style={[styles.segmentButton, activeSubPage === "calculator" && styles.segmentButtonSelected]} onPress={() => setActiveSubPage("calculator")}>
-          <Text style={[styles.segmentText, activeSubPage === "calculator" && styles.segmentTextSelected]}>Calculator</Text>
-        </Pressable>
-        <Pressable style={[styles.segmentButton, activeSubPage === "history" && styles.segmentButtonSelected]} onPress={() => setActiveSubPage("history")}>
-          <Text style={[styles.segmentText, activeSubPage === "history" && styles.segmentTextSelected]}>History</Text>
-        </Pressable>
-      </View>
-
-      {activeSubPage === "calculator" ? (
+      <View style={activeSubPage === "calculator" ? undefined : styles.hiddenSection}>
         <>
           <CalorieForm
             values={values}
@@ -672,7 +664,8 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
           ) : null}
           <CalorieResult result={result} />
         </>
-      ) : (
+      </View>
+      <View style={activeSubPage === "history" ? undefined : styles.hiddenSection}>
         <CalorieHistoryPage
           history={historyPayload}
           loading={historyLoading}
@@ -686,7 +679,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
           trackerLoading={trackerLoading}
           trackerError={trackerError}
         />
-      )}
+      </View>
 
       <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -716,6 +709,9 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
 const styles = StyleSheet.create({
   pageStack: {
     gap: 16
+  },
+  hiddenSection: {
+    display: "none"
   },
   heroPanel: {
     borderRadius: 26,
@@ -769,29 +765,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     fontFamily: "Poppins_400Regular"
-  },
-  segmentRow: {
-    flexDirection: "row",
-    gap: 10
-  },
-  segmentButton: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    paddingVertical: 8,
-    paddingHorizontal: 14
-  },
-  segmentButtonSelected: {
-    borderColor: palette.primary,
-    backgroundColor: palette.primarySoft
-  },
-  segmentText: {
-    color: palette.ink,
-    fontFamily: "Poppins_600SemiBold"
-  },
-  segmentTextSelected: {
-    color: palette.primary
   },
   calcMetaCard: {
     borderRadius: 18,

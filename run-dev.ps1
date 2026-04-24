@@ -41,9 +41,7 @@ if ($UpdateDeps) {
 
 if ($UseDevClient) {
     $frontendArgs += "-UseDevClient"
-}
-
-if ($UseExpoGo) {
+} elseif ($UseExpoGo -or -not $UseDevClient) {
     $frontendArgs += "-UseExpoGo"
 }
 

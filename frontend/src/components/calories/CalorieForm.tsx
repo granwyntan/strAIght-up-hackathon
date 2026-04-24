@@ -53,7 +53,6 @@ export default function CalorieForm({
           <Text style={styles.label}>BMI</Text>
           <View style={styles.readOnlyValue}>
             <Text style={styles.readOnlyValueText}>{values.bmi || "--"}</Text>
-            <Text style={styles.readOnlyHint}>Auto-calculated</Text>
           </View>
         </View>
       </View>
@@ -203,11 +202,6 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
     fontSize: 16
-  },
-  readOnlyHint: {
-    color: palette.muted,
-    fontSize: 11,
-    fontFamily: "Poppins_400Regular"
   },
   segmentRow: {
     flexDirection: "row",
