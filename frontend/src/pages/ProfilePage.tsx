@@ -45,6 +45,36 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
   const guideScrollRef = useRef(null);
   const webcamVideoRef = useRef(null);
 
+  const sanitizeProfilePictureUri = (uri) => {
+    const trimmed = typeof uri === "string" ? uri.trim() : "";
+    if (!trimmed) {
+      return "";
+    }
+    if (Platform.OS === "web" && trimmed.startsWith("blob:")) {
+      return "";
+    }
+    return trimmed;
+  };
+
+  const convertBlobUrlToDataUrl = async (uri) => {
+    const trimmed = typeof uri === "string" ? uri.trim() : "";
+    if (!trimmed || Platform.OS !== "web" || !trimmed.startsWith("blob:")) {
+      return trimmed;
+    }
+    try {
+      const response = await fetch(trimmed);
+      const blob = await response.blob();
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(typeof reader.result === "string" ? reader.result : trimmed);
+        reader.onerror = () => reject(new Error("Failed to read image blob"));
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return "";
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     const hydrate = async () => {
@@ -61,9 +91,13 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
       }
       try {
         const saved = await loadProfile(accountId, accountEmail);
+        const safeSaved = {
+          ...saved,
+          profilePicture: sanitizeProfilePictureUri(saved?.profilePicture),
+        };
         const syncedAt = await loadProfileLastSynced(accountId, accountEmail);
         if (mounted) {
-          setProfile(saved);
+          setProfile(safeSaved);
           setLastSyncedAt(syncedAt);
         }
       } catch (error) {
@@ -104,7 +138,9 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
     if (pickerResult.canceled || !pickerResult.assets?.length) {
       return;
     }
-    updateField("profilePicture", pickerResult.assets[0].uri || "");
+    const rawUri = pickerResult.assets[0].uri || "";
+    const persistableUri = await convertBlobUrlToDataUrl(rawUri);
+    updateField("profilePicture", persistableUri || "");
   };
 
   const takeProfileImage = async () => {
@@ -142,7 +178,9 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
     if (cameraResult.canceled || !cameraResult.assets?.length) {
       return;
     }
-    updateField("profilePicture", cameraResult.assets[0].uri || "");
+    const rawUri = cameraResult.assets[0].uri || "";
+    const persistableUri = await convertBlobUrlToDataUrl(rawUri);
+    updateField("profilePicture", persistableUri || "");
   };
 
   const closeWebcamModal = () => {
@@ -172,15 +210,8 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
       return;
     }
     context.drawImage(videoElement, 0, 0, width, height);
-    const blob = await new Promise((resolve) => {
-      canvas.toBlob((nextBlob) => resolve(nextBlob), "image/jpeg", 0.9);
-    });
-    if (!blob) {
-      setWebcamError("Unable to capture webcam image.");
-      return;
-    }
-    const objectUrl = URL.createObjectURL(blob);
-    updateField("profilePicture", objectUrl);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+    updateField("profilePicture", dataUrl || "");
     closeWebcamModal();
   };
 
@@ -299,7 +330,7 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
             <View style={styles.overviewStack}>
               <View style={styles.overviewHeader}>
                 {profile.profilePicture ? (
-                  <Image source={{ uri: profile.profilePicture }} style={styles.profileImage} />
+                  <Image source={{ uri: profile.profilePicture }} style={styles.profileImage} onError={() => updateField("profilePicture", "")} />
                 ) : (
                   <View style={styles.profileImageFallback}>
                     <Text style={styles.profileImageFallbackText}>{initials || "U"}</Text>
@@ -322,7 +353,7 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
                 <Text style={styles.label}>Profile picture</Text>
                 <View style={styles.photoRow}>
                   {profile.profilePicture ? (
-                    <Image source={{ uri: profile.profilePicture }} style={styles.settingsPhoto} />
+                    <Image source={{ uri: profile.profilePicture }} style={styles.settingsPhoto} onError={() => updateField("profilePicture", "")} />
                   ) : (
                     <View style={styles.settingsPhotoFallback}>
                       <Text style={styles.profileImageFallbackText}>{initials || "U"}</Text>
@@ -1017,4 +1048,3 @@ const styles = StyleSheet.create({
     ...typography.semibold
   }
 });
-

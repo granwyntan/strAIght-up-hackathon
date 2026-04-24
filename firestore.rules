@@ -45,6 +45,11 @@ service cloud.firestore {
       match /workout_plan/{taskId} {
         allow read, write: if isOwner(userId);
       }
+
+      // Investigation history stored at users/{userId}/investigation_history/{entryId}
+      match /investigation_history/{entryId} {
+        allow read, write: if isOwner(userId);
+      }
     }
   }
 }

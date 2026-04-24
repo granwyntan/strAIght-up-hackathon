@@ -38,6 +38,7 @@ function normalizeExerciseEntry(input) {
     duration: typeof source.duration === "string" ? source.duration.trim() : "",
     intensity: typeof source.intensity === "string" ? source.intensity.trim() : "",
     notes: typeof source.notes === "string" ? source.notes.trim() : "",
+    sourceRoutineTaskId: typeof source.sourceRoutineTaskId === "string" ? source.sourceRoutineTaskId.trim() : "",
     createdAt,
     date: typeof source.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(source.date) ? source.date : formatLocalIsoDate(new Date(createdAt))
   };
@@ -77,6 +78,7 @@ function toFirestoreRecord(entry) {
     duration: entry.duration,
     intensity: entry.intensity,
     notes: entry.notes,
+    source_routine_task_id: entry.sourceRoutineTaskId,
     created_at: entry.createdAt,
     date: entry.date
   };
@@ -89,6 +91,7 @@ function fromFirestoreRecord(id, data) {
     duration: data?.duration,
     intensity: data?.intensity,
     notes: data?.notes,
+    sourceRoutineTaskId: data?.source_routine_task_id,
     createdAt: data?.created_at,
     date: data?.date
   });
@@ -113,7 +116,8 @@ export async function loadExerciseEntries(accountId, accountEmail) {
 export async function addExerciseEntry(accountId, entry, accountEmail) {
   const next = normalizeExerciseEntry(entry);
   const existing = await loadLocalEntries(accountId);
-  await saveLocalEntries(accountId, [next, ...existing]);
+  const withoutDuplicateId = existing.filter((item) => item.id !== next.id);
+  await saveLocalEntries(accountId, [next, ...withoutDuplicateId]);
 
   const userId = toFirestoreUserId(accountEmail);
   if (!userId || !firestore) {

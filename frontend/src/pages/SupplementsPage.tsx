@@ -152,6 +152,58 @@ function analysisProgressValue(textStatus: "idle" | "waiting" | "generating" | "
   return 0;
 }
 
+function buildCenterCropRect(width: number, height: number, targetAspect = 4 / 3) {
+  const sourceAspect = width / height;
+  if (sourceAspect > targetAspect) {
+    const cropHeight = height;
+    const cropWidth = Math.round(height * targetAspect);
+    const originX = Math.round((width - cropWidth) / 2);
+    return { originX, originY: 0, width: cropWidth, height: cropHeight };
+  }
+  const cropWidth = width;
+  const cropHeight = Math.round(width / targetAspect);
+  const originY = Math.round((height - cropHeight) / 2);
+  return { originX: 0, originY, width: cropWidth, height: cropHeight };
+}
+
+async function cropWebAssetToCenter(asset: PickedSupplementAsset) {
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Unable to load image for cropping."));
+    img.src = asset.uri;
+  });
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  if (!width || !height) {
+    throw new Error("Unable to crop image.");
+  }
+  const crop = buildCenterCropRect(width, height, 4 / 3);
+  const canvas = document.createElement("canvas");
+  canvas.width = crop.width;
+  canvas.height = crop.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Unable to crop image.");
+  }
+  ctx.drawImage(image, crop.originX, crop.originY, crop.width, crop.height, 0, 0, crop.width, crop.height);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((nextBlob) => resolve(nextBlob), "image/jpeg", 0.95));
+  if (!blob) {
+    throw new Error("Unable to crop image.");
+  }
+  const filename = `supplement-crop-${Date.now()}.jpg`;
+  const file = new File([blob], filename, { type: "image/jpeg" });
+  const uri = URL.createObjectURL(blob);
+  return {
+    uri,
+    file,
+    fileName: filename,
+    mimeType: "image/jpeg",
+    width: crop.width,
+    height: crop.height,
+  } as PickedSupplementAsset;
+}
+
 export default function SupplementsPage({ requestApi, accountId, accountEmail, guideSignal = 0 }: SupplementsPageProps & { guideSignal?: number }) {
   const [selectedAsset, setSelectedAsset] = useState<PickedSupplementAsset | null>(null);
   const [conditions, setConditions] = useState(DEFAULT_CONDITIONS);
@@ -461,6 +513,25 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
     setSelectedHistoryEntryId("");
     setResult(null);
     closeWebcam();
+  }
+
+  async function cropSelectedImage() {
+    if (!selectedAsset || Platform.OS !== "web") {
+      return;
+    }
+    setError("");
+    try {
+      const cropped = await cropWebAssetToCenter(selectedAsset);
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+      }
+      objectUrlRef.current = cropped.uri;
+      setSelectedAsset(cropped);
+      setSelectedHistoryEntryId("");
+      setResult(null);
+    } catch (cropError) {
+      setError(cropError instanceof Error ? cropError.message : "Unable to crop image.");
+    }
   }
 
   async function analyzeSupplement() {
@@ -791,6 +862,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                 showCameraButton={Platform.OS !== "web"}
                 disableImageOptions={imageOptionsDisabled}
                 onClearImageSelection={clearImageSelection}
+                onCropImage={cropSelectedImage}
                 clearImageSelectionLabel="Clear image"
                 analyzeLabel="Analyze supplement"
                 onCaptureImage={captureImage}
@@ -1106,4 +1178,3 @@ const styles = StyleSheet.create({
     color: palette.muted,
   },
 });
-

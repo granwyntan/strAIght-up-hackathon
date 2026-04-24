@@ -97,6 +97,59 @@ function formatLocalIsoDate(date) {
   return `${year}-${month}-${day}`;
 }
 
+function buildCenterCropRect(width, height, targetAspect = 4 / 3) {
+  const sourceAspect = width / height;
+  if (sourceAspect > targetAspect) {
+    const cropHeight = height;
+    const cropWidth = Math.round(height * targetAspect);
+    const originX = Math.round((width - cropWidth) / 2);
+    return { originX, originY: 0, width: cropWidth, height: cropHeight };
+  }
+  const cropWidth = width;
+  const cropHeight = Math.round(width / targetAspect);
+  const originY = Math.round((height - cropHeight) / 2);
+  return { originX: 0, originY, width: cropWidth, height: cropHeight };
+}
+
+async function cropWebAssetToCenter(asset) {
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Unable to load image for cropping."));
+    img.src = asset.uri;
+  });
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  if (!width || !height) {
+    throw new Error("Unable to crop image.");
+  }
+
+  const crop = buildCenterCropRect(width, height, 4 / 3);
+  const canvas = document.createElement("canvas");
+  canvas.width = crop.width;
+  canvas.height = crop.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Unable to crop image.");
+  }
+  ctx.drawImage(image, crop.originX, crop.originY, crop.width, crop.height, 0, 0, crop.width, crop.height);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((nextBlob) => resolve(nextBlob), "image/jpeg", 0.95));
+  if (!blob) {
+    throw new Error("Unable to crop image.");
+  }
+  const filename = `meal-crop-${Date.now()}.jpg`;
+  const file = new File([blob], filename, { type: "image/jpeg" });
+  const uri = URL.createObjectURL(blob);
+  return {
+    uri,
+    file,
+    fileName: filename,
+    mimeType: "image/jpeg",
+    width: crop.width,
+    height: crop.height,
+  };
+}
+
 export default function CaloriesPage({ requestApi, accountId, accountEmail, guideSignal = 0 }) {
   const [values, setValues] = useState(DEFAULT_VALUES);
   const [selectedAsset, setSelectedAsset] = useState(null);
@@ -375,6 +428,24 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     });
     setResult(null);
     closeWebcam();
+  };
+
+  const cropSelectedImage = async () => {
+    if (!selectedAsset || Platform.OS !== "web") {
+      return;
+    }
+    setError("");
+    try {
+      const cropped = await cropWebAssetToCenter(selectedAsset);
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+      }
+      objectUrlRef.current = cropped.uri;
+      setSelectedAsset(cropped);
+      setResult(null);
+    } catch (cropError) {
+      setError(cropError instanceof Error ? cropError.message : "Unable to crop image.");
+    }
   };
 
   function inferCaloriesFromResult(nextResult) {
@@ -664,6 +735,8 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
             webcamEnabled={canUseWebcam}
             webcamActive={webcamActive}
             webcamError={webcamError}
+            cameraButtonLabel={canUseWebcam ? "Open webcam" : "Use camera"}
+            onCameraButtonPress={canUseWebcam ? openWebcam : captureImage}
             onOpenWebcam={openWebcam}
             onCaptureWebcam={captureWebcam}
             onCloseWebcam={closeWebcam}
@@ -671,6 +744,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
             webcamVideoRef={videoRef}
             selectedImageUri={selectedAsset?.uri || ""}
             selectedImageAspectRatio={selectedImageAspectRatio}
+            onCropImage={cropSelectedImage}
             onPickImage={pickImage}
             onSubmit={submit}
           />

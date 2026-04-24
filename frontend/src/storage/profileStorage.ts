@@ -34,6 +34,7 @@ function toFirestoreProfile(profile) {
   return {
     profile_picture: profile.profilePicture,
     name: profile.name,
+    age: profile.age,
     gender: profile.gender,
     height: profile.height,
     weight: profile.weight,
@@ -50,6 +51,7 @@ function fromFirestoreProfile(source) {
   return normalizeProfile({
     profilePicture: normalizeString(source?.profile_picture),
     name: normalizeString(source?.name),
+    age: normalizeString(source?.age),
     gender: normalizeString(source?.gender),
     height: normalizeString(source?.height),
     weight: normalizeString(source?.weight),

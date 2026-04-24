@@ -15,6 +15,7 @@ type ImageUploadProps = {
   showCameraButton?: boolean;
   disableImageOptions?: boolean;
   onClearImageSelection?: () => void;
+  onCropImage?: () => void;
   clearImageSelectionLabel?: string;
   analyzeLabel?: string;
   onCaptureImage: () => void;
@@ -34,6 +35,7 @@ export default function ImageUpload({
   showCameraButton = true,
   disableImageOptions = false,
   onClearImageSelection,
+  onCropImage,
   clearImageSelectionLabel = "Clear image",
   analyzeLabel = "Analyze supplement",
   onCaptureImage,
@@ -63,6 +65,11 @@ export default function ImageUpload({
           {onClearImageSelection ? (
             <Pressable className="self-start rounded-full border border-line bg-soft px-3 py-2" onPress={onClearImageSelection} disabled={loading}>
               <Text className="font-['Poppins_600SemiBold'] text-sage">{clearImageSelectionLabel}</Text>
+            </Pressable>
+          ) : null}
+          {onCropImage ? (
+            <Pressable className="self-start rounded-full border border-line bg-soft px-3 py-2" onPress={onCropImage} disabled={loading}>
+              <Text className="font-['Poppins_600SemiBold'] text-sage">Crop image</Text>
             </Pressable>
           ) : null}
         </View>

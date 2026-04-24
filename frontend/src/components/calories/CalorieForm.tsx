@@ -31,8 +31,11 @@ export default function CalorieForm({
   onCaptureWebcam,
   onCloseWebcam,
   webcamVideoRef,
+  cameraButtonLabel,
+  onCameraButtonPress,
   selectedImageUri,
   selectedImageAspectRatio,
+  onCropImage,
   onPickImage,
   onSubmit
 }) {
@@ -112,39 +115,39 @@ export default function CalorieForm({
         ))}
       </View>
 
-      {webcamEnabled ? (
+      <Pressable style={styles.pickButton} onPress={onCameraButtonPress || onCaptureImage} disabled={loading}>
+        <Text style={styles.pickButtonText}>{cameraButtonLabel || "Use camera"}</Text>
+      </Pressable>
+
+      {webcamEnabled && webcamActive ? (
         <View style={styles.webcamPanel}>
           <Text style={styles.label}>Camera</Text>
-          {webcamActive ? (
-            <>
-              <video ref={webcamVideoRef} autoPlay playsInline muted style={StyleSheet.flatten(styles.webcamVideo)} />
-              <View style={styles.webcamButtons}>
-                <Pressable style={styles.webcamPrimaryButton} onPress={onCaptureWebcam} disabled={loading}>
-                  <Text style={styles.webcamPrimaryText}>Capture</Text>
-                </Pressable>
-                <Pressable style={styles.webcamSecondaryButton} onPress={onCloseWebcam} disabled={loading}>
-                  <Text style={styles.webcamSecondaryText}>Close</Text>
-                </Pressable>
-              </View>
-            </>
-          ) : (
-            <Pressable style={styles.webcamPrimaryButton} onPress={onOpenWebcam} disabled={loading}>
-              <Text style={styles.webcamPrimaryText}>Open webcam</Text>
-            </Pressable>
-          )}
+          <>
+            <video ref={webcamVideoRef} autoPlay playsInline muted style={StyleSheet.flatten(styles.webcamVideo)} />
+            <View style={styles.webcamButtons}>
+              <Pressable style={styles.webcamPrimaryButton} onPress={onCaptureWebcam} disabled={loading}>
+                <Text style={styles.webcamPrimaryText}>Capture</Text>
+              </Pressable>
+              <Pressable style={styles.webcamSecondaryButton} onPress={onCloseWebcam} disabled={loading}>
+                <Text style={styles.webcamSecondaryText}>Close</Text>
+              </Pressable>
+            </View>
+          </>
           {webcamError ? <Text style={styles.errorText}>{webcamError}</Text> : null}
         </View>
       ) : null}
-
-      <Pressable style={styles.pickButton} onPress={onCaptureImage} disabled={loading}>
-        <Text style={styles.pickButtonText}>Use camera</Text>
-      </Pressable>
 
       <Pressable style={styles.pickButton} onPress={onPickImage} disabled={loading}>
         <Text style={styles.pickButtonText}>{selectedImageUri ? "Replace meal image" : "Choose meal image"}</Text>
       </Pressable>
 
       {selectedImageUri ? <Image source={{ uri: selectedImageUri }} style={[styles.previewImage, { aspectRatio: selectedImageAspectRatio || 1.4 }]} resizeMode="contain" /> : null}
+
+      {selectedImageUri && onCropImage ? (
+        <Pressable style={styles.pickButton} onPress={onCropImage} disabled={loading}>
+          <Text style={styles.pickButtonText}>Crop image</Text>
+        </Pressable>
+      ) : null}
 
       <Pressable style={[styles.submitButton, (loading || !selectedImageUri) && styles.submitButtonDisabled]} onPress={onSubmit} disabled={loading || !selectedImageUri}>
         {loading ? <ActivityIndicator color={palette.surface} size="small" /> : <Text style={styles.submitButtonText}>Calculate calories</Text>}

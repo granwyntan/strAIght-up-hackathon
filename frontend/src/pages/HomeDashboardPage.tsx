@@ -6,8 +6,9 @@ import { Avatar, Button, Card, Chip, IconButton, SegmentedButtons, Text, TextInp
 
 import { palette, type AppTab, type InvestigationSummary } from "../data";
 import ToolHeader from "../components/shared/ToolHeader";
+import TutorialSheet from "../components/shared/TutorialSheet";
 import { loadProfile, saveProfile } from "../storage/profileStorage";
-import { formatLocalIsoDate, loadHomeVitals, saveHomeVitalForDate } from "../storage/homeVitalsStorage";
+import { formatLocalIsoDate, loadHomeVitals, refreshHomeVitalsFromFirestore, saveHomeVitalForDate } from "../storage/homeVitalsStorage";
 import { loadCalorieWeek } from "../storage/calorieTrackerStorage";
 import { addExerciseEntry, deleteExerciseEntry, loadExerciseEntries, updateExerciseEntry } from "../storage/exerciseStorage";
 import { loadWorkoutTasks, replaceWorkoutTasks, setWorkoutTaskCompleted } from "../storage/workoutRoutineStorage";
@@ -21,6 +22,24 @@ const metricDefinitions = [
 ] as const;
 
 const intensityOptions = ["Easy", "Medium", "Hard", "Max effort"] as const;
+const EXERCISE_GUIDE_PAGES = [
+  {
+    title: "Welcome to the exercise tracker",
+    body: "Track your completed exercises each day and keep your records organized.",
+  },
+  {
+    title: "Use + to add completed exercises",
+    body: "Tap the + button to add an exercise that you have completed for today.",
+  },
+  {
+    title: "Use * to suggest routines",
+    body: "Tap the * button to generate exercise routines tailored to your profile and goals.",
+  },
+  {
+    title: "Manage your current routine",
+    body: "Your active routine appears below. Edit it anytime, and completed routine items can be checked off and added into today’s exercise tracker.",
+  },
+];
 
 type WorkoutTask = {
   id: string;
@@ -51,6 +70,14 @@ type WorkoutSuggestion = {
 
 function safeTrim(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function capitalizeWorkoutType(value: string) {
+  const trimmed = safeTrim(value);
+  if (!trimmed) {
+    return "Workout";
+  }
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
 }
 
 function pad(value: number) {
@@ -170,7 +197,6 @@ export default function HomeDashboardPage({
   history,
   accountId,
   accountEmail,
-  onOpenInvestigate,
   onOpenHistory,
   onOpenTab,
   requestApi,
@@ -178,7 +204,6 @@ export default function HomeDashboardPage({
   history: InvestigationSummary[];
   accountId?: string;
   accountEmail?: string;
-  onOpenInvestigate: () => void;
   onOpenHistory: (id: string) => void;
   onOpenTab: (tab: AppTab) => void;
   requestApi: (path: string, init?: RequestInit) => Promise<Response>;
@@ -219,7 +244,7 @@ export default function HomeDashboardPage({
   const [mealEntries, setMealEntries] = useState<Array<{ id: string; mealName: string; calories: number; date: string; createdAt: string }>>([]);
   const [loadingMeals, setLoadingMeals] = useState(true);
 
-  const [exerciseEntries, setExerciseEntries] = useState<Array<{ id: string; title: string; duration: string; intensity: string; notes: string; createdAt: string; date: string }>>(
+  const [exerciseEntries, setExerciseEntries] = useState<Array<{ id: string; title: string; duration: string; intensity: string; notes: string; sourceRoutineTaskId?: string; createdAt: string; date: string }>>(
     []
   );
   const [loadingExercises, setLoadingExercises] = useState(true);
@@ -249,6 +274,19 @@ export default function HomeDashboardPage({
   const [routineDescriptionDraft, setRoutineDescriptionDraft] = useState("");
   const [routineSaving, setRoutineSaving] = useState(false);
   const [expandedRoutineId, setExpandedRoutineId] = useState("");
+  const [exerciseGuideVisible, setExerciseGuideVisible] = useState(false);
+  const [manualRoutineModalVisible, setManualRoutineModalVisible] = useState(false);
+  const [manualRoutineTitle, setManualRoutineTitle] = useState("");
+  const [manualRoutineError, setManualRoutineError] = useState("");
+  const [routineExerciseModalVisible, setRoutineExerciseModalVisible] = useState(false);
+  const [targetRoutineTitle, setTargetRoutineTitle] = useState("");
+  const [routineExerciseTitle, setRoutineExerciseTitle] = useState("");
+  const [routineExerciseDuration, setRoutineExerciseDuration] = useState("");
+  const [routineExerciseIntensity, setRoutineExerciseIntensity] = useState("");
+  const [routineExerciseNotes, setRoutineExerciseNotes] = useState("");
+  const [routineTitleEditVisible, setRoutineTitleEditVisible] = useState(false);
+  const [editingRoutineTitle, setEditingRoutineTitle] = useState("");
+  const [routineTitleDraft, setRoutineTitleDraft] = useState("");
 
   const syncProfileMedicationNames = async (
     medicationsToSync: Array<{ name: string }>
@@ -279,9 +317,25 @@ export default function HomeDashboardPage({
       setLoadingMeals(true);
       setLoadingExercises(true);
       setLoadingRoutineTasks(true);
+
       try {
-        const [vitals, weekPayload, exercises, workoutTasks, profile] = await Promise.all([
-          loadHomeVitals(accountId, accountEmail),
+        const localVitals = await loadHomeVitals(accountId, "");
+        if (mounted) {
+          setVitalsMap((localVitals || {}) as Record<string, Record<string, string>>);
+          setLoadingVitals(false);
+        }
+
+        void refreshHomeVitalsFromFirestore(accountId, accountEmail)
+          .then((syncedVitals) => {
+            if (mounted && syncedVitals) {
+              setVitalsMap(syncedVitals as Record<string, Record<string, string>>);
+            }
+          })
+          .catch(() => {
+            // Best effort sync only.
+          });
+
+        const [weekPayload, exercises, workoutTasks, profile] = await Promise.all([
           loadCalorieWeek(accountId, new Date(), accountEmail),
           loadExerciseEntries(accountId, accountEmail),
           loadWorkoutTasks(accountId, accountEmail),
@@ -293,7 +347,6 @@ export default function HomeDashboardPage({
           return;
         }
 
-        setVitalsMap((vitals || {}) as Record<string, Record<string, string>>);
         const allMeals = Array.isArray(weekPayload?.entries) ? weekPayload.entries : [];
         setMealEntries(
           allMeals
@@ -375,6 +428,17 @@ export default function HomeDashboardPage({
       }),
     [routineTasks]
   );
+  const groupedRoutineTasks = useMemo(() => {
+    const groups = new Map<string, WorkoutTask[]>();
+    for (const task of sortedRoutineTasks) {
+      const title = safeTrim(task.routineTitle) || "Personal routine";
+      if (!groups.has(title)) {
+        groups.set(title, []);
+      }
+      groups.get(title)?.push(task);
+    }
+    return Array.from(groups.entries()).map(([title, tasks]) => ({ title, tasks }));
+  }, [sortedRoutineTasks]);
 
   const openMetricEditor = (metricKey: (typeof metricDefinitions)[number]["key"]) => {
     setActiveMetricKey(metricKey);
@@ -495,6 +559,22 @@ export default function HomeDashboardPage({
     setRoutineModalVisible(true);
   };
 
+  const openManualRoutineModal = () => {
+    setManualRoutineTitle("");
+    setManualRoutineError("");
+    setManualRoutineModalVisible(true);
+  };
+
+  const openRoutineExerciseCreate = (routineTitle: string) => {
+    setTargetRoutineTitle(safeTrim(routineTitle) || "Personal routine");
+    setRoutineExerciseTitle("");
+    setRoutineExerciseDuration("");
+    setRoutineExerciseIntensity("");
+    setRoutineExerciseNotes("");
+    setRoutineError("");
+    setRoutineExerciseModalVisible(true);
+  };
+
   const generateRoutine = async () => {
     setRoutineLoading(true);
     setRoutineError("");
@@ -540,7 +620,7 @@ export default function HomeDashboardPage({
       const nextTasks: WorkoutTask[] = selectedExercises.map((exercise, index) => ({
         id: `routine-${Date.now()}-${index + 1}`,
         routineTitle: suggestedRoutine.routineTitle,
-        type: safeTrim(exercise.type) || "Workout",
+        type: capitalizeWorkoutType(exercise.type),
         duration: safeTrim(exercise.duration) || "30 min",
         intensity: safeTrim(exercise.intensity) || "medium",
         description: safeTrim(exercise.description),
@@ -568,13 +648,19 @@ export default function HomeDashboardPage({
       const updated = await setWorkoutTaskCompleted(accountId, task.id, completed, accountEmail);
       setRoutineTasks(updated as WorkoutTask[]);
       if (completed) {
+        const alreadyLoggedToday = exerciseEntries.some((entry) => safeTrim(entry.sourceRoutineTaskId) === task.id && entry.date === todayDate);
+        if (alreadyLoggedToday) {
+          return;
+        }
         const created = await addExerciseEntry(
           accountId,
           {
+            id: `routine-complete-${task.id}-${todayDate}`,
             title: task.type,
             duration: task.duration,
             intensity: task.intensity,
             notes: task.description,
+            sourceRoutineTaskId: task.id,
             date: todayDate,
             createdAt: new Date().toISOString(),
           },
@@ -598,7 +684,7 @@ export default function HomeDashboardPage({
   };
 
   const saveRoutineEdit = async () => {
-    const type = safeTrim(routineTypeDraft);
+    const type = capitalizeWorkoutType(routineTypeDraft);
     const duration = safeTrim(routineDurationDraft);
     const intensity = safeTrim(routineIntensityDraft);
     const description = safeTrim(routineDescriptionDraft);
@@ -641,6 +727,98 @@ export default function HomeDashboardPage({
       }
     } catch (error) {
       setRoutineError(error instanceof Error ? error.message : "Unable to delete routine item.");
+    }
+  };
+
+  const openRoutineTitleEdit = (title: string) => {
+    setEditingRoutineTitle(title);
+    setRoutineTitleDraft(title);
+    setRoutineError("");
+    setRoutineTitleEditVisible(true);
+  };
+
+  const saveRoutineTitleEdit = async () => {
+    const currentTitle = safeTrim(editingRoutineTitle);
+    const nextTitle = safeTrim(routineTitleDraft);
+    if (!currentTitle || !nextTitle) {
+      setRoutineError("Routine title is required.");
+      return;
+    }
+    setRoutineSaving(true);
+    setRoutineError("");
+    try {
+      const updatedTasks = routineTasks.map((task) =>
+        safeTrim(task.routineTitle) === currentTitle
+          ? {
+              ...task,
+              routineTitle: nextTitle,
+            }
+          : task
+      );
+      const saved = await replaceWorkoutTasks(accountId, updatedTasks, accountEmail);
+      setRoutineTasks(saved);
+      setRoutineTitleEditVisible(false);
+      setEditingRoutineTitle("");
+      setRoutineTitleDraft("");
+    } catch (error) {
+      setRoutineError(error instanceof Error ? error.message : "Unable to rename routine.");
+    } finally {
+      setRoutineSaving(false);
+    }
+  };
+
+  const deleteRoutineGroup = async (title: string) => {
+    try {
+      const nextTasks = routineTasks.filter((task) => safeTrim(task.routineTitle) !== safeTrim(title));
+      const saved = await replaceWorkoutTasks(accountId, nextTasks, accountEmail);
+      setRoutineTasks(saved);
+    } catch (error) {
+      setRoutineError(error instanceof Error ? error.message : "Unable to delete routine.");
+    }
+  };
+
+  const saveManualRoutineExercise = async () => {
+    const routineTitle = safeTrim(manualRoutineTitle) || "Personal routine";
+    if (!routineTitle) {
+      setManualRoutineError("Routine title is required.");
+      return;
+    }
+    setManualRoutineModalVisible(false);
+    openRoutineExerciseCreate(routineTitle);
+  };
+
+  const saveRoutineExercise = async () => {
+    const routineTitle = safeTrim(targetRoutineTitle) || "Personal routine";
+    const type = capitalizeWorkoutType(routineExerciseTitle);
+    const duration = safeTrim(routineExerciseDuration);
+    const intensity = safeTrim(routineExerciseIntensity);
+    const description = safeTrim(routineExerciseNotes);
+    if (!type || !duration || !intensity) {
+      setRoutineError("Please fill exercise, duration, and intensity.");
+      return;
+    }
+    setRoutineSaving(true);
+    setRoutineError("");
+    try {
+      const nextTask: WorkoutTask = {
+        id: `routine-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        routineTitle,
+        type,
+        duration,
+        intensity,
+        description,
+        dueDate: todayDate,
+        completed: false,
+        completedAt: "",
+        createdAt: new Date().toISOString(),
+      };
+      const saved = await replaceWorkoutTasks(accountId, [nextTask, ...routineTasks], accountEmail);
+      setRoutineTasks(saved);
+      setRoutineExerciseModalVisible(false);
+    } catch (error) {
+      setRoutineError(error instanceof Error ? error.message : "Unable to add routine exercise.");
+    } finally {
+      setRoutineSaving(false);
     }
   };
 
@@ -734,15 +912,6 @@ export default function HomeDashboardPage({
         subtitle="Keep health data, meals, medications, exercise, routines, and investigations in one place."
       />
 
-      <View style={styles.segmentRow}>
-        <Pressable style={styles.segmentButton} onPress={onOpenInvestigate}>
-          <Text style={styles.segmentText}>New Investigation</Text>
-        </Pressable>
-        <Pressable style={styles.segmentButton} onPress={() => onOpenTab("profile")}>
-          <Text style={styles.segmentText}>Health Profile</Text>
-        </Pressable>
-      </View>
-
       <SectionHeader
         eyebrow="Dashboard"
         title="Today at a glance"
@@ -784,15 +953,24 @@ export default function HomeDashboardPage({
         title="Meals log"
         body="Synced with your daily calorie entries."
         trailing={
-          accountId && accountEmail ? (
-            <Chip compact icon="fire" style={styles.summaryChip}>
-              {todaysCalories}/{dailyCalorieTarget ?? "--"} kcal
-            </Chip>
-          ) : (
-            <Chip compact icon="fire" style={styles.summaryChip}>
-              {todaysCalories} kcal
-            </Chip>
-          )
+          <View style={styles.headerActionRow}>
+            <IconButton
+              icon="plus"
+              containerColor={palette.primarySoft}
+              iconColor={palette.primary}
+              onPress={() => onOpenTab("nutrition")}
+              accessibilityLabel="Open nutrition page"
+            />
+            {accountId && accountEmail ? (
+              <Chip compact icon="fire" style={styles.summaryChip}>
+                {todaysCalories}/{dailyCalorieTarget ?? "--"} kcal
+              </Chip>
+            ) : (
+              <Chip compact icon="fire" style={styles.summaryChip}>
+                {todaysCalories} kcal
+              </Chip>
+            )}
+          </View>
         }
       />
       <Card mode="contained" style={styles.sectionCard}>
@@ -900,6 +1078,13 @@ export default function HomeDashboardPage({
               onPress={() => void openRoutineModal()}
               accessibilityLabel="Generate routine with star button"
             />
+            <IconButton
+              icon="help-circle-outline"
+              containerColor={palette.primarySoft}
+              iconColor={palette.primary}
+              onPress={() => setExerciseGuideVisible(true)}
+              accessibilityLabel="Exercise tracker guide"
+            />
           </View>
         }
       />
@@ -955,6 +1140,15 @@ export default function HomeDashboardPage({
         eyebrow="Routine"
         title="Routine tracker"
         body="Generated routines are listed here and can be edited or deleted."
+        trailing={
+          <IconButton
+            icon="plus"
+            containerColor={palette.primarySoft}
+            iconColor={palette.primary}
+            onPress={openManualRoutineModal}
+            accessibilityLabel="Create routine manually"
+          />
+        }
       />
       <Card mode="contained" style={styles.sectionCard}>
         <Card.Content style={styles.cardStack}>
@@ -967,40 +1161,65 @@ export default function HomeDashboardPage({
             <Text variant="bodyMedium" style={styles.sectionBody}>
               Loading routine tasks...
             </Text>
-          ) : sortedRoutineTasks.length > 0 ? (
-            sortedRoutineTasks.map((task) => {
-              const expanded = expandedRoutineId === task.id;
-              return (
-                <Card key={task.id} mode="contained" style={styles.logItemCard}>
-                  <Card.Content style={styles.cardStack}>
-                    <View style={styles.rowBetween}>
-                      <Pressable style={styles.flexOne} onPress={() => setExpandedRoutineId(expanded ? "" : task.id)}>
-                        <Text variant="titleMedium" style={[styles.linkTitle, task.completed && styles.completedText]}>
-                          {task.type || "Workout"}
-                        </Text>
-                        <Text variant="bodySmall" style={styles.sectionBody}>
-                          {task.duration || "--"} • {task.intensity || "medium"} • due {task.dueDate || todayDate}
-                        </Text>
-                      </Pressable>
-                      <View style={styles.actionRow}>
-                        <IconButton
-                          icon={task.completed ? "checkbox-marked-circle-outline" : "checkbox-blank-circle-outline"}
-                          size={20}
-                          onPress={() => void toggleRoutineCompleted(task)}
-                        />
-                        <IconButton icon="pencil-outline" size={18} onPress={() => openRoutineEdit(task)} />
-                        <IconButton icon="delete-outline" size={18} onPress={() => void deleteRoutineTask(task.id)} />
-                      </View>
-                    </View>
-                    {expanded ? (
-                      <Text variant="bodySmall" style={styles.sectionBody}>
-                        {safeTrim(task.description) || "No routine notes."}
+          ) : groupedRoutineTasks.length > 0 ? (
+            groupedRoutineTasks.map((group) => (
+              <Card key={group.title} mode="contained" style={styles.logItemCard}>
+                <Card.Content style={styles.cardStack}>
+                  <View style={styles.rowBetween}>
+                    <View style={styles.rowAlignCenter}>
+                      <IconButton
+                        icon="plus"
+                        size={18}
+                        containerColor={palette.primarySoft}
+                        iconColor={palette.primary}
+                        onPress={() => openRoutineExerciseCreate(group.title)}
+                        accessibilityLabel={`Add exercise to ${group.title}`}
+                      />
+                      <Text variant="titleMedium" style={styles.linkTitle}>
+                        {group.title}
                       </Text>
-                    ) : null}
-                  </Card.Content>
-                </Card>
-              );
-            })
+                    </View>
+                    <View style={styles.actionRow}>
+                      <IconButton icon="pencil-outline" size={18} onPress={() => openRoutineTitleEdit(group.title)} />
+                      <IconButton icon="delete-outline" size={18} onPress={() => void deleteRoutineGroup(group.title)} />
+                    </View>
+                  </View>
+                  {group.tasks.map((task) => {
+                    const expanded = expandedRoutineId === task.id;
+                    return (
+                      <Card key={task.id} mode="contained" style={styles.logItemCard}>
+                        <Card.Content style={styles.cardStack}>
+                          <View style={styles.rowBetween}>
+                            <Pressable style={styles.flexOne} onPress={() => setExpandedRoutineId(expanded ? "" : task.id)}>
+                              <Text variant="titleMedium" style={[styles.linkTitle, task.completed && styles.completedText]}>
+                                {capitalizeWorkoutType(task.type)}
+                              </Text>
+                              <Text variant="bodySmall" style={styles.sectionBody}>
+                                {task.duration || "--"} • {task.intensity || "medium"} • due {task.dueDate || todayDate}
+                              </Text>
+                            </Pressable>
+                            <View style={styles.actionRow}>
+                              <IconButton
+                                icon={task.completed ? "checkbox-marked-circle-outline" : "checkbox-blank-circle-outline"}
+                                size={20}
+                                onPress={() => void toggleRoutineCompleted(task)}
+                              />
+                              <IconButton icon="pencil-outline" size={18} onPress={() => openRoutineEdit(task)} />
+                              <IconButton icon="delete-outline" size={18} onPress={() => void deleteRoutineTask(task.id)} />
+                            </View>
+                          </View>
+                          {expanded ? (
+                            <Text variant="bodySmall" style={styles.sectionBody}>
+                              {safeTrim(task.description) || "No routine notes."}
+                            </Text>
+                          ) : null}
+                        </Card.Content>
+                      </Card>
+                    );
+                  })}
+                </Card.Content>
+              </Card>
+            ))
           ) : (
             <Text variant="bodyMedium" style={styles.sectionBody}>
               No routine saved yet. Tap the * button to generate one.
@@ -1126,7 +1345,7 @@ export default function HomeDashboardPage({
                   onValueChange={setExerciseIntensity}
                   buttons={intensityOptions.map((item) => ({ value: item, label: item }))}
                 />
-                <TextInput mode="outlined" label="Personal notes" value={exerciseNotes} onChangeText={setExerciseNotes} multiline />
+                <TextInput mode="outlined" label="Personal notes (optional)" value={exerciseNotes} onChangeText={setExerciseNotes} multiline />
                 {exerciseError ? (
                   <Text variant="bodySmall" style={styles.errorText}>
                     {exerciseError}
@@ -1144,7 +1363,7 @@ export default function HomeDashboardPage({
       <Modal visible={routineModalVisible} transparent animationType="fade" onRequestClose={() => setRoutineModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap}>
-            <Card mode="contained" style={styles.historyModalCard}>
+            <Card mode="contained" style={styles.routineModalCard}>
               <Card.Content style={styles.cardStack}>
                 <View style={styles.rowBetween}>
                   <Text variant="titleLarge" style={styles.formTitle}>
@@ -1152,7 +1371,7 @@ export default function HomeDashboardPage({
                   </Text>
                   <IconButton icon="close" onPress={() => setRoutineModalVisible(false)} />
                 </View>
-                <ScrollView style={styles.scrollBlock} contentContainerStyle={styles.cardStack} keyboardShouldPersistTaps="handled">
+                <ScrollView style={styles.routineScrollBlock} contentContainerStyle={styles.cardStack} keyboardShouldPersistTaps="handled">
                   <View style={styles.rowGapTop}>
                     <TextInput mode="outlined" label="Age" value={routineForm.age} onChangeText={(value) => setRoutineForm((current) => ({ ...current, age: value }))} style={styles.compactInput} />
                     <TextInput
@@ -1190,7 +1409,7 @@ export default function HomeDashboardPage({
                             <Pressable key={`${exercise.type}-${index}`} onPress={() => toggleSuggestedExercise(index)} style={styles.rowBetween}>
                               <View style={styles.flexOne}>
                                 <Text variant="titleSmall" style={styles.linkTitle}>
-                                  {exercise.type} • {exercise.duration}
+                                  {capitalizeWorkoutType(exercise.type)} • {exercise.duration}
                                 </Text>
                                 <Text variant="bodySmall" style={styles.sectionBody}>
                                   {exercise.intensity} • {exercise.description || "No notes"}
@@ -1273,6 +1492,89 @@ export default function HomeDashboardPage({
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      <Modal visible={routineTitleEditVisible} transparent animationType="fade" onRequestClose={() => setRoutineTitleEditVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap}>
+            <Card mode="contained" style={styles.modalCard}>
+              <Card.Content style={styles.cardStack}>
+                <View style={styles.rowBetween}>
+                  <Text variant="titleLarge" style={styles.formTitle}>
+                    Edit routine name
+                  </Text>
+                  <IconButton icon="close" onPress={() => setRoutineTitleEditVisible(false)} />
+                </View>
+                <TextInput mode="outlined" label="Routine title" value={routineTitleDraft} onChangeText={setRoutineTitleDraft} />
+                <Button mode="contained" onPress={() => void saveRoutineTitleEdit()} loading={routineSaving} disabled={routineSaving}>
+                  Save routine name
+                </Button>
+              </Card.Content>
+            </Card>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <Modal visible={manualRoutineModalVisible} transparent animationType="fade" onRequestClose={() => setManualRoutineModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap}>
+            <Card mode="contained" style={styles.modalCard}>
+              <Card.Content style={styles.cardStack}>
+                <View style={styles.rowBetween}>
+                  <Text variant="titleLarge" style={styles.formTitle}>
+                    Create routine
+                  </Text>
+                  <IconButton icon="close" onPress={() => setManualRoutineModalVisible(false)} />
+                </View>
+                <TextInput mode="outlined" label="Routine title" value={manualRoutineTitle} onChangeText={setManualRoutineTitle} placeholder="e.g. Fat loss plan" />
+                {manualRoutineError ? (
+                  <Text variant="bodySmall" style={styles.errorText}>
+                    {manualRoutineError}
+                  </Text>
+                ) : null}
+                <Button mode="contained" onPress={() => void saveManualRoutineExercise()} loading={routineSaving} disabled={routineSaving}>
+                  Continue
+                </Button>
+              </Card.Content>
+            </Card>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <Modal visible={routineExerciseModalVisible} transparent animationType="fade" onRequestClose={() => setRoutineExerciseModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap}>
+            <Card mode="contained" style={styles.modalCard}>
+              <Card.Content style={styles.cardStack}>
+                <View style={styles.rowBetween}>
+                  <Text variant="titleLarge" style={styles.formTitle}>
+                    Add routine exercise
+                  </Text>
+                  <IconButton icon="close" onPress={() => setRoutineExerciseModalVisible(false)} />
+                </View>
+                <TextInput mode="outlined" label="Routine title" value={targetRoutineTitle} onChangeText={setTargetRoutineTitle} />
+                <TextInput mode="outlined" label="Exercise" value={routineExerciseTitle} onChangeText={setRoutineExerciseTitle} />
+                <TextInput mode="outlined" label="Duration" value={routineExerciseDuration} onChangeText={setRoutineExerciseDuration} />
+                <SegmentedButtons
+                  value={routineExerciseIntensity}
+                  onValueChange={setRoutineExerciseIntensity}
+                  buttons={intensityOptions.map((item) => ({ value: item, label: item }))}
+                />
+                <TextInput mode="outlined" label="Description (optional)" value={routineExerciseNotes} onChangeText={setRoutineExerciseNotes} multiline />
+                {routineError ? (
+                  <Text variant="bodySmall" style={styles.errorText}>
+                    {routineError}
+                  </Text>
+                ) : null}
+                <Button mode="contained" onPress={() => void saveRoutineExercise()} loading={routineSaving} disabled={routineSaving}>
+                  Add to routine
+                </Button>
+              </Card.Content>
+            </Card>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <TutorialSheet visible={exerciseGuideVisible} title="Exercise tracker guide" pages={EXERCISE_GUIDE_PAGES} onClose={() => setExerciseGuideVisible(false)} />
     </View>
   );
 }
@@ -1416,6 +1718,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 10,
   },
+  rowAlignCenter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+    minWidth: 0,
+  },
   rowBetweenStart: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1512,12 +1821,24 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     backgroundColor: palette.surface,
   },
+  routineModalCard: {
+    width: "100%",
+    maxWidth: 760,
+    maxHeight: "92%",
+    borderRadius: 16,
+    borderWidth: softBorderWidth,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+  },
   formTitle: {
     color: palette.text,
     fontFamily: "Poppins_700Bold",
   },
   scrollBlock: {
     maxHeight: 480,
+  },
+  routineScrollBlock: {
+    maxHeight: 640,
   },
   compactInput: {
     flex: 1,

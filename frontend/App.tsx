@@ -71,6 +71,14 @@ import HomeDashboardPage from "./src/pages/HomeDashboardPage";
 import SectionTabs from "./src/components/shared/SectionTabs";
 import TutorialSheet from "./src/components/shared/TutorialSheet";
 import { getActiveSessionAccount, loginOrRegisterAccount, logoutActiveSession, subscribeToActiveSession } from "./src/storage/accountStorage";
+import { loadCalorieWeek } from "./src/storage/calorieTrackerStorage";
+import { loadExerciseEntries } from "./src/storage/exerciseStorage";
+import { loadHomeVitals } from "./src/storage/homeVitalsStorage";
+import { clearInvestigationHistory, loadInvestigationHistory, removeInvestigationHistoryItem, replaceInvestigationHistory, upsertInvestigationHistoryItem } from "./src/storage/investigationHistoryStorage";
+import { loadMedicationEntries } from "./src/storage/medicationStorage";
+import { loadProfile } from "./src/storage/profileStorage";
+import { loadSupplementHistory } from "./src/storage/supplementSearchStorage";
+import { loadWorkoutTasks } from "./src/storage/workoutRoutineStorage";
 import { formatDisplayDateTime } from "./src/utils/dateTime";
 
 const BASE_SCREEN_WIDTH = 390;
@@ -944,6 +952,24 @@ function GramwinApp() {
   }, []);
 
   useEffect(() => {
+    void loadHistory();
+    const accountId = activeAccount?.id;
+    const accountEmail = activeAccount?.email;
+    void Promise.all([
+      loadProfile(accountId, accountEmail),
+      loadHomeVitals(accountId, accountEmail),
+      loadCalorieWeek(accountId, new Date(), accountEmail),
+      loadExerciseEntries(accountId, accountEmail),
+      loadWorkoutTasks(accountId, accountEmail),
+      loadMedicationEntries(accountId, accountEmail),
+      loadSupplementHistory(accountId, accountEmail),
+      loadInvestigationHistory(accountId, accountEmail),
+    ]).catch(() => {
+      // Preload is best-effort only.
+    });
+  }, [activeAccount?.id, activeAccount?.email]);
+
+  useEffect(() => {
     if (!liveInvestigation || !isRunning(liveInvestigation.status)) {
       return;
     }
@@ -1193,16 +1219,19 @@ function GramwinApp() {
     }
   }
 
-  async function loadHistory(showSpinner = true) {
+  async function loadHistory(showSpinner = true, accountIdOverride?: string, accountEmailOverride?: string) {
     if (showSpinner) {
       setLoadingHistory(true);
     }
+    const accountId = accountIdOverride ?? activeAccount?.id;
+    const accountEmail = accountEmailOverride ?? activeAccount?.email;
     try {
       const response = await requestApi("/api/investigations");
       if (!response.ok) {
         throw new Error("History failed");
       }
       const payload = (await response.json()) as InvestigationCollection;
+      await replaceInvestigationHistory(accountId, payload.items, accountEmail);
       setHistory(payload.items);
       setHistoryOrder((current) => {
         const next = payload.items.map((item) => item.id);
@@ -1213,9 +1242,16 @@ function GramwinApp() {
       setPinnedIds((current) => current.filter((id) => payload.items.some((item) => item.id === id)));
       setComparisonIds((current) => current.filter((id) => payload.items.some((item) => item.id === id)));
     } catch {
-      if (showSpinner) {
-        setHistory([]);
-      }
+      const fallback = await loadInvestigationHistory(accountId, accountEmail);
+      setHistory(fallback);
+      setHistoryOrder((current) => {
+        const next = fallback.map((item) => item.id);
+        const preserved = current.filter((id) => next.includes(id));
+        const additions = next.filter((id) => !preserved.includes(id));
+        return [...preserved, ...additions];
+      });
+      setPinnedIds((current) => current.filter((id) => fallback.some((item) => item.id === id)));
+      setComparisonIds((current) => current.filter((id) => fallback.some((item) => item.id === id)));
     } finally {
       if (showSpinner) {
         setLoadingHistory(false);
@@ -1395,6 +1431,7 @@ function GramwinApp() {
         setHistorySheetDetail(pending.historySheetDetail);
         setHistorySheetVisible(true);
       }
+      void upsertInvestigationHistoryItem(pending.item, activeAccount?.id, activeAccount?.email);
       setSnackbar({ visible: true, message: "Delete failed" });
     }
   }
@@ -1429,6 +1466,7 @@ function GramwinApp() {
       setHistorySheetDetail(pending.historySheetDetail);
       setHistorySheetVisible(true);
     }
+    void upsertInvestigationHistoryItem(pending.item, activeAccount?.id, activeAccount?.email);
     setSnackbar({ visible: true, message: "Deletion undone" });
   }
 
@@ -1455,6 +1493,7 @@ function GramwinApp() {
     setHistoryOrder((current) => current.filter((itemId) => itemId !== id));
     setPinnedIds((current) => current.filter((itemId) => itemId !== id));
     setComparisonIds((current) => current.filter((itemId) => itemId !== id));
+    void removeInvestigationHistoryItem(id, activeAccount?.id, activeAccount?.email);
     if (liveInvestigation?.id === id) {
       setLiveInvestigation(null);
     }
@@ -1508,6 +1547,7 @@ function GramwinApp() {
       if (!response.ok) {
         throw new Error(await readApiError(response, "Could not clear history."));
       }
+      await clearInvestigationHistory(activeAccount?.id, activeAccount?.email);
       setHistory([]);
       setHistoryOrder([]);
       setPinnedIds([]);
@@ -1517,6 +1557,18 @@ function GramwinApp() {
       setHistorySheetDetail(null);
       setSnackbar({ visible: true, message: "History cleared" });
     } catch {
+      if (!activeAccount?.id) {
+        await clearInvestigationHistory(activeAccount?.id, activeAccount?.email);
+        setHistory([]);
+        setHistoryOrder([]);
+        setPinnedIds([]);
+        setComparisonIds([]);
+        setLiveInvestigation(null);
+        setHistorySheetVisible(false);
+        setHistorySheetDetail(null);
+        setSnackbar({ visible: true, message: "Local history cleared" });
+        return;
+      }
       setSnackbar({ visible: true, message: "Could not clear history" });
     }
   }
@@ -1620,6 +1672,7 @@ function GramwinApp() {
   }
 
   function upsertHistoryItem(item: InvestigationSummary, appendToManualOrder: boolean) {
+    void upsertInvestigationHistoryItem(item, activeAccount?.id, activeAccount?.email);
     setHistory((current) => {
       const index = current.findIndex((entry) => entry.id === item.id);
       if (index === -1) {
@@ -1693,10 +1746,6 @@ function GramwinApp() {
             history={history}
             accountId={activeAccount?.id}
             accountEmail={activeAccount?.email}
-            onOpenInvestigate={() => {
-              setConsultantView("investigate");
-              setActiveTab("consultant");
-            }}
             onOpenHistory={(id) => void openHistorySheet(id)}
             onOpenTab={setActiveTab}
             requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000)}
@@ -1873,12 +1922,10 @@ function ToolHeader({
 
 function HomeScreen({
   history,
-  onOpenInvestigate,
   onOpenHistory,
   onOpenTab,
 }: {
   history: InvestigationSummary[];
-  onOpenInvestigate: () => void;
   onOpenHistory: (id: string) => void;
   onOpenTab: (tab: AppTab) => void;
 }) {
@@ -1900,14 +1947,6 @@ function HomeScreen({
         <Text variant="bodyMedium" style={styles.heroBody}>
           Use the Verify tab when you want to fact-check a claim, then come back here for regular health data, meals, and medication tracking.
         </Text>
-        <View style={styles.heroActions}>
-          <Button mode="contained" icon="stethoscope" onPress={onOpenInvestigate} buttonColor={palette.primary}>
-            New investigation
-          </Button>
-          <Button mode="outlined" icon="account-circle" onPress={() => onOpenTab("profile")} textColor={palette.primary}>
-            Health profile
-          </Button>
-        </View>
       </LinearGradient>
 
       <SectionTitle eyebrow="Dashboard" title="Today at a glance" body="Regular health data for now, with cards that stay readable and tap-friendly." />

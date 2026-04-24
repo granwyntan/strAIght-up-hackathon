@@ -7,6 +7,7 @@ import { db } from "../lib/firebaseClient";
 const BASE_HOME_VITALS_KEY = "gramwin.home.vitals.v1";
 const MAX_LOCAL_DAYS = 180;
 const firestore = db;
+const homeVitalsMemoryCache = new Map();
 
 function toFirestoreUserId(email) {
   const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -19,6 +20,14 @@ function toFirestoreUserId(email) {
 function homeVitalsKey(accountId) {
   const suffix = typeof accountId === "string" && accountId.trim() ? accountId.trim() : "guest";
   return `${BASE_HOME_VITALS_KEY}.${suffix}`;
+}
+
+function resolveCacheKey(accountId, accountEmail) {
+  const userId = toFirestoreUserId(accountEmail);
+  if (userId) {
+    return userId;
+  }
+  return typeof accountId === "string" && accountId.trim() ? accountId.trim() : "guest";
 }
 
 export function formatLocalIsoDate(date) {
@@ -59,15 +68,25 @@ function normalizeVitalsMap(input) {
 }
 
 async function loadLocalVitalsMap(accountId) {
+  const cacheKey = resolveCacheKey(accountId);
+  if (homeVitalsMemoryCache.has(cacheKey)) {
+    return normalizeVitalsMap(homeVitalsMemoryCache.get(cacheKey));
+  }
   const raw = await AsyncStorage.getItem(homeVitalsKey(accountId));
   if (!raw) {
-    return {};
+    const empty = {};
+    homeVitalsMemoryCache.set(cacheKey, empty);
+    return empty;
   }
   try {
     const parsed = JSON.parse(raw);
-    return normalizeVitalsMap(parsed);
+    const normalized = normalizeVitalsMap(parsed);
+    homeVitalsMemoryCache.set(cacheKey, normalized);
+    return normalized;
   } catch {
-    return {};
+    const empty = {};
+    homeVitalsMemoryCache.set(cacheKey, empty);
+    return empty;
   }
 }
 
@@ -77,8 +96,10 @@ function trimToRecentDays(vitalsMap) {
 }
 
 async function saveLocalVitalsMap(accountId, vitalsMap) {
+  const cacheKey = resolveCacheKey(accountId);
   const trimmed = trimToRecentDays(vitalsMap);
   await AsyncStorage.setItem(homeVitalsKey(accountId), JSON.stringify(trimmed));
+  homeVitalsMemoryCache.set(cacheKey, trimmed);
   return trimmed;
 }
 
@@ -125,12 +146,33 @@ export async function loadHomeVitals(accountId, accountEmail) {
   if (!userId || !firestore) {
     return loadLocalVitalsMap(accountId);
   }
+
+  const localMap = await loadLocalVitalsMap(accountId);
+  if (Object.keys(localMap).length > 0) {
+    return localMap;
+  }
+
   try {
     const firestoreMap = (await loadFirestoreVitalsMap(accountEmail)) || {};
     await saveLocalVitalsMap(accountId, firestoreMap);
     return firestoreMap;
   } catch (error) {
     console.warn("Unable to load home vitals from Firestore; falling back to local storage", error);
+    return loadLocalVitalsMap(accountId);
+  }
+}
+
+export async function refreshHomeVitalsFromFirestore(accountId, accountEmail) {
+  const userId = toFirestoreUserId(accountEmail);
+  if (!userId || !firestore) {
+    return loadLocalVitalsMap(accountId);
+  }
+  try {
+    const firestoreMap = (await loadFirestoreVitalsMap(accountEmail)) || {};
+    await saveLocalVitalsMap(accountId, firestoreMap);
+    return firestoreMap;
+  } catch (error) {
+    console.warn("Unable to refresh home vitals from Firestore; keeping cached values", error);
     return loadLocalVitalsMap(accountId);
   }
 }
@@ -179,4 +221,3 @@ export async function loadHomeVitalDay(accountId, accountEmail, date) {
 export async function loadTodayHomeVitals(accountId, accountEmail) {
   return loadHomeVitalDay(accountId, accountEmail, formatLocalIsoDate(new Date()));
 }
-
