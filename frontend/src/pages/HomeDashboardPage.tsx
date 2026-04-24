@@ -10,7 +10,7 @@ import TutorialSheet from "../components/shared/TutorialSheet";
 import { loadProfile, saveProfile } from "../storage/profileStorage";
 import { formatLocalIsoDate, loadHomeVitals, refreshHomeVitalsFromFirestore, saveHomeVitalForDate } from "../storage/homeVitalsStorage";
 import { loadCalorieWeek } from "../storage/calorieTrackerStorage";
-import { addExerciseEntry, deleteExerciseEntry, loadExerciseEntries, updateExerciseEntry } from "../storage/exerciseStorage";
+import { addExerciseEntry, clearExerciseEntriesExceptDate, deleteExerciseEntry, loadExerciseEntries, updateExerciseEntry } from "../storage/exerciseStorage";
 import { loadWorkoutTasks, replaceWorkoutTasks, setWorkoutTaskCompleted } from "../storage/workoutRoutineStorage";
 import { addMedicationEntry, deleteMedicationEntry, loadMedicationEntries, updateMedicationEntry } from "../storage/medicationStorage";
 
@@ -312,6 +312,72 @@ export default function HomeDashboardPage({
 
   useEffect(() => {
     let mounted = true;
+
+    const buildMedicationLog = async (
+      profile: any,
+      loadedMedications: Array<{ id: string; name: string; dosage: string; frequency: string; timeOfDay: string; createdAt: string }>,
+      persistMissingFromProfile: boolean
+    ) => {
+      const profileMedicationSeeds = parseMedicationLines(safeTrim((profile as any)?.medicationsOrSupplements));
+      const normalizedLoaded = Array.isArray(loadedMedications) ? loadedMedications : [];
+      const existingNames = new Set(normalizedLoaded.map((item) => normalizeMedicationName(item.name)));
+      const missingFromProfile = profileMedicationSeeds.filter((item) => !existingNames.has(normalizeMedicationName(item.name)));
+
+      let nextMedicationLog = normalizedLoaded;
+      if (persistMissingFromProfile && missingFromProfile.length > 0) {
+        const created = await Promise.all(
+          missingFromProfile.map((item) =>
+            addMedicationEntry(
+              accountId,
+              {
+                name: item.name,
+                dosage: "",
+                frequency: "",
+                timeOfDay: "",
+                createdAt: new Date().toISOString(),
+              },
+              accountEmail
+            )
+          )
+        );
+        nextMedicationLog = [...normalizedLoaded, ...created];
+      } else if (missingFromProfile.length > 0) {
+        nextMedicationLog = [...normalizedLoaded, ...missingFromProfile];
+      }
+
+      if (nextMedicationLog.length === 0 && profileMedicationSeeds.length > 0) {
+        nextMedicationLog = profileMedicationSeeds;
+      }
+      return nextMedicationLog;
+    };
+
+    const applyHydrated = (
+      vitals: any,
+      weekPayload: any,
+      exercises: any,
+      workoutTasks: any,
+      profile: any,
+      medicationLog: any
+    ) => {
+      if (!mounted) {
+        return;
+      }
+      setVitalsMap((vitals || {}) as Record<string, Record<string, string>>);
+      const allMeals = Array.isArray(weekPayload?.entries) ? weekPayload.entries : [];
+      setMealEntries(
+        allMeals
+          .filter((entry) => entry?.date === todayDate)
+          .sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""))
+      );
+      setExerciseEntries(Array.isArray(exercises) ? exercises : []);
+      setRoutineTasks(Array.isArray(workoutTasks) ? workoutTasks : []);
+      const profileName = safeTrim((profile as any)?.name);
+      const fallbackName = safeTrim(accountEmail ? accountEmail.split("@")[0] : "");
+      setWelcomeName(profileName || fallbackName);
+      setDailyCalorieTarget(toNumber((profile as any)?.dailyCalorieTarget));
+      setMedications(medicationLog);
+    };
+
     const hydrate = async () => {
       setLoadingVitals(true);
       setLoadingMeals(true);
@@ -319,76 +385,43 @@ export default function HomeDashboardPage({
       setLoadingRoutineTasks(true);
 
       try {
-        const localVitals = await loadHomeVitals(accountId, "");
-        if (mounted) {
-          setVitalsMap((localVitals || {}) as Record<string, Record<string, string>>);
-          setLoadingVitals(false);
-        }
-
-        void refreshHomeVitalsFromFirestore(accountId, accountEmail)
-          .then((syncedVitals) => {
-            if (mounted && syncedVitals) {
-              setVitalsMap(syncedVitals as Record<string, Record<string, string>>);
-            }
-          })
-          .catch(() => {
-            // Best effort sync only.
-          });
-
-        const [weekPayload, exercises, workoutTasks, profile] = await Promise.all([
-          loadCalorieWeek(accountId, new Date(), accountEmail),
-          loadExerciseEntries(accountId, accountEmail),
-          loadWorkoutTasks(accountId, accountEmail),
-          loadProfile(accountId, accountEmail),
+        await clearExerciseEntriesExceptDate(accountId, todayDate, "");
+        const [localVitals, localWeekPayload, localExercises, localWorkoutTasks, localProfile, localMedications] = await Promise.all([
+          loadHomeVitals(accountId, ""),
+          loadCalorieWeek(accountId, new Date(), ""),
+          loadExerciseEntries(accountId, ""),
+          loadWorkoutTasks(accountId, ""),
+          loadProfile(accountId, ""),
+          loadMedicationEntries(accountId, ""),
         ]);
-        const loadedMedications = await loadMedicationEntries(accountId, accountEmail);
-
-        if (!mounted) {
-          return;
+        const localMedicationLog = await buildMedicationLog(localProfile, localMedications, false);
+        applyHydrated(localVitals, localWeekPayload, localExercises, localWorkoutTasks, localProfile, localMedicationLog);
+        if (mounted) {
+          setLoadingVitals(false);
+          setLoadingMeals(false);
+          setLoadingExercises(false);
+          setLoadingRoutineTasks(false);
         }
 
-        const allMeals = Array.isArray(weekPayload?.entries) ? weekPayload.entries : [];
-        setMealEntries(
-          allMeals
-            .filter((entry) => entry?.date === todayDate)
-            .sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""))
-        );
-        setExerciseEntries(Array.isArray(exercises) ? exercises : []);
-        setRoutineTasks(Array.isArray(workoutTasks) ? workoutTasks : []);
-
-        const profileName = safeTrim((profile as any)?.name);
-        const fallbackName = safeTrim(accountEmail ? accountEmail.split("@")[0] : "");
-        setWelcomeName(profileName || fallbackName);
-        setDailyCalorieTarget(toNumber((profile as any)?.dailyCalorieTarget));
-        const profileMedicationSeeds = parseMedicationLines(safeTrim((profile as any)?.medicationsOrSupplements));
-        const normalizedLoaded = Array.isArray(loadedMedications) ? loadedMedications : [];
-        const existingNames = new Set(normalizedLoaded.map((item) => normalizeMedicationName(item.name)));
-        const missingFromProfile = profileMedicationSeeds.filter((item) => !existingNames.has(normalizeMedicationName(item.name)));
-
-        let nextMedicationLog = normalizedLoaded;
-        if (missingFromProfile.length > 0) {
-          const created = await Promise.all(
-            missingFromProfile.map((item) =>
-              addMedicationEntry(
-                accountId,
-                {
-                  name: item.name,
-                  dosage: "",
-                  frequency: "",
-                  timeOfDay: "",
-                  createdAt: new Date().toISOString(),
-                },
-                accountEmail
-              )
-            )
-          );
-          nextMedicationLog = [...normalizedLoaded, ...created];
+        if (safeTrim(accountEmail)) {
+          void (async () => {
+            try {
+              await clearExerciseEntriesExceptDate(accountId, todayDate, accountEmail);
+              const [remoteVitals, remoteWeekPayload, remoteExercises, remoteWorkoutTasks, remoteProfile, remoteMedications] = await Promise.all([
+                refreshHomeVitalsFromFirestore(accountId, accountEmail),
+                loadCalorieWeek(accountId, new Date(), accountEmail),
+                loadExerciseEntries(accountId, accountEmail),
+                loadWorkoutTasks(accountId, accountEmail),
+                loadProfile(accountId, accountEmail),
+                loadMedicationEntries(accountId, accountEmail),
+              ]);
+              const remoteMedicationLog = await buildMedicationLog(remoteProfile, remoteMedications, true);
+              applyHydrated(remoteVitals, remoteWeekPayload, remoteExercises, remoteWorkoutTasks, remoteProfile, remoteMedicationLog);
+            } catch {
+              // Best effort cloud refresh only.
+            }
+          })();
         }
-
-        if (nextMedicationLog.length === 0 && profileMedicationSeeds.length > 0) {
-          nextMedicationLog = profileMedicationSeeds;
-        }
-        setMedications(nextMedicationLog);
       } catch (error) {
         if (mounted) {
           setRoutineError(error instanceof Error ? error.message : "Unable to load dashboard data.");
@@ -1166,7 +1199,10 @@ export default function HomeDashboardPage({
               <Card key={group.title} mode="contained" style={styles.logItemCard}>
                 <Card.Content style={styles.cardStack}>
                   <View style={styles.rowBetween}>
-                    <View style={styles.rowAlignCenter}>
+                    <Text variant="titleMedium" style={styles.linkTitle}>
+                      {group.title}
+                    </Text>
+                    <View style={styles.actionRow}>
                       <IconButton
                         icon="plus"
                         size={18}
@@ -1175,11 +1211,6 @@ export default function HomeDashboardPage({
                         onPress={() => openRoutineExerciseCreate(group.title)}
                         accessibilityLabel={`Add exercise to ${group.title}`}
                       />
-                      <Text variant="titleMedium" style={styles.linkTitle}>
-                        {group.title}
-                      </Text>
-                    </View>
-                    <View style={styles.actionRow}>
                       <IconButton icon="pencil-outline" size={18} onPress={() => openRoutineTitleEdit(group.title)} />
                       <IconButton icon="delete-outline" size={18} onPress={() => void deleteRoutineGroup(group.title)} />
                     </View>
@@ -1371,7 +1402,11 @@ export default function HomeDashboardPage({
                   </Text>
                   <IconButton icon="close" onPress={() => setRoutineModalVisible(false)} />
                 </View>
-                <ScrollView style={styles.routineScrollBlock} contentContainerStyle={styles.cardStack} keyboardShouldPersistTaps="handled">
+                <ScrollView
+                  style={[styles.routineScrollBlock, suggestedRoutine ? styles.routineScrollBlockWithResults : null]}
+                  contentContainerStyle={[styles.cardStack, styles.routineScrollContent]}
+                  keyboardShouldPersistTaps="handled"
+                >
                   <View style={styles.rowGapTop}>
                     <TextInput mode="outlined" label="Age" value={routineForm.age} onChangeText={(value) => setRoutineForm((current) => ({ ...current, age: value }))} style={styles.compactInput} />
                     <TextInput
@@ -1401,7 +1436,7 @@ export default function HomeDashboardPage({
                           {suggestedRoutine.routineTitle}
                         </Text>
                         <Text variant="bodySmall" style={styles.sectionBody}>
-                          Continuous: {suggestedRoutine.continuous} • Trial: {suggestedRoutine.trialWeeks} weeks
+                          Continuous: {suggestedRoutine.continuous}
                         </Text>
                         {suggestedRoutine.exercises.map((exercise, index) => {
                           const selected = selectedRoutineIndices.includes(index);
@@ -1718,13 +1753,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 10,
   },
-  rowAlignCenter: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    flex: 1,
-    minWidth: 0,
-  },
   rowBetweenStart: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1824,7 +1852,7 @@ const styles = StyleSheet.create({
   routineModalCard: {
     width: "100%",
     maxWidth: 760,
-    maxHeight: "92%",
+    maxHeight: "96%",
     borderRadius: 16,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
@@ -1838,7 +1866,13 @@ const styles = StyleSheet.create({
     maxHeight: 480,
   },
   routineScrollBlock: {
-    maxHeight: 640,
+    maxHeight: 700,
+  },
+  routineScrollBlockWithResults: {
+    maxHeight: 420,
+  },
+  routineScrollContent: {
+    paddingBottom: 12,
   },
   compactInput: {
     flex: 1,

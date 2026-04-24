@@ -180,4 +180,30 @@ export async function deleteExerciseEntry(accountId, entryId, accountEmail) {
   }
 }
 
+export async function clearExerciseEntriesExceptDate(accountId, keepDate, accountEmail) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(keepDate || "")) {
+    throw new Error("Invalid keep date.");
+  }
+  const existing = await loadLocalEntries(accountId);
+  const filtered = existing.filter((entry) => entry.date === keepDate);
+  await saveLocalEntries(accountId, filtered);
+
+  const userId = toFirestoreUserId(accountEmail);
+  if (!userId || !firestore) {
+    return filtered;
+  }
+  try {
+    const snapshot = await getDocs(collection(firestore, "users", userId, "exercise_history"));
+    const staleDocs = snapshot.docs.filter((item) => {
+      const data = item.data();
+      const date = typeof data?.date === "string" ? data.date : formatLocalIsoDate(new Date(data?.created_at || ""));
+      return date !== keepDate;
+    });
+    await Promise.all(staleDocs.map((item) => deleteDoc(item.ref)));
+  } catch (error) {
+    console.warn("Unable to clear stale exercise history in Firestore; local cleanup kept", error);
+  }
+  return filtered;
+}
+
 export { formatLocalIsoDate as formatExerciseDate };
