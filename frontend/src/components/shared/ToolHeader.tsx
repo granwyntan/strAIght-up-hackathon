@@ -5,31 +5,39 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { palette } from "../../data";
 
 type ToolHeaderProps = {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   subtitle: string;
-  icon: string;
+  icon?: string;
   onPressHelp?: () => void;
 };
 
 export default function ToolHeader({ eyebrow, title, subtitle, icon, onPressHelp }: ToolHeaderProps) {
+  const showEyebrowRow = Boolean(icon || (eyebrow && eyebrow.trim()));
+
   return (
     <View style={styles.headerCard}>
       <View style={styles.headerTop}>
         <View style={styles.titleWrap}>
-          <View style={styles.eyebrowRow}>
-            <View style={styles.iconWrap}>
-              <MaterialCommunityIcons name={icon} size={16} color={palette.primary} />
+          {showEyebrowRow ? (
+            <View style={styles.eyebrowRow}>
+              {icon ? (
+                <View style={styles.iconWrap}>
+                  <MaterialCommunityIcons name={icon} size={16} color={palette.primary} />
+                </View>
+              ) : null}
+              {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
             </View>
-            <Text style={styles.eyebrow}>{eyebrow}</Text>
+          ) : null}
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>{title}</Text>
+            {onPressHelp ? (
+              <Pressable style={styles.helpButton} onPress={onPressHelp} accessibilityRole="button" accessibilityLabel={`Open ${title} tutorial`}>
+                <Text style={styles.helpButtonText}>?</Text>
+              </Pressable>
+            ) : null}
           </View>
-          <Text style={styles.title}>{title}</Text>
         </View>
-        {onPressHelp ? (
-          <Pressable style={styles.helpButton} onPress={onPressHelp} accessibilityRole="button" accessibilityLabel={`Open ${title} tutorial`}>
-            <Text style={styles.helpButtonText}>?</Text>
-          </Pressable>
-        ) : null}
       </View>
       <Text style={styles.subtitle}>{subtitle}</Text>
     </View>
@@ -43,20 +51,23 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     backgroundColor: palette.surface,
     paddingHorizontal: 20,
-    paddingTop: 22,
+    paddingTop: 14,
     paddingBottom: 18,
     gap: 10,
   },
   headerTop: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 14,
+    alignItems: "center",
   },
   titleWrap: {
     flex: 1,
     gap: 8,
     minWidth: 0,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   eyebrowRow: {
     flexDirection: "row",
@@ -83,6 +94,7 @@ const styles = StyleSheet.create({
     fontSize: 25,
     lineHeight: 31,
     fontFamily: "Poppins_700Bold",
+    flexShrink: 1,
   },
   subtitle: {
     color: palette.muted,
@@ -99,6 +111,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surfaceSoft,
     borderWidth: 1,
     borderColor: palette.border,
+    flexShrink: 0,
   },
   helpButtonText: {
     color: palette.primary,

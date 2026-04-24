@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform,
 import * as ImagePicker from "expo-image-picker";
 
 import { palette } from "../data";
+import { typography } from "../styles/typography";
 import { emptyProfile, loadProfile, loadProfileLastSynced, saveProfile } from "../storage/profileStorage";
 import AuthGate from "../components/auth/AuthGate";
 import SectionTabs from "../components/shared/SectionTabs";
@@ -255,6 +256,12 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
 
   return (
     <KeyboardAvoidingView style={styles.pageStack} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ToolHeader
+        title="Personal Health Profile"
+        subtitle="Add and save your health context locally so the app can respond with better-fit guidance."
+        onPressHelp={openGuide}
+      />
+
       <View style={styles.panel}>
         {activeAccount ? (
           <View style={styles.accountPanel}>
@@ -285,158 +292,158 @@ export default function ProfilePage({ history: _history, accountId, accountEmail
         )}
 
         <>
-            <SectionTabs
-              value={activeTab}
-              onValueChange={(value) => setActiveTab(value as typeof activeTab)}
-              tabs={[
-                { value: "overview", label: "Overview", icon: "account-heart-outline" },
-                { value: "settings", label: "Settings", icon: "tune-variant" },
-              ]}
-            />
+          <SectionTabs
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as typeof activeTab)}
+            tabs={[
+              { value: "overview", label: "Overview", icon: "account-heart-outline" },
+              { value: "settings", label: "Settings", icon: "tune-variant" },
+            ]}
+          />
 
-            {activeTab === "overview" ? (
-              <View style={styles.overviewStack}>
-                <View style={styles.overviewHeader}>
+          {activeTab === "overview" ? (
+            <View style={styles.overviewStack}>
+              <View style={styles.overviewHeader}>
+                {profile.profilePicture ? (
+                  <Image source={{ uri: profile.profilePicture }} style={styles.profileImage} />
+                ) : (
+                  <View style={styles.profileImageFallback}>
+                    <Text style={styles.profileImageFallbackText}>{initials || "U"}</Text>
+                  </View>
+                )}
+                <View style={styles.nameBlock}>
+                  <Text style={styles.overviewLabel}>Name</Text>
+                  <Text style={styles.overviewName}>{displayName}</Text>
+                </View>
+              </View>
+
+              <View style={styles.overviewGoalsCard}>
+                <Text style={styles.overviewLabel}>Goals</Text>
+                <Text style={styles.overviewGoalsText}>{displayGoals}</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.fieldStack}>
+              <View style={styles.field}>
+                <Text style={styles.label}>Profile picture</Text>
+                <View style={styles.photoRow}>
                   {profile.profilePicture ? (
-                    <Image source={{ uri: profile.profilePicture }} style={styles.profileImage} />
+                    <Image source={{ uri: profile.profilePicture }} style={styles.settingsPhoto} />
                   ) : (
-                    <View style={styles.profileImageFallback}>
+                    <View style={styles.settingsPhotoFallback}>
                       <Text style={styles.profileImageFallbackText}>{initials || "U"}</Text>
                     </View>
                   )}
-                  <View style={styles.nameBlock}>
-                    <Text style={styles.overviewLabel}>Name</Text>
-                    <Text style={styles.overviewName}>{displayName}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.overviewGoalsCard}>
-                  <Text style={styles.overviewLabel}>Goals</Text>
-                  <Text style={styles.overviewGoalsText}>{displayGoals}</Text>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.fieldStack}>
-                <View style={styles.field}>
-                  <Text style={styles.label}>Profile picture</Text>
-                  <View style={styles.photoRow}>
-                    {profile.profilePicture ? (
-                      <Image source={{ uri: profile.profilePicture }} style={styles.settingsPhoto} />
-                    ) : (
-                      <View style={styles.settingsPhotoFallback}>
-                        <Text style={styles.profileImageFallbackText}>{initials || "U"}</Text>
+                  <View style={styles.photoActions}>
+                    {Platform.OS === "web" ? (
+                      <View style={styles.photoActionRow}>
+                        <Pressable style={styles.photoActionButton} onPress={() => void takeProfileImage()}>
+                          <Text style={styles.photoActionText}>Use webcam</Text>
+                        </Pressable>
+                        <Pressable style={styles.photoActionButton} onPress={() => void uploadProfileImage()}>
+                          <Text style={styles.photoActionText}>Upload image</Text>
+                        </Pressable>
                       </View>
+                    ) : (
+                      <Pressable style={styles.photoActionButton} onPress={openPhotoSourcePicker}>
+                        <Text style={styles.photoActionText}>{profile.profilePicture ? "Change photo" : "Add photo"}</Text>
+                      </Pressable>
                     )}
-                    <View style={styles.photoActions}>
-                      {Platform.OS === "web" ? (
-                        <View style={styles.photoActionRow}>
-                          <Pressable style={styles.photoActionButton} onPress={() => void takeProfileImage()}>
-                            <Text style={styles.photoActionText}>Use webcam</Text>
-                          </Pressable>
-                          <Pressable style={styles.photoActionButton} onPress={() => void uploadProfileImage()}>
-                            <Text style={styles.photoActionText}>Upload image</Text>
-                          </Pressable>
-                        </View>
-                      ) : (
-                        <Pressable style={styles.photoActionButton} onPress={openPhotoSourcePicker}>
-                          <Text style={styles.photoActionText}>{profile.profilePicture ? "Change photo" : "Add photo"}</Text>
-                        </Pressable>
-                      )}
-                      {profile.profilePicture ? (
-                        <Pressable style={styles.photoActionButtonAlt} onPress={() => updateField("profilePicture", "")}>
-                          <Text style={styles.photoActionAltText}>Remove</Text>
-                        </Pressable>
-                      ) : null}
-                    </View>
+                    {profile.profilePicture ? (
+                      <Pressable style={styles.photoActionButtonAlt} onPress={() => updateField("profilePicture", "")}>
+                        <Text style={styles.photoActionAltText}>Remove</Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                 </View>
-
-                <LabeledInput label="Name" value={profile.name} onChangeText={(value) => updateField("name", value)} placeholder="Enter your name" />
-
-                <LabeledInput
-                  label="Age"
-                  value={profile.age}
-                  onChangeText={(value) => updateField("age", value)}
-                  placeholder="Enter your age"
-                  keyboardType="numeric"
-                />
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>Gender</Text>
-                  <View style={styles.genderRow}>
-                    {GENDER_OPTIONS.map((option) => {
-                      const selected = profile.gender === option;
-                      return (
-                        <Pressable key={option} style={[styles.genderButton, selected && styles.genderButtonSelected]} onPress={() => updateField("gender", option)}>
-                          <Text style={[styles.genderText, selected && styles.genderTextSelected]}>{option}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                <LabeledInput
-                  label="Height (cm)"
-                  value={profile.height}
-                  onChangeText={(value) => updateField("height", value)}
-                  placeholder="Enter your height in cm"
-                  keyboardType="numeric"
-                />
-
-                <LabeledInput
-                  label="Weight (kg)"
-                  value={profile.weight}
-                  onChangeText={(value) => updateField("weight", value)}
-                  placeholder="Enter your weight in kg"
-                  keyboardType="numeric"
-                />
-
-                <LabeledInput
-                  label="Goals"
-                  value={profile.goals}
-                  onChangeText={(value) => updateField("goals", value)}
-                  placeholder="Describe your health goals"
-                  multiline
-                />
-
-                <LabeledInput
-                  label="Current medications or supplements"
-                  value={profile.medicationsOrSupplements}
-                  onChangeText={(value) => updateField("medicationsOrSupplements", value)}
-                  placeholder="List current medications or supplements"
-                  multiline
-                />
-
-                <LabeledInput
-                  label="Medical conditions"
-                  value={profile.medicalConditions}
-                  onChangeText={(value) => updateField("medicalConditions", value)}
-                  placeholder="List current medical conditions"
-                  multiline
-                />
-
-                <LabeledInput
-                  label="Medical history"
-                  value={profile.medicalHistory}
-                  onChangeText={(value) => updateField("medicalHistory", value)}
-                  placeholder="Add relevant medical history"
-                  multiline
-                />
               </View>
-            )}
 
-            {activeTab === "settings" ? (
-              <Pressable
-                style={[styles.saveButton, saveSuccess && styles.saveButtonSuccess, (loadingProfile || savingProfile) && styles.saveButtonDisabled]}
-                onPress={() => void onSave()}
-                disabled={loadingProfile || savingProfile}
-              >
-                {savingProfile ? <ActivityIndicator color="#fffdfa" size="small" /> : null}
-                <Text style={styles.saveButtonText}>
-                  {loadingProfile ? "Loading profile..." : saveSuccess ? "Saved ✓" : activeAccount ? "Save and sync" : "Save locally"}
-                </Text>
-              </Pressable>
-            ) : null}
+              <LabeledInput label="Name" value={profile.name} onChangeText={(value) => updateField("name", value)} placeholder="Enter your name" />
+
+              <LabeledInput
+                label="Age"
+                value={profile.age}
+                onChangeText={(value) => updateField("age", value)}
+                placeholder="Enter your age"
+                keyboardType="numeric"
+              />
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Gender</Text>
+                <View style={styles.genderRow}>
+                  {GENDER_OPTIONS.map((option) => {
+                    const selected = profile.gender === option;
+                    return (
+                      <Pressable key={option} style={[styles.genderButton, selected && styles.genderButtonSelected]} onPress={() => updateField("gender", option)}>
+                        <Text style={[styles.genderText, selected && styles.genderTextSelected]}>{option}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <LabeledInput
+                label="Height (cm)"
+                value={profile.height}
+                onChangeText={(value) => updateField("height", value)}
+                placeholder="Enter your height in cm"
+                keyboardType="numeric"
+              />
+
+              <LabeledInput
+                label="Weight (kg)"
+                value={profile.weight}
+                onChangeText={(value) => updateField("weight", value)}
+                placeholder="Enter your weight in kg"
+                keyboardType="numeric"
+              />
+
+              <LabeledInput
+                label="Goals"
+                value={profile.goals}
+                onChangeText={(value) => updateField("goals", value)}
+                placeholder="Describe your health goals"
+                multiline
+              />
+
+              <LabeledInput
+                label="Current medications or supplements"
+                value={profile.medicationsOrSupplements}
+                onChangeText={(value) => updateField("medicationsOrSupplements", value)}
+                placeholder="List current medications or supplements"
+                multiline
+              />
+
+              <LabeledInput
+                label="Medical conditions"
+                value={profile.medicalConditions}
+                onChangeText={(value) => updateField("medicalConditions", value)}
+                placeholder="List current medical conditions"
+                multiline
+              />
+
+              <LabeledInput
+                label="Medical history"
+                value={profile.medicalHistory}
+                onChangeText={(value) => updateField("medicalHistory", value)}
+                placeholder="Add relevant medical history"
+                multiline
+              />
+            </View>
+          )}
+
+          {activeTab === "settings" ? (
+            <Pressable
+              style={[styles.saveButton, saveSuccess && styles.saveButtonSuccess, (loadingProfile || savingProfile) && styles.saveButtonDisabled]}
+              onPress={() => void onSave()}
+              disabled={loadingProfile || savingProfile}
+            >
+              {savingProfile ? <ActivityIndicator color="#fffdfa" size="small" /> : null}
+              <Text style={styles.saveButtonText}>
+                {loadingProfile ? "Loading profile..." : saveSuccess ? "Saved ✓" : activeAccount ? "Save and sync" : "Save locally"}
+              </Text>
+            </Pressable>
+          ) : null}
           {!activeAccount ? (
             <View style={styles.lockedCard}>
               <Text style={styles.lockedTitle}>Optional sign-in</Text>
@@ -526,9 +533,9 @@ const styles = StyleSheet.create({
     gap: 22
   },
   scrollContent: {
-  flexGrow: 1,
-  gap: 22,
-  paddingBottom: 120
+    flexGrow: 1,
+    gap: 22,
+    paddingBottom: 120
   },
   heroPanel: {
     backgroundColor: palette.surface,
@@ -601,12 +608,12 @@ const styles = StyleSheet.create({
   accountBadgeText: {
     color: palette.primary,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   accountEmail: {
     color: palette.ink,
     fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   accountLogoutButton: {
     alignSelf: "flex-start",
@@ -621,7 +628,7 @@ const styles = StyleSheet.create({
   accountLogoutText: {
     color: palette.ink,
     fontSize: 13,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   syncMetaRow: {
     borderWidth: 1,
@@ -634,7 +641,7 @@ const styles = StyleSheet.create({
   syncMetaLabel: {
     color: palette.muted,
     fontSize: 11,
-    fontFamily: "Poppins_600SemiBold",
+    ...typography.semibold,
     textTransform: "uppercase",
     letterSpacing: 0.25
   },
@@ -642,7 +649,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
     color: palette.ink,
     fontSize: 13,
-    fontFamily: "Poppins_500Medium"
+    ...typography.medium
   },
   lockedCard: {
     paddingTop: 2,
@@ -651,13 +658,13 @@ const styles = StyleSheet.create({
   lockedTitle: {
     color: palette.ink,
     fontSize: 15,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   lockedBody: {
     color: palette.muted,
     fontSize: 13,
     lineHeight: 19,
-    fontFamily: "Poppins_400Regular"
+    ...typography.regular
   },
   webcamBackdrop: {
     flex: 1,
@@ -679,7 +686,7 @@ const styles = StyleSheet.create({
   webcamTitle: {
     color: palette.ink,
     fontSize: 16,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   webcamVideo: {
     width: "100%",
@@ -706,7 +713,7 @@ const styles = StyleSheet.create({
   webcamPrimaryText: {
     color: "#fffdfa",
     fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   webcamSecondary: {
     flex: 1,
@@ -721,7 +728,7 @@ const styles = StyleSheet.create({
   webcamSecondaryText: {
     color: palette.ink,
     fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   cardTitle: {
     color: palette.ink,
@@ -748,7 +755,7 @@ const styles = StyleSheet.create({
   tabButtonText: {
     color: palette.ink,
     fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   tabButtonTextActive: {
     color: "#fffdfa"
@@ -782,7 +789,7 @@ const styles = StyleSheet.create({
   profileImageFallbackText: {
     color: palette.primary,
     fontSize: 24,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   nameBlock: {
     flex: 1,
@@ -791,14 +798,14 @@ const styles = StyleSheet.create({
   overviewLabel: {
     color: palette.muted,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold",
+    ...typography.semibold,
     textTransform: "uppercase",
     letterSpacing: 0.3
   },
   overviewName: {
     color: palette.ink,
     fontSize: 22,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   overviewGoalsCard: {
     borderWidth: 1,
@@ -812,7 +819,7 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 15,
     lineHeight: 21,
-    fontFamily: "Poppins_400Regular"
+    ...typography.regular
   },
   fieldStack: {
     gap: 12
@@ -823,7 +830,7 @@ const styles = StyleSheet.create({
   label: {
     color: palette.ink,
     fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   input: {
     minHeight: 52,
@@ -876,7 +883,7 @@ const styles = StyleSheet.create({
   photoActionText: {
     color: "#fffdfa",
     fontSize: 13,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   photoActionButtonAlt: {
     minHeight: 36,
@@ -890,7 +897,7 @@ const styles = StyleSheet.create({
   photoActionAltText: {
     color: palette.ink,
     fontSize: 13,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   genderRow: {
     flexDirection: "row",
@@ -914,7 +921,7 @@ const styles = StyleSheet.create({
   genderText: {
     color: palette.primary,
     fontSize: 13,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   genderTextSelected: {
     color: "#fffdfa"
@@ -937,7 +944,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: "#fffdfa",
     fontSize: 17,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   guideBackdrop: {
     flex: 1,
@@ -973,13 +980,13 @@ const styles = StyleSheet.create({
   },
   guideCloseButtonText: {
     color: palette.ink,
-    fontFamily: "Poppins_700Bold",
+    ...typography.bold,
     fontSize: 14
   },
   guideTitle: {
     color: palette.ink,
     fontSize: 17,
-    fontFamily: "Poppins_700Bold",
+    ...typography.bold,
     textAlign: "center",
     marginBottom: 10
   },
@@ -992,19 +999,19 @@ const styles = StyleSheet.create({
   guideStepLabel: {
     color: palette.primary,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   },
   guidePageTitle: {
     color: palette.ink,
     fontSize: 18,
     lineHeight: 24,
-    fontFamily: "Poppins_700Bold"
+    ...typography.bold
   },
   guidePageBody: {
     color: palette.muted,
     fontSize: 14,
     lineHeight: 21,
-    fontFamily: "Poppins_400Regular"
+    ...typography.regular
   },
   guideFooter: {
     alignItems: "center",
@@ -1013,6 +1020,7 @@ const styles = StyleSheet.create({
   guideFooterText: {
     color: palette.muted,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
+    ...typography.semibold
   }
 });
+

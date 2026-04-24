@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { palette } from "../data";
+import { typography } from "../styles/typography";
 import AnalysisResult from "../components/supplements/AnalysisResult";
 import ImageUpload from "../components/supplements/ImageUpload";
 import SectionTabs from "../components/shared/SectionTabs";
@@ -12,6 +13,7 @@ import { loadProfile } from "../storage/profileStorage";
 import { addSupplementHistoryEntry, clearSupplementHistory, loadSupplementHistory, removeSupplementHistoryEntry } from "../storage/supplementSearchStorage";
 import type { PickedSupplementAsset, RequestApi, SupplementAnalysisResult } from "../types/supplements";
 import { compactIsoId, formatDisplayDateTime, formatDisplayTime } from "../utils/dateTime";
+import ToolHeader from "../components/shared/ToolHeader";
 
 const DEFAULT_CONDITIONS = "NIL";
 const DEFAULT_GOALS = "Reduce belly fat, Improve cognitive power";
@@ -704,32 +706,37 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
               : "Infographic: waiting";
 
   return (
-    <View className="gap-4">
-      <SectionTabs
-        value={activeSubPage}
-        onValueChange={(value) => setActiveSubPage(value as "analyzer" | "history")}
-        tabs={[
-          { value: "analyzer", label: "Analyze", icon: "pill-multiple" },
-          { value: "history", label: "History", icon: "history" },
-        ]}
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ToolHeader
+        title="Medicine and Supplement Analyzer"
+        subtitle="Use either bottle or label upload OR supplement-name search to get a calmer report on ingredients, benefits, cautions, interactions, and goal fit."
+        onPressHelp={openGuide}
       />
+
+      <View className="flex-row rounded-[18px] border border-line bg-card p-1 shadow-panel">
+        <Pressable className={`flex-1 items-center rounded-2xl px-4 py-3 ${activeSubPage === "analyzer" ? "bg-sage" : "bg-transparent"}`} onPress={() => setActiveSubPage("analyzer")}>
+          <Text style={typography.semibold} className={`font-['Poppins_600SemiBold'] ${activeSubPage === "analyzer" ? "text-card" : "text-muted"}`}>Analyzer</Text>
+        </Pressable>
+        <Pressable className={`flex-1 items-center rounded-2xl px-4 py-3 ${activeSubPage === "history" ? "bg-sage" : "bg-transparent"}`} onPress={() => setActiveSubPage("history")}>
+          <Text style={typography.semibold} className={`font-['Poppins_600SemiBold'] ${activeSubPage === "history" ? "text-card" : "text-muted"}`}>History</Text>
+        </Pressable>
+      </View>
 
       {activeSubPage === "analyzer" ? (
         <>
           {selectedHistoryEntryId ? (
             <View className="gap-2 rounded-[18px] border border-line bg-soft px-4 py-4">
-              <Text className="font-['Poppins_600SemiBold'] text-ink">Viewing a saved supplement analysis inside the live analyzer layout.</Text>
+              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">Viewing a saved supplement analysis inside the live analyzer layout.</Text>
               <Pressable className="self-start rounded-full border border-line bg-card px-3 py-2" onPress={exitHistoryPreviewMode}>
-                <Text className="font-['Poppins_600SemiBold'] text-sage">Start a new analysis</Text>
+                <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Start a new analysis</Text>
               </Pressable>
             </View>
           ) : (
             <>
               <View className="gap-3 rounded-[22px] border border-line bg-card p-5 shadow-panel">
-                <Text className="font-['Poppins_700Bold'] text-base text-ink">Search supplement by name</Text>
-                <Text className="font-['Poppins_400Regular'] leading-5 text-muted">Use name search for a quick product review, then switch to an image when you want more label-specific detail.</Text>
-                <TextInput
-                  className={`min-h-[50px] rounded-2xl border px-4 py-3 font-['Poppins_400Regular'] text-ink ${searchOptionsDisabled ? "border-line bg-soft/60" : "border-line bg-card"}`}
+                <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Search supplement by name</Text>
+                <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Use name search for a quick product review, then switch to an image when you want more label-specific detail.</Text>
+                <TextInput style={typography.regular} className={`min-h-[50px] rounded-2xl border px-4 py-3 font-['Poppins_400Regular'] text-ink ${searchOptionsDisabled ? "border-line bg-soft/60" : "border-line bg-card"}`}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                   placeholder="e.g. magnesium glycinate"
@@ -740,11 +747,11 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                 />
                 <View className="flex-row flex-wrap items-center gap-2">
                   <Pressable className={`rounded-2xl px-4 py-3 ${loading || !trimmedSearchQuery || searchOptionsDisabled ? "bg-sage/50" : "bg-sage"}`} onPress={() => void searchSupplementByName()} disabled={loading || !trimmedSearchQuery || searchOptionsDisabled}>
-                    <Text className="font-['Poppins_600SemiBold'] text-card">{loading && selectedMode === "search" ? "Searching..." : "Search and analyze"}</Text>
+                    <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">{loading && selectedMode === "search" ? "Searching..." : "Search and analyze"}</Text>
                   </Pressable>
                   {trimmedSearchQuery ? (
                     <Pressable className="rounded-2xl border border-line bg-soft px-4 py-3" onPress={clearSearchInput} disabled={loading}>
-                      <Text className="font-['Poppins_600SemiBold'] text-sage">Clear search</Text>
+                      <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Clear search</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -752,26 +759,26 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
 
               {Platform.OS === "web" ? (
                 <View className="gap-2.5 rounded-[22px] border border-line bg-card p-5 shadow-panel">
-                  <Text className="font-['Poppins_700Bold'] text-base text-ink">Webcam capture</Text>
-                  <Text className="font-['Poppins_400Regular'] leading-5 text-muted">Use your browser webcam for a quick front-label scan.</Text>
+                  <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Webcam capture</Text>
+                  <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Use your browser webcam for a quick front-label scan.</Text>
                   {webcamActive ? (
                     <>
                       <video ref={videoRef} autoPlay playsInline muted style={styles.webcamVideo} />
                       <View className="flex-row gap-2.5">
                         <Pressable className="items-center rounded-2xl bg-sage px-4 py-3" onPress={captureWebcamFrame} disabled={loading}>
-                          <Text className="font-['Poppins_600SemiBold'] text-card">Capture frame</Text>
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Capture frame</Text>
                         </Pressable>
                         <Pressable className="items-center rounded-2xl border border-line bg-soft px-4 py-3" onPress={closeWebcam} disabled={loading}>
-                          <Text className="font-['Poppins_600SemiBold'] text-ink">Close webcam</Text>
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">Close webcam</Text>
                         </Pressable>
                       </View>
                     </>
                   ) : (
                     <Pressable className={`items-center rounded-2xl px-4 py-3 ${imageOptionsDisabled ? "bg-soft/60 opacity-50" : "bg-sage"}`} onPress={captureImage} disabled={loading || imageOptionsDisabled}>
-                      <Text className={`font-['Poppins_600SemiBold'] ${imageOptionsDisabled ? "text-muted" : "text-card"}`}>Open webcam</Text>
+                      <Text style={typography.semibold} className={`font-['Poppins_600SemiBold'] ${imageOptionsDisabled ? "text-muted" : "text-card"}`}>Open webcam</Text>
                     </Pressable>
                   )}
-                  {webcamError ? <Text className="font-['Poppins_400Regular'] text-[13px] text-danger">{webcamError}</Text> : null}
+                  {webcamError ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-danger">{webcamError}</Text> : null}
                 </View>
               ) : null}
 
@@ -796,8 +803,8 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
 
               <View className="flex-row items-center justify-between gap-3 rounded-[22px] border border-line bg-card px-5 py-4 shadow-panel">
                 <View className="flex-1">
-                  <Text className="font-['Poppins_700Bold'] text-base text-ink">Generate infographic</Text>
-                  <Text className="font-['Poppins_400Regular'] leading-5 text-muted">Turn this off if you want faster supplement analysis.</Text>
+                  <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Generate infographic</Text>
+                  <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Turn this off if you want faster supplement analysis.</Text>
                 </View>
                 <Switch value={infographicEnabled} onValueChange={setInfographicEnabled} disabled={loading} />
               </View>
@@ -806,12 +813,12 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                 <View className="gap-3 rounded-[22px] border border-line bg-card px-5 py-4 shadow-panel">
                   <View className="flex-row items-start justify-between gap-3">
                     <View className="flex-1 gap-1">
-                      <Text className="font-['Poppins_700Bold'] text-base text-ink">{loading ? "Working on your report" : "Latest analysis run"}</Text>
-                      <Text className="font-['Poppins_400Regular'] text-muted">
+                      <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">{loading ? "Working on your report" : "Latest analysis run"}</Text>
+                      <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">
                         Started {formatDisplayTime(apiCallStartedAt)} • {apiCallInFlight ? "Elapsed" : "Total time"} {formatElapsed(apiCallElapsedMs)}
                       </Text>
                     </View>
-                    <Text className="rounded-full bg-moss px-3 py-1.5 font-['Poppins_600SemiBold'] text-xs text-sage">{Math.round(progressValue * 100)}%</Text>
+                    <Text style={typography.semibold} className="rounded-full bg-moss px-3 py-1.5 font-['Poppins_600SemiBold'] text-xs text-sage">{Math.round(progressValue * 100)}%</Text>
                   </View>
                   <View className="h-2 overflow-hidden rounded-full bg-moss">
                     <View className="h-full rounded-full bg-sage" style={{ width: `${Math.max(8, Math.round(progressValue * 100))}%` }} />
@@ -831,17 +838,17 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                           />
                         </View>
                         <View className="flex-1 gap-0.5">
-                          <Text className="font-['Poppins_600SemiBold'] text-[13px] text-ink">{step.label}</Text>
-                          <Text className="font-['Poppins_400Regular'] text-[12px] leading-5 text-muted">{step.body}</Text>
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[13px] text-ink">{step.label}</Text>
+                          <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[12px] leading-5 text-muted">{step.body}</Text>
                         </View>
                       </View>
                     ))}
                   </View>
                   <View className="gap-1">
-                    <Text className="font-['Poppins_400Regular'] text-[13px] text-muted">{textStatusLabel}</Text>
-                    <Text className="font-['Poppins_400Regular'] text-[13px] text-muted">{imageStatusLabel}</Text>
-                    {textDuration ? <Text className="font-['Poppins_400Regular'] text-[13px] text-muted">{textDuration}</Text> : null}
-                    {imageDuration ? <Text className="font-['Poppins_400Regular'] text-[13px] text-muted">{imageDuration}</Text> : null}
+                    <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{textStatusLabel}</Text>
+                    <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{imageStatusLabel}</Text>
+                    {textDuration ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{textDuration}</Text> : null}
+                    {imageDuration ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{imageDuration}</Text> : null}
                   </View>
                 </View>
               ) : null}
@@ -850,32 +857,32 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
 
           <AnalysisResult result={result} selectedImageUri={selectedAsset?.uri || ""} selectedImageAspectRatio={selectedImageAspectRatio} />
         </>
-        ) : (
-          <View className="gap-4 rounded-[22px] border border-line bg-card p-5 shadow-panel">
-            <View className="flex-row items-center justify-between gap-3">
-              <View className="flex-row items-center gap-2">
-                <View className="h-9 w-9 items-center justify-center rounded-[12px] bg-moss">
-                  <MaterialCommunityIcons name="history" size={18} color={palette.primary} />
-                </View>
-                <Text className="font-['Poppins_700Bold'] text-base text-ink">Recent supplement searches</Text>
+      ) : (
+        <View className="gap-4 rounded-[22px] border border-line bg-card p-5 shadow-panel">
+          <View className="flex-row items-center justify-between gap-3">
+            <View className="flex-row items-center gap-2">
+              <View className="h-9 w-9 items-center justify-center rounded-[12px] bg-moss">
+                <MaterialCommunityIcons name="history" size={18} color={palette.primary} />
               </View>
-              <Pressable className="rounded-full border border-line bg-soft px-3 py-2" onPress={() => void clearAllHistoryItems()}>
-                <Text className="font-['Poppins_600SemiBold'] text-sage">Clear all</Text>
-              </Pressable>
+              <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Recent supplement searches</Text>
             </View>
-          <Text className="font-['Poppins_400Regular'] text-[13px] leading-5 text-muted">Open a saved result in a modal, then move it back into the analyzer only if you want to rework it.</Text>
-          {searchHistory.length === 0 ? <Text className="font-['Poppins_400Regular'] text-muted">No searches yet.</Text> : null}
+            <Pressable className="rounded-full border border-line bg-soft px-3 py-2" onPress={() => void clearAllHistoryItems()}>
+              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Clear all</Text>
+            </Pressable>
+          </View>
+          <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] leading-5 text-muted">Open a saved result in a modal, then move it back into the analyzer only if you want to rework it.</Text>
+          {searchHistory.length === 0 ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">No searches yet.</Text> : null}
           {searchHistory.map((entry) => (
             <Pressable key={entry.id} className="gap-3 rounded-[18px] border border-line bg-soft px-4 py-4" onPress={() => openHistoryEntry(entry)}>
               <View className="flex-row items-start justify-between gap-3">
                 <View className="flex-1 gap-1">
-                  <Text className="font-['Poppins_600SemiBold'] text-ink">{entry.title || entry.query || "Unknown supplement"}</Text>
-                  <Text className="font-['Poppins_400Regular'] text-muted">
+                  <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">{entry.title || entry.query || "Unknown supplement"}</Text>
+                  <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">
                     {entry.mode === "image" ? "Image scan" : "Text search"} • {formatDisplayDateTime(entry.searchedAt)}
                   </Text>
                 </View>
                 <View className="rounded-full bg-card px-3 py-1.5">
-                  <Text className="font-['Poppins_600SemiBold'] text-xs text-sage">View</Text>
+                  <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-xs text-sage">View</Text>
                 </View>
               </View>
               <View className="flex-row items-center justify-end gap-2">
@@ -886,7 +893,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                     openHistoryEntry(entry, { openInAnalyzer: true });
                   }}
                 >
-                  <Text className="font-['Poppins_600SemiBold'] text-sage">Open in analyzer</Text>
+                  <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Open in analyzer</Text>
                 </Pressable>
                 <Pressable
                   className="rounded-full border border-line bg-card px-3 py-2"
@@ -895,7 +902,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                     void clearOneHistoryItem(entry.id);
                   }}
                 >
-                  <Text className="font-['Poppins_600SemiBold'] text-sage">Remove</Text>
+                  <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Remove</Text>
                 </Pressable>
               </View>
             </Pressable>
@@ -952,7 +959,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
       </Modal>
 
       <TutorialSheet visible={guideVisible} title="Supplement tutorial" pages={SCANNER_GUIDE_PAGES} onClose={closeGuide} />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -1006,7 +1013,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   historyModalMeta: {
-    fontFamily: "Poppins_400Regular",
+    ...typography.regular,
     fontSize: 13,
     lineHeight: 20,
     color: palette.muted,
@@ -1030,7 +1037,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   historyModalPrimaryText: {
-    fontFamily: "Poppins_600SemiBold",
+    ...typography.semibold,
     fontSize: 13,
     color: palette.surface,
   },
@@ -1045,7 +1052,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   historyModalSecondaryText: {
-    fontFamily: "Poppins_600SemiBold",
+    ...typography.semibold,
     fontSize: 13,
     color: palette.ink,
   },
@@ -1059,12 +1066,12 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surfaceSoft,
   },
   guideCloseButtonText: {
-    fontFamily: "Poppins_700Bold",
+    ...typography.bold,
     fontSize: 18,
     color: palette.primary,
   },
   guideTitle: {
-    fontFamily: "Poppins_700Bold",
+    ...typography.bold,
     fontSize: 20,
     color: palette.ink,
   },
@@ -1073,18 +1080,18 @@ const styles = StyleSheet.create({
     paddingRight: 16,
   },
   guideStepLabel: {
-    fontFamily: "Poppins_600SemiBold",
+    ...typography.semibold,
     fontSize: 12,
     color: palette.primary,
     textTransform: "uppercase",
   },
   guidePageTitle: {
-    fontFamily: "Poppins_700Bold",
+    ...typography.bold,
     fontSize: 18,
     color: palette.ink,
   },
   guidePageBody: {
-    fontFamily: "Poppins_400Regular",
+    ...typography.regular,
     fontSize: 14,
     lineHeight: 22,
     color: palette.muted,
@@ -1093,8 +1100,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   guideFooterText: {
-    fontFamily: "Poppins_600SemiBold",
+    ...typography.semibold,
     fontSize: 12,
     color: palette.muted,
   },
 });
+
+

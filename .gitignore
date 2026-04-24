@@ -9,7 +9,7 @@ backend/.venv/
 *.pyc
 
 # Environment / secrets (keep examples)
-.env
+**/.env*
 .env.local
 .env.*
 **/.env

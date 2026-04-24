@@ -1,11 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import { firebaseApp } from "../lib/firebaseClient";
-import { getFirestore } from "firebase/firestore";
+import { db } from "../lib/firebaseClient";
 
 export const PROFILE_STORAGE_KEY = "gramwin.profile.v1";
 const PROFILE_SYNC_META_KEY = "gramwin.profile.lastSync.v1";
-const firestore = firebaseApp ? getFirestore(firebaseApp) : null;
+const firestore = db;
 const profileMemoryCache = new Map();
 
 function resolveProfileStorageKey(accountId) {

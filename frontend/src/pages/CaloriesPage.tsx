@@ -616,14 +616,20 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
 
   return (
     <View style={styles.pageStack}>
-      <SectionTabs
-        value={activeSubPage}
-        onValueChange={setActiveSubPage}
-        tabs={[
-          { value: "calculator", label: "Estimate", icon: "food-apple-outline" },
-          { value: "history", label: "History", icon: "history" },
-        ]}
+      <ToolHeader
+        title="Meal Calorie Estimator"
+        subtitle="Upload a meal photo with your profile inputs to get a calmer calorie estimate, daily-target context, and nutrition notes."
+        onPressHelp={openGuide}
       />
+
+      <View style={styles.segmentRow}>
+        <Pressable style={[styles.segmentButton, activeSubPage === "calculator" && styles.segmentButtonSelected]} onPress={() => setActiveSubPage("calculator")}>
+          <Text style={[styles.segmentText, activeSubPage === "calculator" && styles.segmentTextSelected]}>Calculator</Text>
+        </Pressable>
+        <Pressable style={[styles.segmentButton, activeSubPage === "history" && styles.segmentButtonSelected]} onPress={() => setActiveSubPage("history")}>
+          <Text style={[styles.segmentText, activeSubPage === "history" && styles.segmentTextSelected]}>History</Text>
+        </Pressable>
+      </View>
 
       {activeSubPage === "calculator" ? (
         <>

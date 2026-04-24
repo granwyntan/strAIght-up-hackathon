@@ -9,7 +9,7 @@ const firebaseConfig = {
   projectId: process.env.FIREBASE_PROJECT_ID || process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID || process.env.EXPO_PUBLIC_FIREBASE_APP_ID
+  appId: process.env.FIREBASE_APP_ID || process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
 function ensureFirebaseConfig() {
@@ -20,27 +20,20 @@ function ensureFirebaseConfig() {
 const firebaseAvailable = ensureFirebaseConfig();
 const firebaseApp = firebaseAvailable ? (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig)) : null;
 
-let firebaseAuth = null;
+let auth = null;
 
 if (firebaseApp) {
   if (Platform.OS === "web") {
-    firebaseAuth = getAuth(firebaseApp);
+    auth = getAuth(firebaseApp);
   } else {
     try {
-      firebaseAuth = initializeAuth(firebaseApp, {
-        persistence: getReactNativePersistence(AsyncStorage)
+      auth = initializeAuth(firebaseApp, {
+        persistence: getReactNativePersistence(AsyncStorage),
       });
-    } catch (error) {
-      if (typeof error?.message === "string" && error.message.toLowerCase().includes("already")) {
-        firebaseAuth = getAuth(firebaseApp);
-      } else {
-        firebaseAuth = getAuth(firebaseApp);
-      }
-    }
-    if (!firebaseAuth) {
-      firebaseAuth = getAuth(firebaseApp);
+    } catch {
+      auth = getAuth(firebaseApp);
     }
   }
 }
 
-export { firebaseApp, firebaseAuth, firebaseAvailable };
+export { firebaseApp, auth, firebaseAvailable };

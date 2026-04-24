@@ -1,10 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { collection, doc, getDoc, getDocs, getFirestore, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 
-import { firebaseApp } from "../lib/firebaseClient";
+import { db } from "../lib/firebaseClient";
 
 const BASE_TRACKER_KEY = "gramwin.calorie.tracker.v1";
-const firestore = firebaseApp ? getFirestore(firebaseApp) : null;
+const firestore = db;
 
 function formatLocalIsoDate(date) {
   const year = date.getFullYear();

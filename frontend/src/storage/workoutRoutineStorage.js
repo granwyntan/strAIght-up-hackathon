@@ -1,10 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { collection, deleteDoc, doc, getDocs, getFirestore, setDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, setDoc } from "firebase/firestore";
 
-import { firebaseApp } from "../lib/firebaseClient";
+import { db } from "../lib/firebaseClient";
 
 const BASE_WORKOUT_TASK_KEY = "gramwin.workout.tasks.v1";
-const firestore = getFirestore(firebaseApp);
+const firestore = db;
 
 function toFirestoreUserId(email) {
   const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -91,7 +91,7 @@ function fromFirestoreRecord(id, data) {
 
 export async function loadWorkoutTasks(accountId, accountEmail) {
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return loadLocalTasks(accountId);
   }
   try {
@@ -108,7 +108,7 @@ export async function loadWorkoutTasks(accountId, accountEmail) {
 export async function replaceWorkoutTasks(accountId, tasks, accountEmail) {
   const normalized = await saveLocalTasks(accountId, tasks);
   const userId = toFirestoreUserId(accountEmail);
-  if (!userId) {
+  if (!userId || !firestore) {
     return normalized;
   }
   try {
