@@ -325,6 +325,8 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.95,
+      allowsEditing: Platform.OS !== "web",
+      aspect: [4, 3],
     });
     if (pickerResult.canceled || !pickerResult.assets?.length) {
       return;
@@ -378,6 +380,8 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
     const cameraResult = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.95,
+      allowsEditing: true,
+      aspect: [4, 3],
     });
     if (cameraResult.canceled || !cameraResult.assets?.length) {
       return;
@@ -1102,5 +1106,4 @@ const styles = StyleSheet.create({
     color: palette.muted,
   },
 });
-
 

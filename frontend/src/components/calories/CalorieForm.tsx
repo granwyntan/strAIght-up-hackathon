@@ -26,6 +26,7 @@ export default function CalorieForm({
   webcamEnabled,
   webcamActive,
   webcamError,
+  onCaptureImage,
   onOpenWebcam,
   onCaptureWebcam,
   onCloseWebcam,
@@ -134,6 +135,10 @@ export default function CalorieForm({
           {webcamError ? <Text style={styles.errorText}>{webcamError}</Text> : null}
         </View>
       ) : null}
+
+      <Pressable style={styles.pickButton} onPress={onCaptureImage} disabled={loading}>
+        <Text style={styles.pickButtonText}>Use camera</Text>
+      </Pressable>
 
       <Pressable style={styles.pickButton} onPress={onPickImage} disabled={loading}>
         <Text style={styles.pickButtonText}>{selectedImageUri ? "Replace meal image" : "Choose meal image"}</Text>

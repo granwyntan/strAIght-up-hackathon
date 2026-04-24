@@ -23,7 +23,7 @@ export default function SectionTabs({ value, onValueChange, tabs }: SectionTabsP
         const selected = tab.value === value;
         return (
           <Pressable key={tab.value} style={[styles.pill, selected && styles.pillSelected]} onPress={() => onValueChange(tab.value)}>
-            <MaterialCommunityIcons name={tab.icon as never} size={16} color={selected ? palette.surface : palette.primary} />
+            <MaterialCommunityIcons name={tab.icon as never} size={16} color={palette.primary} />
             <Text style={[styles.label, selected && styles.labelSelected]}>{tab.label}</Text>
           </Pressable>
         );

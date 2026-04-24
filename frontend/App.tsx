@@ -3,6 +3,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Animated,
   Dimensions,
+  KeyboardAvoidingView,
   Linking,
   Modal,
   NativeModules,
@@ -1639,11 +1640,14 @@ function GramwinApp() {
     <View style={styles.appShell}>
       <StatusBar barStyle="dark-content" backgroundColor={palette.background} />
       <View style={styles.background} />
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 12, paddingBottom: bottomInset + 104 }]}
-        showsVerticalScrollIndicator={false}
-      >
+      <KeyboardAvoidingView style={styles.flexOne} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 6 : 0}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 12, paddingBottom: bottomInset + 104 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        >
         {activeTab === "home" ? (
           <Header brand={bootstrap.brand.name} tagline={bootstrap.brand.tagline} onRetry={retryBackendConnection} apiError={apiError} />
         ) : (
@@ -1765,7 +1769,8 @@ function GramwinApp() {
             onLogout={() => void handleLogout()}
           />
         )}
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <BottomTabs activeTab={activeTab} onSelect={setActiveTab} bottomInset={bottomInset} />
 
@@ -4165,7 +4170,7 @@ function BottomTabs({
                 <MaterialCommunityIcons
                   name={(selected ? tab.icon : tab.iconInactive || tab.icon) as MaterialIconName}
                   size={20}
-                  color={selected ? "#FFFFFF" : palette.muted}
+                  color={palette.primary}
                 />
               </View>
               <Text variant="labelSmall" style={[styles.bottomTabLabel, selected && styles.bottomTabLabelSelected]}>
@@ -5241,7 +5246,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surfaceSoft,
   },
   bottomTabBubbleSelected: {
-    backgroundColor: palette.primary,
+    backgroundColor: palette.primarySoft,
   },
   bottomTabAvatar: {
     backgroundColor: "transparent",
@@ -5250,11 +5255,12 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   bottomTabLabel: {
-    color: palette.muted,
+    color: palette.primary,
     fontFamily: "Poppins_500Medium",
   },
   bottomTabLabelSelected: {
     color: palette.primary,
+    fontFamily: "Poppins_700Bold",
   },
   snackbar: {
     backgroundColor: palette.text,

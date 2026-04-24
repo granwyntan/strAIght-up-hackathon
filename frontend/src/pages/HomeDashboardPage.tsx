@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Avatar, Button, Card, Chip, IconButton, SegmentedButtons, Text, TextInput, TouchableRipple } from "react-native-paper";
 
@@ -753,7 +753,7 @@ export default function HomeDashboardPage({
           </Button>
         }
       />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.todayMetricsRow}>
+      <View style={styles.todayMetricsRow}>
         {metricDefinitions.map((metric) => {
           const currentValue = safeTrim((todaysVitals as any)?.[metric.key]);
           return (
@@ -777,35 +777,6 @@ export default function HomeDashboardPage({
             </TouchableRipple>
           );
         })}
-      </ScrollView>
-
-      <SectionHeader
-        eyebrow="Investigations"
-        title="Review activity"
-        body="A quicker read on what the claim-checking side of the app is doing right now."
-      />
-      <View style={styles.metricGrid}>
-        {[
-          { label: "Saved runs", value: String(history.length), detail: "Across quick, standard, and deep reviews", icon: "history" },
-          { label: "Completed", value: String(completedRuns), detail: "Reports ready to reopen", icon: "check-decagram" },
-          { label: "Running", value: String(runningRuns), detail: "Live investigations in progress", icon: "progress-clock" },
-          { label: "Scored", value: String(scoredRuns), detail: "Runs with settled verdicts", icon: "chart-box-outline" },
-        ].map((metric) => (
-          <Card key={metric.label} mode="contained" style={styles.metricCard}>
-            <Card.Content style={styles.metricContent}>
-              <Avatar.Icon size={42} icon={metric.icon} color={palette.primary} style={styles.metricAvatar} />
-              <Text variant="titleLarge" style={styles.metricValue}>
-                {metric.value}
-              </Text>
-              <Text variant="labelLarge" style={styles.metricLabel}>
-                {metric.label}
-              </Text>
-              <Text variant="bodySmall" style={styles.metricDetail}>
-                {metric.detail}
-              </Text>
-            </Card.Content>
-          </Card>
-        ))}
       </View>
 
       <SectionHeader
@@ -854,25 +825,19 @@ export default function HomeDashboardPage({
         </Card.Content>
       </Card>
 
-      <SectionHeader
-        eyebrow="Medication"
-        title="Medication and supplement log"
-        body="Separate medications with dosage, frequency, and time of day."
-        trailing={
-          <View style={styles.headerActionRow}>
-            <Button compact icon="account-circle" onPress={() => onOpenTab("profile")}>
-              Edit in Profile
-            </Button>
-            <IconButton
-              icon="plus"
-              containerColor={palette.primarySoft}
-              iconColor={palette.primary}
-              onPress={openMedicationCreate}
-              accessibilityLabel="Add medication"
-            />
-          </View>
-        }
-      />
+      <SectionHeader eyebrow="Medication" title="Medication and supplement log" body="Separate medications with dosage, frequency, and time of day." />
+      <View style={styles.medicationActionRow}>
+        <Button compact icon="account-circle" onPress={() => onOpenTab("profile")}>
+          Edit in Profile
+        </Button>
+        <IconButton
+          icon="plus"
+          containerColor={palette.primarySoft}
+          iconColor={palette.primary}
+          onPress={openMedicationCreate}
+          accessibilityLabel="Add medication"
+        />
+      </View>
       <Card mode="contained" style={styles.sectionCard}>
         <Card.Content style={styles.cardStack}>
           {medicationError ? (
@@ -1048,13 +1013,13 @@ export default function HomeDashboardPage({
       {latest ? (
         <TouchableRipple onPress={() => onOpenHistory(latest.id)} style={styles.recentCard}>
           <View style={styles.cardStack}>
-            <View style={styles.rowBetween}>
-              <Text variant="titleMedium" style={styles.linkTitle}>
+            <View style={styles.rowBetweenStart}>
+              <Text variant="titleMedium" style={styles.linkTitle} numberOfLines={2} ellipsizeMode="tail">
                 {safeTrim(latest.claim) || "Untitled claim"}
               </Text>
               <Chip compact>{safeTrim(latest.verdict) || "mixed"}</Chip>
             </View>
-            <Text variant="bodySmall" style={styles.sectionBody}>
+            <Text variant="bodySmall" style={styles.sectionBody} numberOfLines={3} ellipsizeMode="tail">
               {safeTrim(latest.summary) || "No summary available."}
             </Text>
             <Text variant="bodySmall" style={styles.historyMetaLine}>
@@ -1074,30 +1039,32 @@ export default function HomeDashboardPage({
 
       <Modal visible={metricModalVisible} transparent animationType="fade" onRequestClose={() => setMetricModalVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <Card mode="contained" style={styles.modalCard}>
-            <Card.Content style={styles.cardStack}>
-              <View style={styles.rowBetween}>
-                <Text variant="titleLarge" style={styles.formTitle}>
-                  Update {metricDefinitions.find((item) => item.key === activeMetricKey)?.label}
-                </Text>
-                <IconButton icon="close" onPress={() => setMetricModalVisible(false)} />
-              </View>
-              <TextInput
-                mode="outlined"
-                value={metricDraft}
-                onChangeText={setMetricDraft}
-                placeholder={metricDefinitions.find((item) => item.key === activeMetricKey)?.placeholder}
-              />
-              {metricError ? (
-                <Text variant="bodySmall" style={styles.errorText}>
-                  {metricError}
-                </Text>
-              ) : null}
-              <Button mode="contained" onPress={() => void saveMetric()} loading={metricSaving} disabled={metricSaving}>
-                Save
-              </Button>
-            </Card.Content>
-          </Card>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap}>
+            <Card mode="contained" style={styles.modalCard}>
+              <Card.Content style={styles.cardStack}>
+                <View style={styles.rowBetween}>
+                  <Text variant="titleLarge" style={styles.formTitle}>
+                    Update {metricDefinitions.find((item) => item.key === activeMetricKey)?.label}
+                  </Text>
+                  <IconButton icon="close" onPress={() => setMetricModalVisible(false)} />
+                </View>
+                <TextInput
+                  mode="outlined"
+                  value={metricDraft}
+                  onChangeText={setMetricDraft}
+                  placeholder={metricDefinitions.find((item) => item.key === activeMetricKey)?.placeholder}
+                />
+                {metricError ? (
+                  <Text variant="bodySmall" style={styles.errorText}>
+                    {metricError}
+                  </Text>
+                ) : null}
+                <Button mode="contained" onPress={() => void saveMetric()} loading={metricSaving} disabled={metricSaving}>
+                  Save
+                </Button>
+              </Card.Content>
+            </Card>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -1143,159 +1110,167 @@ export default function HomeDashboardPage({
 
       <Modal visible={exerciseModalVisible} transparent animationType="fade" onRequestClose={() => setExerciseModalVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <Card mode="contained" style={styles.modalCard}>
-            <Card.Content style={styles.cardStack}>
-              <View style={styles.rowBetween}>
-                <Text variant="titleLarge" style={styles.formTitle}>
-                  {editingExerciseId ? "Edit exercise" : "Add exercise"}
-                </Text>
-                <IconButton icon="close" onPress={() => setExerciseModalVisible(false)} />
-              </View>
-              <TextInput mode="outlined" label="Title" value={exerciseTitle} onChangeText={setExerciseTitle} />
-              <TextInput mode="outlined" label="Duration" value={exerciseDuration} onChangeText={setExerciseDuration} />
-              <SegmentedButtons
-                value={exerciseIntensity}
-                onValueChange={setExerciseIntensity}
-                buttons={intensityOptions.map((item) => ({ value: item, label: item }))}
-              />
-              <TextInput mode="outlined" label="Personal notes" value={exerciseNotes} onChangeText={setExerciseNotes} multiline />
-              {exerciseError ? (
-                <Text variant="bodySmall" style={styles.errorText}>
-                  {exerciseError}
-                </Text>
-              ) : null}
-              <Button mode="contained" onPress={() => void saveExercise()} loading={exerciseSaving} disabled={exerciseSaving}>
-                {editingExerciseId ? "Save changes" : "Add exercise"}
-              </Button>
-            </Card.Content>
-          </Card>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap}>
+            <Card mode="contained" style={styles.modalCard}>
+              <Card.Content style={styles.cardStack}>
+                <View style={styles.rowBetween}>
+                  <Text variant="titleLarge" style={styles.formTitle}>
+                    {editingExerciseId ? "Edit exercise" : "Add exercise"}
+                  </Text>
+                  <IconButton icon="close" onPress={() => setExerciseModalVisible(false)} />
+                </View>
+                <TextInput mode="outlined" label="Title" value={exerciseTitle} onChangeText={setExerciseTitle} />
+                <TextInput mode="outlined" label="Duration" value={exerciseDuration} onChangeText={setExerciseDuration} />
+                <SegmentedButtons
+                  value={exerciseIntensity}
+                  onValueChange={setExerciseIntensity}
+                  buttons={intensityOptions.map((item) => ({ value: item, label: item }))}
+                />
+                <TextInput mode="outlined" label="Personal notes" value={exerciseNotes} onChangeText={setExerciseNotes} multiline />
+                {exerciseError ? (
+                  <Text variant="bodySmall" style={styles.errorText}>
+                    {exerciseError}
+                  </Text>
+                ) : null}
+                <Button mode="contained" onPress={() => void saveExercise()} loading={exerciseSaving} disabled={exerciseSaving}>
+                  {editingExerciseId ? "Save changes" : "Add exercise"}
+                </Button>
+              </Card.Content>
+            </Card>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
       <Modal visible={routineModalVisible} transparent animationType="fade" onRequestClose={() => setRoutineModalVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <Card mode="contained" style={styles.historyModalCard}>
-            <Card.Content style={styles.cardStack}>
-              <View style={styles.rowBetween}>
-                <Text variant="titleLarge" style={styles.formTitle}>
-                  Generate routine
-                </Text>
-                <IconButton icon="close" onPress={() => setRoutineModalVisible(false)} />
-              </View>
-              <ScrollView style={styles.scrollBlock} contentContainerStyle={styles.cardStack}>
-                <View style={styles.rowGapTop}>
-                  <TextInput mode="outlined" label="Age" value={routineForm.age} onChangeText={(value) => setRoutineForm((current) => ({ ...current, age: value }))} style={styles.compactInput} />
-                  <TextInput
-                    mode="outlined"
-                    label="Height (cm)"
-                    value={routineForm.heightCm}
-                    onChangeText={(value) => setRoutineForm((current) => ({ ...current, heightCm: value }))}
-                    style={styles.compactInput}
-                  />
-                  <TextInput
-                    mode="outlined"
-                    label="Weight (kg)"
-                    value={routineForm.weightKg}
-                    onChangeText={(value) => setRoutineForm((current) => ({ ...current, weightKg: value }))}
-                    style={styles.compactInput}
-                  />
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap}>
+            <Card mode="contained" style={styles.historyModalCard}>
+              <Card.Content style={styles.cardStack}>
+                <View style={styles.rowBetween}>
+                  <Text variant="titleLarge" style={styles.formTitle}>
+                    Generate routine
+                  </Text>
+                  <IconButton icon="close" onPress={() => setRoutineModalVisible(false)} />
                 </View>
-                <TextInput mode="outlined" label="Goals" value={routineForm.goals} onChangeText={(value) => setRoutineForm((current) => ({ ...current, goals: value }))} multiline />
-                <Button mode="contained" onPress={() => void generateRoutine()} loading={routineLoading} disabled={routineLoading}>
-                  Generate routine
-                </Button>
+                <ScrollView style={styles.scrollBlock} contentContainerStyle={styles.cardStack} keyboardShouldPersistTaps="handled">
+                  <View style={styles.rowGapTop}>
+                    <TextInput mode="outlined" label="Age" value={routineForm.age} onChangeText={(value) => setRoutineForm((current) => ({ ...current, age: value }))} style={styles.compactInput} />
+                    <TextInput
+                      mode="outlined"
+                      label="Height (cm)"
+                      value={routineForm.heightCm}
+                      onChangeText={(value) => setRoutineForm((current) => ({ ...current, heightCm: value }))}
+                      style={styles.compactInput}
+                    />
+                    <TextInput
+                      mode="outlined"
+                      label="Weight (kg)"
+                      value={routineForm.weightKg}
+                      onChangeText={(value) => setRoutineForm((current) => ({ ...current, weightKg: value }))}
+                      style={styles.compactInput}
+                    />
+                  </View>
+                  <TextInput mode="outlined" label="Goals" value={routineForm.goals} onChangeText={(value) => setRoutineForm((current) => ({ ...current, goals: value }))} multiline />
+                  <Button mode="contained" onPress={() => void generateRoutine()} loading={routineLoading} disabled={routineLoading}>
+                    Generate routine
+                  </Button>
 
-                {suggestedRoutine ? (
-                  <Card mode="contained" style={styles.sectionCard}>
-                    <Card.Content style={styles.cardStack}>
-                      <Text variant="titleMedium" style={styles.linkTitle}>
-                        {suggestedRoutine.routineTitle}
-                      </Text>
-                      <Text variant="bodySmall" style={styles.sectionBody}>
-                        Continuous: {suggestedRoutine.continuous} • Trial: {suggestedRoutine.trialWeeks} weeks
-                      </Text>
-                      {suggestedRoutine.exercises.map((exercise, index) => {
-                        const selected = selectedRoutineIndices.includes(index);
-                        return (
-                          <Pressable key={`${exercise.type}-${index}`} onPress={() => toggleSuggestedExercise(index)} style={styles.rowBetween}>
-                            <View style={styles.flexOne}>
-                              <Text variant="titleSmall" style={styles.linkTitle}>
-                                {exercise.type} • {exercise.duration}
-                              </Text>
-                              <Text variant="bodySmall" style={styles.sectionBody}>
-                                {exercise.intensity} • {exercise.description || "No notes"}
-                              </Text>
-                            </View>
-                            <MaterialCommunityIcons
-                              name={selected ? "checkbox-marked-circle-outline" : "checkbox-blank-circle-outline"}
-                              size={22}
-                              color={selected ? palette.primary : palette.muted}
-                            />
-                          </Pressable>
-                        );
-                      })}
-                      <Button mode="contained" onPress={() => void saveSelectedRoutine()} loading={routineSaving} disabled={routineSaving}>
-                        Save selected routine
-                      </Button>
-                    </Card.Content>
-                  </Card>
-                ) : null}
-              </ScrollView>
-            </Card.Content>
-          </Card>
+                  {suggestedRoutine ? (
+                    <Card mode="contained" style={styles.sectionCard}>
+                      <Card.Content style={styles.cardStack}>
+                        <Text variant="titleMedium" style={styles.linkTitle}>
+                          {suggestedRoutine.routineTitle}
+                        </Text>
+                        <Text variant="bodySmall" style={styles.sectionBody}>
+                          Continuous: {suggestedRoutine.continuous} • Trial: {suggestedRoutine.trialWeeks} weeks
+                        </Text>
+                        {suggestedRoutine.exercises.map((exercise, index) => {
+                          const selected = selectedRoutineIndices.includes(index);
+                          return (
+                            <Pressable key={`${exercise.type}-${index}`} onPress={() => toggleSuggestedExercise(index)} style={styles.rowBetween}>
+                              <View style={styles.flexOne}>
+                                <Text variant="titleSmall" style={styles.linkTitle}>
+                                  {exercise.type} • {exercise.duration}
+                                </Text>
+                                <Text variant="bodySmall" style={styles.sectionBody}>
+                                  {exercise.intensity} • {exercise.description || "No notes"}
+                                </Text>
+                              </View>
+                              <MaterialCommunityIcons
+                                name={selected ? "checkbox-marked-circle-outline" : "checkbox-blank-circle-outline"}
+                                size={22}
+                                color={selected ? palette.primary : palette.muted}
+                              />
+                            </Pressable>
+                          );
+                        })}
+                        <Button mode="contained" onPress={() => void saveSelectedRoutine()} loading={routineSaving} disabled={routineSaving}>
+                          Save selected routine
+                        </Button>
+                      </Card.Content>
+                    </Card>
+                  ) : null}
+                </ScrollView>
+              </Card.Content>
+            </Card>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
       <Modal visible={medicationModalVisible} transparent animationType="fade" onRequestClose={() => setMedicationModalVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <Card mode="contained" style={styles.modalCard}>
-            <Card.Content style={styles.cardStack}>
-              <View style={styles.rowBetween}>
-                <Text variant="titleLarge" style={styles.formTitle}>
-                  {editingMedicationId ? "Edit medication" : "Add medication"}
-                </Text>
-                <IconButton icon="close" onPress={() => setMedicationModalVisible(false)} />
-              </View>
-              <TextInput mode="outlined" label="Medication name" value={medicationNameDraft} onChangeText={setMedicationNameDraft} />
-              <TextInput mode="outlined" label="Dosage" value={medicationDosageDraft} onChangeText={setMedicationDosageDraft} placeholder="e.g. 500 mg" />
-              <TextInput mode="outlined" label="Frequency per day" value={medicationFrequencyDraft} onChangeText={setMedicationFrequencyDraft} placeholder="e.g. 2 times per day" />
-              <TextInput mode="outlined" label="Time of day" value={medicationTimeDraft} onChangeText={setMedicationTimeDraft} placeholder="e.g. Morning, after lunch" />
-              {medicationError ? (
-                <Text variant="bodySmall" style={styles.errorText}>
-                  {medicationError}
-                </Text>
-              ) : null}
-              <Button mode="contained" onPress={() => void saveMedication()} loading={medicationSaving} disabled={medicationSaving}>
-                {editingMedicationId ? "Save changes" : "Add medication"}
-              </Button>
-            </Card.Content>
-          </Card>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap}>
+            <Card mode="contained" style={styles.modalCard}>
+              <Card.Content style={styles.cardStack}>
+                <View style={styles.rowBetween}>
+                  <Text variant="titleLarge" style={styles.formTitle}>
+                    {editingMedicationId ? "Edit medication" : "Add medication"}
+                  </Text>
+                  <IconButton icon="close" onPress={() => setMedicationModalVisible(false)} />
+                </View>
+                <TextInput mode="outlined" label="Medication name" value={medicationNameDraft} onChangeText={setMedicationNameDraft} />
+                <TextInput mode="outlined" label="Dosage" value={medicationDosageDraft} onChangeText={setMedicationDosageDraft} placeholder="e.g. 500 mg" />
+                <TextInput mode="outlined" label="Frequency per day" value={medicationFrequencyDraft} onChangeText={setMedicationFrequencyDraft} placeholder="e.g. 2 times per day" />
+                <TextInput mode="outlined" label="Time of day" value={medicationTimeDraft} onChangeText={setMedicationTimeDraft} placeholder="e.g. Morning, after lunch" />
+                {medicationError ? (
+                  <Text variant="bodySmall" style={styles.errorText}>
+                    {medicationError}
+                  </Text>
+                ) : null}
+                <Button mode="contained" onPress={() => void saveMedication()} loading={medicationSaving} disabled={medicationSaving}>
+                  {editingMedicationId ? "Save changes" : "Add medication"}
+                </Button>
+              </Card.Content>
+            </Card>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
       <Modal visible={routineEditModalVisible} transparent animationType="fade" onRequestClose={() => setRoutineEditModalVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <Card mode="contained" style={styles.modalCard}>
-            <Card.Content style={styles.cardStack}>
-              <View style={styles.rowBetween}>
-                <Text variant="titleLarge" style={styles.formTitle}>
-                  Edit routine item
-                </Text>
-                <IconButton icon="close" onPress={() => setRoutineEditModalVisible(false)} />
-              </View>
-              <TextInput mode="outlined" label="Exercise" value={routineTypeDraft} onChangeText={setRoutineTypeDraft} />
-              <TextInput mode="outlined" label="Duration" value={routineDurationDraft} onChangeText={setRoutineDurationDraft} />
-              <SegmentedButtons
-                value={routineIntensityDraft}
-                onValueChange={setRoutineIntensityDraft}
-                buttons={intensityOptions.map((item) => ({ value: item, label: item }))}
-              />
-              <TextInput mode="outlined" label="Description" value={routineDescriptionDraft} onChangeText={setRoutineDescriptionDraft} multiline />
-              <Button mode="contained" onPress={() => void saveRoutineEdit()} loading={routineSaving} disabled={routineSaving}>
-                Save changes
-              </Button>
-            </Card.Content>
-          </Card>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap}>
+            <Card mode="contained" style={styles.modalCard}>
+              <Card.Content style={styles.cardStack}>
+                <View style={styles.rowBetween}>
+                  <Text variant="titleLarge" style={styles.formTitle}>
+                    Edit routine item
+                  </Text>
+                  <IconButton icon="close" onPress={() => setRoutineEditModalVisible(false)} />
+                </View>
+                <TextInput mode="outlined" label="Exercise" value={routineTypeDraft} onChangeText={setRoutineTypeDraft} />
+                <TextInput mode="outlined" label="Duration" value={routineDurationDraft} onChangeText={setRoutineDurationDraft} />
+                <SegmentedButtons
+                  value={routineIntensityDraft}
+                  onValueChange={setRoutineIntensityDraft}
+                  buttons={intensityOptions.map((item) => ({ value: item, label: item }))}
+                />
+                <TextInput mode="outlined" label="Description" value={routineDescriptionDraft} onChangeText={setRoutineDescriptionDraft} multiline />
+                <Button mode="contained" onPress={() => void saveRoutineEdit()} loading={routineSaving} disabled={routineSaving}>
+                  Save changes
+                </Button>
+              </Card.Content>
+            </Card>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </View>
@@ -1337,6 +1312,7 @@ const styles = StyleSheet.create({
   segmentRow: {
     flexDirection: "row",
     gap: 10,
+    flexWrap: "wrap",
   },
   segmentButton: {
     borderRadius: 999,
@@ -1381,11 +1357,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   todayMetricsRow: {
-    gap: 10,
-    paddingRight: 2,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
   },
   todayMetricTouchable: {
-    width: 240,
+    width: "48.4%",
   },
   metricCard: {
     width: "48.4%",
@@ -1395,7 +1372,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
   },
   todayMetricCard: {
-    width: 240,
+    width: "100%",
   },
   metricContent: {
     flexDirection: "column",
@@ -1439,6 +1416,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 10,
   },
+  rowBetweenStart: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
   rowGapTop: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1464,6 +1447,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+  },
+  medicationActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: -10,
   },
   linkTitle: {
     color: palette.text,
@@ -1508,6 +1498,10 @@ const styles = StyleSheet.create({
     borderWidth: softBorderWidth,
     borderColor: palette.border,
     backgroundColor: palette.surface,
+  },
+  modalKeyboardWrap: {
+    width: "100%",
+    maxWidth: 640,
   },
   historyModalCard: {
     width: "100%",

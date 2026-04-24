@@ -263,7 +263,9 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
 
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.95
+      quality: 0.95,
+      allowsEditing: Platform.OS !== "web",
+      aspect: [4, 3]
     });
     if (pickerResult.canceled || !pickerResult.assets?.length) {
       return;
@@ -294,6 +296,34 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     } catch {
       setWebcamError("Could not access webcam. Please allow camera permission.");
     }
+  };
+
+  const captureImage = async () => {
+    setError("");
+
+    if (Platform.OS === "web") {
+      await openWebcam();
+      return;
+    }
+
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      setError("Camera access is required to take a photo.");
+      return;
+    }
+
+    const cameraResult = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.95,
+      allowsEditing: true,
+      aspect: [4, 3]
+    });
+    if (cameraResult.canceled || !cameraResult.assets?.length) {
+      return;
+    }
+
+    setSelectedAsset(cameraResult.assets[0]);
+    setResult(null);
   };
 
   const closeWebcam = () => {
@@ -637,6 +667,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
             onOpenWebcam={openWebcam}
             onCaptureWebcam={captureWebcam}
             onCloseWebcam={closeWebcam}
+            onCaptureImage={captureImage}
             webcamVideoRef={videoRef}
             selectedImageUri={selectedAsset?.uri || ""}
             selectedImageAspectRatio={selectedImageAspectRatio}
