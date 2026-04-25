@@ -29,7 +29,6 @@ function normalizeTask(input) {
     duration: typeof source.duration === "string" ? source.duration.trim() : "",
     intensity: typeof source.intensity === "string" ? source.intensity.trim() : "",
     description: typeof source.description === "string" ? source.description.trim() : "",
-    dueDate: typeof source.dueDate === "string" ? source.dueDate.trim() : "",
     completed: Boolean(source.completed),
     completedAt: typeof source.completedAt === "string" ? source.completedAt : "",
     createdAt: typeof source.createdAt === "string" ? source.createdAt : new Date().toISOString()
@@ -40,7 +39,7 @@ function normalizeTasks(input) {
   if (!Array.isArray(input)) {
     return [];
   }
-  return input.map(normalizeTask).sort((a, b) => Date.parse(a.dueDate || "") - Date.parse(b.dueDate || ""));
+  return input.map(normalizeTask).sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""));
 }
 
 async function loadLocalTasks(accountId) {
@@ -68,7 +67,6 @@ function toFirestoreRecord(task) {
     duration: task.duration,
     intensity: task.intensity,
     description: task.description,
-    due_date: task.dueDate,
     completed: task.completed,
     completed_at: task.completedAt,
     created_at: task.createdAt
@@ -83,7 +81,6 @@ function fromFirestoreRecord(id, data) {
     duration: data?.duration,
     intensity: data?.intensity,
     description: data?.description,
-    dueDate: data?.due_date,
     completed: data?.completed,
     completedAt: data?.completed_at,
     createdAt: data?.created_at
@@ -144,6 +141,31 @@ export async function setWorkoutTaskCompleted(accountId, taskId, completed, acco
       await setDoc(doc(firestore, "users", userId, "workout_plan", taskId), toFirestoreRecord(target), { merge: true });
     } catch (error) {
       console.warn("Unable to sync workout task completion to Firestore; local update kept", error);
+    }
+  }
+  return saved;
+}
+
+export async function resetWorkoutTaskCompletion(accountId, accountEmail) {
+  const existing = await loadLocalTasks(accountId);
+  const changed = existing.some((task) => Boolean(task.completed));
+  if (!changed) {
+    return existing;
+  }
+  const reset = existing.map((task) =>
+    normalizeTask({
+      ...task,
+      completed: false,
+      completedAt: ""
+    })
+  );
+  const saved = await saveLocalTasks(accountId, reset);
+  const userId = toFirestoreUserId(accountEmail);
+  if (userId && firestore) {
+    try {
+      await Promise.all(saved.map((task) => setDoc(doc(firestore, "users", userId, "workout_plan", task.id), toFirestoreRecord(task), { merge: true })));
+    } catch (error) {
+      console.warn("Unable to reset workout task completion in Firestore; local reset kept", error);
     }
   }
   return saved;

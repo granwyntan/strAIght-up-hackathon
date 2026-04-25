@@ -1724,7 +1724,7 @@ function GramwinApp() {
                     ? "Saved investigations"
                     : "Claim consultant"
                   : activeTab === "diet"
-                    ? "Consumables"
+                    ? "Scanner"
                     : activeTab === "activity"
                       ? "Activity monitor"
                       : "Profile and settings"
@@ -1735,7 +1735,7 @@ function GramwinApp() {
                     ? "Review saved reports, compare close reruns, and keep the history list tidy."
                     : "Check health claims with cleaner evidence summaries, stronger source integrity, and calmer presentation."
                   : activeTab === "diet"
-                    ? "Diet, drinks, medications, and supplement analysis now live in one calmer consumables workspace with a shared visual language."
+                    ? "Diet, drinks, medications, and supplement analysis now live in one calmer scanner workspace with a shared visual language."
                     : activeTab === "activity"
                       ? "Log movement, recovery, and activity load with clearer balance and recovery insights."
                       : "Manage your health context, saved presets, and investigation preferences."
@@ -2108,7 +2108,7 @@ function HomeScreen({
 function QuickLinks({ onOpenTab }: { onOpenTab: (tab: AppTab) => void }) {
   const links: Array<{ tab: AppTab; icon: string; label: string; body: string }> = [
     { tab: "consultant", icon: "stethoscope", label: "Verify", body: "Investigate claims and read evidence." },
-    { tab: "diet", icon: "cup-water", label: "Consumables", body: "Diet, drinks, medications, and supplement checks together." },
+    { tab: "diet", icon: "cup-water", label: "Scanner", body: "Diet, drinks, medications, and supplement checks together." },
     { tab: "activity", icon: "run", label: "Activity", body: "Movement, recovery, routines, and energy balance." },
     { tab: "profile", icon: "account-circle-outline", label: "Profile", body: "Health profile, goals, and context." },
   ];
@@ -2270,7 +2270,7 @@ function BottomTabs({
   const tabs: Array<{ key: AppTab; label: string; icon: string; iconInactive?: string }> = [
     { key: "home", label: "Home", icon: "home-heart" },
     { key: "consultant", label: "Verify", icon: "stethoscope" },
-    { key: "diet", label: "Consumables", icon: "cup-water" },
+    { key: "diet", label: "Scanner", icon: "cup-water" },
     { key: "activity", label: "Activity", icon: "run" },
     { key: "profile", label: "Profile", icon: "account-circle-outline" },
   ];

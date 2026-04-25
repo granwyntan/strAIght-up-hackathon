@@ -672,7 +672,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     const parsedCalories = Number(calories);
     const normalizedKind = kind === "hydration" ? "hydration" : kind === "other" ? "other" : "meal";
     if (normalizedKind !== "hydration" && (!Number.isFinite(parsedCalories) || parsedCalories < 0)) {
-      setTrackerError("Enter valid calories before adding to your consumables log.");
+      setTrackerError("Enter valid calories before adding to your scanner log.");
       return false;
     }
     const normalizedMealName = (mealName || "").trim() || inferFoodNameFromResult(result);
@@ -690,7 +690,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
       return Date.now() - createdAtMs <= 5000;
     });
     if (duplicateRecent) {
-      setTrackerError("This consumable was just added. Duplicate entry prevented.");
+      setTrackerError("This item was just added. Duplicate entry prevented.");
       return false;
     }
 
@@ -714,7 +714,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
         sourceType: "analysis"
       }, accountEmail);
       await loadHistory(weekAnchor);
-      setLogFeedback(normalizedKind === "hydration" ? "Added to hydration log." : "Added to consumables log.");
+      setLogFeedback(normalizedKind === "hydration" ? "Added to hydration log." : "Added to scanner log.");
       if (switchToHistory && activeSubPage !== "logs") {
         setActiveSubPage("logs");
       }
@@ -905,7 +905,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
               <View style={styles.logHeaderRow}>
                 <View style={styles.flexOne}>
                   <Text style={styles.logTitle}>Add to your log</Text>
-                  <Text style={styles.logSubtitle}>Save this analysis as a meal, hydration entry, or another consumable so future advice can use the full day context.</Text>
+                  <Text style={styles.logSubtitle}>Save this analysis as a meal or hydration entry so future advice can use the full day context.</Text>
                 </View>
                 <View style={styles.logTypeRow}>
                   {[

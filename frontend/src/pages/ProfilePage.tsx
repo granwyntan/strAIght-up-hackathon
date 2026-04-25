@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Button, Card, Chip, Text } from "react-native-paper";
+import { Button, Card, Chip, Text, TextInput } from "react-native-paper";
 
 import AuthGate from "../components/auth/AuthGate";
 import OnboardingSheet from "../components/profile/OnboardingSheet";
@@ -18,6 +18,7 @@ import {
   loadProfile,
   loadProfileLastSynced,
   profileCompletionSummary,
+  saveProfile,
 } from "../storage/profileStorage";
 import { formatDisplayDateTime } from "../utils/dateTime";
 
@@ -27,8 +28,8 @@ const PROFILE_GUIDE_PAGES = [
     body: "Your profile now powers diet, supplements, and activity together so you do not have to repeat the same medical or goal context in every tool.",
   },
   {
-    title: "Guided setup beats long forms",
-    body: "Use the guided setup when you want to add or update your profile. It keeps the experience step-based, faster to scan, and easier to finish.",
+    title: "Use the guide anytime",
+    body: "Use the Guide button whenever you want help updating your profile fields.",
   },
   {
     title: "Local first, account optional",
@@ -40,9 +41,11 @@ export default function ProfilePage({ accountId, accountEmail, activeAccount, au
   const [profile, setProfile] = useState(emptyProfile);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [lastSyncedAt, setLastSyncedAt] = useState("");
-  const [activeTab, setActiveTab] = useState("overview");
   const [guideVisible, setGuideVisible] = useState(false);
   const [editorVisible, setEditorVisible] = useState(false);
+  const [savingInline, setSavingInline] = useState(false);
+  const [editingSectionKey, setEditingSectionKey] = useState("");
+  const [sectionDrafts, setSectionDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let mounted = true;
@@ -79,45 +82,133 @@ export default function ProfilePage({ accountId, accountEmail, activeAccount, au
   ];
 
   const overviewSections = [
-    { title: "Basic info", body: [profile.name || "Name not set", profile.age ? `Age ${profile.age}` : "", profile.gender || "", profile.country || ""].filter(Boolean).join(" • ") || "Finish setup to add your basic details." },
-    { title: "Health context", body: profile.medicalConditions || profile.allergies || profile.medicalHistory || "No health conditions, allergies, or notes added yet." },
-    { title: "Lifestyle", body: [profile.activityLevel, profile.sleepHours ? `${profile.sleepHours}h sleep` : "", profile.sleepQuality, profile.caffeineIntake].filter(Boolean).join(" • ") || "Lifestyle details are still empty." },
-    { title: "Diet preferences", body: [profile.dietType, profile.eatingPattern, (profile.foodDislikeTags || []).slice(0, 3).join(", ")].filter(Boolean).join(" • ") || "Add diet style, eating pattern, and food dislikes." },
-    { title: "Medications and supplements", body: profile.medicationsOrSupplements || "No medications or supplements added yet." },
-    { title: "AI preferences", body: [profile.insightDepth, profile.recommendationStyle, profile.storagePreference].filter(Boolean).join(" • ") || "Using default AI settings." },
+    {
+      key: "basic",
+      title: "Basic info",
+      fields: [
+        { key: "name", label: "Name", multiline: false },
+        { key: "age", label: "Age", multiline: false },
+        { key: "gender", label: "Gender", multiline: false },
+        { key: "country", label: "Country", multiline: false },
+      ],
+      body: [profile.name || "Name not set", profile.age ? `Age ${profile.age}` : "", profile.gender || "", profile.country || ""].filter(Boolean).join(" • ") || "Finish setup to add your basic details.",
+    },
+    {
+      key: "health",
+      title: "Health context",
+      fields: [
+        { key: "medicalConditions", label: "Medical conditions", multiline: true },
+        { key: "allergies", label: "Allergies", multiline: true },
+        { key: "medicalHistory", label: "Medical history", multiline: true },
+      ],
+      body: profile.medicalConditions || profile.allergies || profile.medicalHistory || "No health conditions, allergies, or notes added yet.",
+    },
+    {
+      key: "lifestyle",
+      title: "Lifestyle",
+      fields: [
+        { key: "activityLevel", label: "Activity level", multiline: false },
+        { key: "sleepHours", label: "Sleep hours", multiline: false },
+        { key: "sleepQuality", label: "Sleep quality", multiline: false },
+        { key: "caffeineIntake", label: "Caffeine intake", multiline: false },
+      ],
+      body: [profile.activityLevel, profile.sleepHours ? `${profile.sleepHours}h sleep` : "", profile.sleepQuality, profile.caffeineIntake].filter(Boolean).join(" • ") || "Lifestyle details are still empty.",
+    },
+    {
+      key: "diet",
+      title: "Diet preferences",
+      fields: [
+        { key: "dietType", label: "Diet type", multiline: false },
+        { key: "eatingPattern", label: "Eating pattern", multiline: false },
+        { key: "goals", label: "Goals", multiline: true },
+      ],
+      body: [profile.dietType, profile.eatingPattern, (profile.foodDislikeTags || []).slice(0, 3).join(", "), profile.goals].filter(Boolean).join(" • ") || "Add diet style, eating pattern, and food dislikes.",
+    },
+    {
+      key: "medications",
+      title: "Medications and supplements",
+      fields: [{ key: "medicationsOrSupplements", label: "Medications and supplements", multiline: true }],
+      body: profile.medicationsOrSupplements || "No medications or supplements added yet.",
+    },
+    {
+      key: "ai",
+      title: "AI preferences",
+      fields: [
+        { key: "insightDepth", label: "Insight depth", multiline: false },
+        { key: "recommendationStyle", label: "Recommendation style", multiline: false },
+        { key: "storagePreference", label: "Storage preference", multiline: false },
+      ],
+      body: [profile.insightDepth, profile.recommendationStyle, profile.storagePreference].filter(Boolean).join(" • ") || "Using default AI settings.",
+    },
   ];
+
+  useEffect(() => {
+    if (loadingProfile) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          setSavingInline(true);
+          await saveProfile(profile, accountId, accountEmail);
+          setLastSyncedAt(new Date().toISOString());
+        } finally {
+          setSavingInline(false);
+        }
+      })();
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [profile, accountEmail, accountId, loadingProfile]);
+
+  const updateField = (key, value) => {
+    setProfile((current) => ({ ...current, [key]: value }));
+  };
+
+  function startSectionEdit(section) {
+    const nextDrafts: Record<string, string> = {};
+    section.fields.forEach((field) => {
+      nextDrafts[field.key] = profile[field.key] || "";
+    });
+    setSectionDrafts(nextDrafts);
+    setEditingSectionKey(section.key);
+  }
+
+  function saveSectionEdit(section) {
+    setProfile((current) => {
+      const updated = { ...current };
+      section.fields.forEach((field) => {
+        updated[field.key] = sectionDrafts[field.key] || "";
+      });
+      return updated;
+    });
+    setEditingSectionKey("");
+    setSectionDrafts({});
+  }
 
   return (
     <View style={styles.pageStack}>
       <SectionTabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as "overview" | "settings")}
-        tabs={[
-          { value: "overview", label: "Overview", icon: "account-heart-outline" },
-          { value: "settings", label: "Settings", icon: "tune-variant" },
-        ]}
+        value={"overview"}
+        onValueChange={() => {}}
+        tabs={[{ value: "overview", label: "Overview", icon: "account-heart-outline" }]}
       />
 
-      {activeTab === "overview" ? (
+      {
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <Card mode="contained" style={styles.heroCard}>
             <Card.Content style={styles.heroContent}>
-              <View style={styles.rowBetween}>
-                <View style={styles.flexOne}>
-                  <Text variant="titleLarge" style={styles.heroTitle}>
-                    {profile.name || "Your profile"}
-                  </Text>
-                  <Text variant="bodyMedium" style={styles.heroBody}>
-                    The app uses this profile to personalise food, supplement, and activity analysis across GramWIN.
-                  </Text>
-                </View>
-                <Button mode="contained" onPress={() => setEditorVisible(true)} buttonColor={palette.primary}>
+              <View style={styles.flexOne}>
+                <Text variant="titleLarge" style={styles.heroTitle}>
+                  {profile.name || "Your profile"}
+                </Text>
+                <Text variant="bodyMedium" style={styles.heroBody}>
+                  The app uses this profile to personalise food, supplement, and activity analysis across GramWIN.
+                </Text>
+              </View>
+              <View style={styles.heroActionRow}>
+                <Button mode="outlined" onPress={() => setEditorVisible(true)} textColor={palette.primary}>
                   Guided setup
                 </Button>
-              </View>
-              <View style={styles.statusRow}>
-                <Chip style={styles.statusChip}>{activeAccount ? "Sync enabled" : "Local-only"}</Chip>
-                <Chip style={styles.statusChip}>{lastSyncedLabel}</Chip>
               </View>
             </Card.Content>
           </Card>
@@ -146,42 +237,41 @@ export default function ProfilePage({ accountId, accountEmail, activeAccount, au
           {overviewSections.map((section) => (
             <Card key={section.title} mode="contained" style={styles.sectionCard}>
               <Card.Content style={styles.cardStack}>
-                <Text variant="titleMedium" style={styles.sectionTitle}>
-                  {section.title}
-                </Text>
-                <Text variant="bodyMedium" style={styles.bodyText}>
-                  {section.body}
-                </Text>
+                <View style={styles.rowBetween}>
+                  <Text variant="titleMedium" style={styles.sectionTitle}>
+                    {section.title}
+                  </Text>
+                  {editingSectionKey === section.key ? (
+                    <Button compact mode="contained" onPress={() => saveSectionEdit(section)} buttonColor={palette.primary}>
+                      Save
+                    </Button>
+                  ) : (
+                    <Button compact mode="outlined" onPress={() => startSectionEdit(section)} textColor={palette.primary}>
+                      Edit
+                    </Button>
+                  )}
+                </View>
+                {editingSectionKey === section.key ? (
+                  <View style={styles.cardStack}>
+                    {section.fields.map((field) => (
+                      <TextInput
+                        key={field.key}
+                        mode="outlined"
+                        label={field.label}
+                        value={sectionDrafts[field.key] || ""}
+                        onChangeText={(value) => setSectionDrafts((current) => ({ ...current, [field.key]: value }))}
+                        multiline={field.multiline}
+                      />
+                    ))}
+                  </View>
+                ) : (
+                  <Text variant="bodyMedium" style={styles.bodyText}>
+                    {section.body}
+                  </Text>
+                )}
               </Card.Content>
             </Card>
           ))}
-        </ScrollView>
-      ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <Card mode="contained" style={styles.sectionCard}>
-            <Card.Content style={styles.cardStack}>
-              <Text variant="titleMedium" style={styles.sectionTitle}>
-                Guided editing
-              </Text>
-              <Text variant="bodyMedium" style={styles.bodyText}>
-                Use the same step-based flow from onboarding to update your profile without digging through long forms.
-              </Text>
-              <Button mode="contained" onPress={() => setEditorVisible(true)} buttonColor={palette.primary}>
-                Open guided setup
-              </Button>
-            </Card.Content>
-          </Card>
-
-          <Card mode="contained" style={styles.sectionCard}>
-            <Card.Content style={styles.cardStack}>
-              <Text variant="titleMedium" style={styles.sectionTitle}>
-                How the profile is used
-              </Text>
-              <ContextBlock title="Diet workspace" body={buildDietProfileContext(profile) || "Add goals, conditions, and preferences to help food analysis become more personal."} />
-              <ContextBlock title="Supplements" body={buildSupplementProfileContext(profile) || "Add conditions, medications, and current supplements to sharpen supplement safety checks."} />
-              <ContextBlock title="Activity" body={buildActivityProfileContext(profile) || "Add goals, activity level, recovery, and medical context to improve routine suggestions."} />
-            </Card.Content>
-          </Card>
 
           {!activeAccount ? (
             <Card mode="contained" style={styles.sectionCard}>
@@ -190,7 +280,7 @@ export default function ProfilePage({ accountId, accountEmail, activeAccount, au
                   Optional account sync
                 </Text>
                 <Text variant="bodyMedium" style={styles.bodyText}>
-                  Local saving is already active. Create or sign in to an account only when you want the same profile and history across devices.
+                  Local saving is already active. Create or sign in only when you want synced profile/history across devices.
                 </Text>
                 <AuthGate onAuthenticate={onAuthenticate} loading={authLoading} />
               </Card.Content>
@@ -210,12 +300,8 @@ export default function ProfilePage({ accountId, accountEmail, activeAccount, au
               </Card.Content>
             </Card>
           )}
-
-          <Button mode="text" onPress={() => setGuideVisible(true)} textColor={palette.primary}>
-            Open profile tutorial
-          </Button>
         </ScrollView>
-      )}
+      }
 
       <OnboardingSheet
         visible={editorVisible}
@@ -277,6 +363,10 @@ const styles = StyleSheet.create({
     color: palette.muted,
     lineHeight: 22,
   },
+  heroActionRow: {
+    marginTop: 4,
+    alignItems: "flex-start",
+  },
   rowBetween: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -287,18 +377,11 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  statusRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  statusChip: {
-    backgroundColor: palette.surfaceSoft,
-  },
   metricGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
+    marginTop: 4,
   },
   metricCard: {
     flexBasis: "47%",
