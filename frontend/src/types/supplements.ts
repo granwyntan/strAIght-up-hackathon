@@ -65,6 +65,25 @@ export interface SupplementAnalysisResult {
   } | null;
 }
 
+export interface SupplementDrugDeepDiveResult {
+  analysisText: string;
+  sections: SupplementSection[];
+  structuredAnalysis?: Record<string, object> | null;
+}
+
+export interface SupplementHistoryEntry {
+  id: string;
+  query: string;
+  title: string;
+  mode: "image" | "text";
+  analysisType?: "supplement" | "medicine";
+  searchedAt: string;
+  result: SupplementAnalysisResult | null;
+  drugResult?: SupplementDrugDeepDiveResult | null;
+  inputImage: string;
+  infographic: string;
+}
+
 export interface PickedSupplementAsset {
   uri: string;
   width?: number | null;

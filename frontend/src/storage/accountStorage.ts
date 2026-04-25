@@ -1,8 +1,10 @@
 // @ts-nocheck
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut
 } from "firebase/auth";
 
@@ -35,6 +37,12 @@ function mapAuthError(error) {
   }
   if (code === "auth/network-request-failed") {
     return "Network error. Check your internet connection and try again.";
+  }
+  if (code === "auth/popup-closed-by-user") {
+    return "Google sign-in was closed before completion.";
+  }
+  if (code === "auth/cancelled-popup-request") {
+    return "Another sign-in popup was already in progress.";
   }
   return "Unable to continue with account authentication.";
 }
@@ -75,6 +83,21 @@ export async function loginOrRegisterAccount(email, password) {
     return toSessionAccount(loggedIn.user);
   } catch (signInError) {
     throw new Error(mapAuthError(signInError));
+  }
+}
+
+export async function signInWithGoogleAccount() {
+  if (!auth) {
+    throw new Error("Firebase authentication is not configured for this build.");
+  }
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+
+  try {
+    const credential = await signInWithPopup(auth, provider);
+    return toSessionAccount(credential.user);
+  } catch (error) {
+    throw new Error(mapAuthError(error));
   }
 }
 

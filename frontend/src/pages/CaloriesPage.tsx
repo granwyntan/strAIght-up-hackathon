@@ -1,7 +1,8 @@
 // @ts-nocheck
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { palette } from "../data";
 import CalorieForm from "../components/calories/CalorieForm";
@@ -9,13 +10,16 @@ import CalorieResult from "../components/calories/CalorieResult";
 import SectionTabs from "../components/shared/SectionTabs";
 import TutorialSheet from "../components/shared/TutorialSheet";
 import CalorieHistoryPage from "./CalorieHistoryPage";
-import { loadProfile, saveProfile } from "../storage/profileStorage";
+import { buildDietProfileContext, loadProfile, saveProfile } from "../storage/profileStorage";
 import { formatDisplayTime } from "../utils/dateTime";
 import {
   addCalorieEntry,
+  addConsumableRunHistoryEntry,
   clearCalorieDay,
   deleteCalorieEntry,
   loadCalorieWeek,
+  loadConsumableRunHistory,
+  removeConsumableRunHistoryEntry,
   updateCalorieEntry
 } from "../storage/calorieTrackerStorage";
 
@@ -26,7 +30,15 @@ const DEFAULT_VALUES = {
   heightCm: "",
   activityLevel: "moderate",
   sex: "female",
-  medicalHistory: ""
+  medicalHistory: "",
+  mealDescription: "",
+  mealType: "food",
+  mealDate: formatLocalIsoDate(new Date()),
+  mealTime: "",
+  hungerLevel: "3",
+  goalContext: "energy",
+  addToLogs: "yes",
+  includeProfile: "yes"
 };
 const CALORIE_GUIDE_PAGES = [
   {
@@ -97,62 +109,34 @@ function formatLocalIsoDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-function buildCenterCropRect(width, height, targetAspect = 4 / 3) {
-  const sourceAspect = width / height;
-  if (sourceAspect > targetAspect) {
-    const cropHeight = height;
-    const cropWidth = Math.round(height * targetAspect);
-    const originX = Math.round((width - cropWidth) / 2);
-    return { originX, originY: 0, width: cropWidth, height: cropHeight };
+function aspectRatioTuple(value) {
+  if (value === "1:1") {
+    return [1, 1];
   }
-  const cropWidth = width;
-  const cropHeight = Math.round(width / targetAspect);
-  const originY = Math.round((height - cropHeight) / 2);
-  return { originX: 0, originY, width: cropWidth, height: cropHeight };
+  if (value === "3:4") {
+    return [3, 4];
+  }
+  if (value === "16:9") {
+    return [16, 9];
+  }
+  return [4, 3];
 }
 
-async function cropWebAssetToCenter(asset) {
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Unable to load image for cropping."));
-    img.src = asset.uri;
-  });
-  const width = image.naturalWidth || image.width;
-  const height = image.naturalHeight || image.height;
-  if (!width || !height) {
-    throw new Error("Unable to crop image.");
-  }
-
-  const crop = buildCenterCropRect(width, height, 4 / 3);
-  const canvas = document.createElement("canvas");
-  canvas.width = crop.width;
-  canvas.height = crop.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("Unable to crop image.");
-  }
-  ctx.drawImage(image, crop.originX, crop.originY, crop.width, crop.height, 0, 0, crop.width, crop.height);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((nextBlob) => resolve(nextBlob), "image/jpeg", 0.95));
-  if (!blob) {
-    throw new Error("Unable to crop image.");
-  }
-  const filename = `meal-crop-${Date.now()}.jpg`;
-  const file = new File([blob], filename, { type: "image/jpeg" });
-  const uri = URL.createObjectURL(blob);
-  return {
-    uri,
-    file,
-    fileName: filename,
-    mimeType: "image/jpeg",
-    width: crop.width,
-    height: crop.height,
-  };
+function firstProfileGoal(profile) {
+  const raw = typeof profile?.goals === "string" ? profile.goals : "";
+  const first = raw
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .find(Boolean);
+  return first || "energy";
 }
 
 export default function CaloriesPage({ requestApi, accountId, accountEmail, guideSignal = 0 }) {
   const [values, setValues] = useState(DEFAULT_VALUES);
   const [selectedAsset, setSelectedAsset] = useState(null);
+  const [selectedAssetSource, setSelectedAssetSource] = useState("library");
+  const [aspectRatio, setAspectRatio] = useState("4:3");
+  const [cropVisible, setCropVisible] = useState(false);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [calcStartedAt, setCalcStartedAt] = useState(null);
@@ -167,9 +151,18 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
   const [entryActionLoading, setEntryActionLoading] = useState(false);
   const [weekAnchor, setWeekAnchor] = useState(new Date());
   const [historyPayload, setHistoryPayload] = useState(null);
-  const [confirmVisible, setConfirmVisible] = useState(false);
-  const [suggestedMealName, setSuggestedMealName] = useState("");
-  const [suggestedCalories, setSuggestedCalories] = useState("");
+  const [runHistory, setRunHistory] = useState([]);
+  const [selectedRun, setSelectedRun] = useState(null);
+  const [logType, setLogType] = useState("meal");
+  const [logName, setLogName] = useState("");
+  const [logCalories, setLogCalories] = useState("");
+  const [logAmount, setLogAmount] = useState("");
+  const [logUnit, setLogUnit] = useState("serving");
+  const [logServings, setLogServings] = useState("1");
+  const [logContext, setLogContext] = useState("");
+  const [logDate, setLogDate] = useState(formatLocalIsoDate(new Date()));
+  const [logTime, setLogTime] = useState("12:00");
+  const [logFeedback, setLogFeedback] = useState("");
   const [guideVisible, setGuideVisible] = useState(false);
   const [guidePageWidth, setGuidePageWidth] = useState(320);
   const [activeGuidePage, setActiveGuidePage] = useState(0);
@@ -178,9 +171,32 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
   const objectUrlRef = useRef(null);
   const guideScrollRef = useRef(null);
 
-  const selectedImageAspectRatio = selectedAsset?.width && selectedAsset?.height ? selectedAsset.width / selectedAsset.height : 1.4;
+  const selectedImageAspectRatio = selectedAsset?.width && selectedAsset?.height ? selectedAsset.width / selectedAsset.height : aspectRatio === "1:1" ? 1 : aspectRatio === "3:4" ? 0.75 : aspectRatio === "16:9" ? 16 / 9 : 4 / 3;
   const canUseWebcam = Platform.OS === "web";
   const progressWidth = loading ? Math.min(92, 26 + Math.floor((calcElapsedMs || 0) / 900) * 12) : 100;
+  const dietAnalysisSteps = [
+    {
+      label: "Nutrition parser",
+      icon: "food-apple-outline",
+      body: "Identifying the meal or drink, portion size, and core nutrient signals.",
+      active: progressWidth >= 24,
+      complete: progressWidth >= 46,
+    },
+    {
+      label: "Profile fit analyst",
+      icon: "account-heart-outline",
+      body: "Comparing it with your conditions, allergies, food rules, and eating pattern.",
+      active: progressWidth >= 46,
+      complete: progressWidth >= 72,
+    },
+    {
+      label: "Impact reviewer",
+      icon: "shield-check-outline",
+      body: "Scoring body impact, benefits, drawbacks, and claim realism.",
+      active: progressWidth >= 72,
+      complete: progressWidth >= 100,
+    },
+  ];
   const bmiCategory = useMemo(() => {
     const bmi = Number(values.bmi);
     if (!Number.isFinite(bmi) || bmi <= 0) {
@@ -231,8 +247,11 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
           age: profile.age || previous.age,
           weightKg: profile.weight || previous.weightKg,
           heightCm: profile.height || previous.heightCm,
+          activityLevel: (profile.activityLevel || previous.activityLevel || "moderate").toLowerCase(),
           sex: mapProfileGenderToSex(profile.gender) || previous.sex,
-          medicalHistory: profile.medicalHistory || profile.medicalConditions || previous.medicalHistory
+          medicalHistory: buildDietProfileContext(profile) || profile.medicalHistory || profile.medicalConditions || previous.medicalHistory,
+          goalContext: firstProfileGoal(profile),
+          mealDate: previous.mealDate || formatLocalIsoDate(new Date()),
         }));
       } catch (error) {
         console.warn("Unable to prefill calorie inputs from profile", error);
@@ -288,6 +307,26 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
   }, [weekAnchor, accountId]);
 
   useEffect(() => {
+    let mounted = true;
+    const hydrateRuns = async () => {
+      try {
+        const entries = await loadConsumableRunHistory(accountId);
+        if (mounted) {
+          setRunHistory(entries);
+        }
+      } catch {
+        if (mounted) {
+          setRunHistory([]);
+        }
+      }
+    };
+    void hydrateRuns();
+    return () => {
+      mounted = false;
+    };
+  }, [accountId]);
+
+  useEffect(() => {
     if (guideSignal > 0) {
       openGuide();
     }
@@ -315,16 +354,18 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     }
 
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: "images",
       quality: 0.95,
       allowsEditing: Platform.OS !== "web",
-      aspect: [4, 3]
+      aspect: aspectRatioTuple(aspectRatio)
     });
     if (pickerResult.canceled || !pickerResult.assets?.length) {
       return;
     }
 
+    setSelectedAssetSource("library");
     setSelectedAsset(pickerResult.assets[0]);
+    setCropVisible(true);
     setResult(null);
   };
 
@@ -366,16 +407,18 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     }
 
     const cameraResult = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: "images",
       quality: 0.95,
       allowsEditing: true,
-      aspect: [4, 3]
+      aspect: aspectRatioTuple(aspectRatio)
     });
     if (cameraResult.canceled || !cameraResult.assets?.length) {
       return;
     }
 
+    setSelectedAssetSource("camera");
     setSelectedAsset(cameraResult.assets[0]);
+    setCropVisible(true);
     setResult(null);
   };
 
@@ -426,26 +469,10 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
       width,
       height
     });
+    setSelectedAssetSource("camera");
+    setCropVisible(true);
     setResult(null);
     closeWebcam();
-  };
-
-  const cropSelectedImage = async () => {
-    if (!selectedAsset || Platform.OS !== "web") {
-      return;
-    }
-    setError("");
-    try {
-      const cropped = await cropWebAssetToCenter(selectedAsset);
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current);
-      }
-      objectUrlRef.current = cropped.uri;
-      setSelectedAsset(cropped);
-      setResult(null);
-    } catch (cropError) {
-      setError(cropError instanceof Error ? cropError.message : "Unable to crop image.");
-    }
   };
 
   function inferCaloriesFromResult(nextResult) {
@@ -480,7 +507,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     }
 
     const sections = Array.isArray(nextResult?.sections) ? nextResult.sections : [];
-    const summarySection = sections.find((section) => /meal summary/i.test(section.heading || ""));
+    const summarySection = sections.find((section) => /(top summary|meal summary)/i.test(section.heading || ""));
     const raw = (summarySection?.content || nextResult?.analysisText || "").split("\n").find((line) => line.trim());
     if (!raw) {
       return "Meal";
@@ -491,6 +518,59 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
       .replace(/^Dish[:\s-]*/i, "")
       .trim();
     return clean.slice(0, 80) || "Meal";
+  }
+
+  function looksLikeHydrationResult(nextResult) {
+    const raw = `${nextResult?.analysisText || ""}\n${Array.isArray(nextResult?.sections) ? nextResult.sections.map((section) => section?.content || "").join("\n") : ""}`.toLowerCase();
+    return /(water|hydration|hydrating|coffee|tea|juice|smoothie|soda|drink|alcohol|beer|wine|cocktail|latte)/.test(raw);
+  }
+
+  function defaultContextForLog(kind) {
+    if (kind === "hydration") {
+      return "Hydration";
+    }
+    if (kind === "other") {
+      return "Consumable";
+    }
+    return "Meal";
+  }
+
+  function inferMealContextFromTime(value, kind) {
+    if (kind === "hydration") {
+      return "Hydration";
+    }
+    const match = typeof value === "string" ? value.match(/^(\d{2}):(\d{2})$/) : null;
+    if (!match) {
+      return kind === "other" ? "Consumable" : "Meal";
+    }
+    const hour = Number(match[1]);
+    if (hour < 10) {
+      return "Breakfast";
+    }
+    if (hour < 15) {
+      return "Lunch";
+    }
+    if (hour < 19) {
+      return "Dinner";
+    }
+    return kind === "other" ? "Consumable" : "Snack";
+  }
+
+  function seedLogDraft(nextResult) {
+    const hydration = looksLikeHydrationResult(nextResult);
+    const nextType = hydration ? "hydration" : "meal";
+    const nextCalories = inferCaloriesFromResult(nextResult);
+    const nextName = inferFoodNameFromResult(nextResult);
+    setLogType(nextType);
+    setLogName(nextName);
+    setLogCalories(nextCalories);
+    setLogAmount(hydration ? "350" : "1");
+    setLogUnit(hydration ? "ml" : "serving");
+    setLogServings("1");
+    setLogContext(defaultContextForLog(nextType));
+    setLogDate(formatLocalIsoDate(new Date()));
+    setLogTime(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }));
+    setLogFeedback("");
   }
 
   const submit = async () => {
@@ -527,7 +607,12 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
       formData.append("heightCm", values.heightCm);
       formData.append("activityLevel", values.activityLevel);
       formData.append("sex", values.sex);
-      formData.append("medicalHistory", values.medicalHistory);
+      formData.append("medicalHistory", values.includeProfile === "no" ? "" : values.medicalHistory);
+      formData.append("mealDescription", values.mealDescription);
+      formData.append("mealType", values.mealType);
+      formData.append("mealDate", values.mealDate || formatLocalIsoDate(new Date()));
+      formData.append("mealTime", values.mealTime);
+      formData.append("hungerLevel", values.hungerLevel);
 
       const response = await requestApi("/api/calories/calculate", {
         method: "POST",
@@ -539,6 +624,18 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
 
       const payload = await response.json();
       setResult(payload);
+      const title = inferFoodNameFromResult(payload);
+      const searchedAt = new Date().toISOString();
+      const updatedRuns = await addConsumableRunHistoryEntry(accountId, {
+        id: `diet-run-${searchedAt.replace(/\D/g, "").slice(0, 17)}`,
+        title,
+        kind: looksLikeHydrationResult(payload) ? "hydration" : "meal",
+        searchedAt,
+        result: payload,
+        summary: payload?.analysisText?.split("\n").find((line) => line.trim()) || "",
+        tags: Array.isArray(payload?.topHighlights) ? payload.topHighlights.slice(0, 3) : [],
+      });
+      setRunHistory(updatedRuns);
       if (accountId && accountEmail) {
         const dailyTarget = Number(payload?.calorieContext?.dailyTarget);
         if (Number.isFinite(dailyTarget) && dailyTarget > 0) {
@@ -559,11 +656,9 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
         }
       }
       const inferred = inferCaloriesFromResult(payload);
-      const inferredMealName = inferFoodNameFromResult(payload);
-      if (inferred) {
-        setSuggestedMealName(inferredMealName);
-        setSuggestedCalories(inferred);
-        setConfirmVisible(true);
+      seedLogDraft(payload);
+      if (!inferred) {
+        setLogCalories("");
       }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to calculate calories right now.");
@@ -573,17 +668,18 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     }
   };
 
-  const addTrackerEntry = async ({ mealName, calories, entryDate, switchToHistory }) => {
+  const addTrackerEntry = async ({ kind, mealName, calories, entryDate, entryTime, switchToHistory, amount, unit, servings, context, quickNotes }) => {
     const parsedCalories = Number(calories);
-    if (!Number.isFinite(parsedCalories) || parsedCalories <= 0) {
-      setTrackerError("Enter valid calories before adding to tracker.");
+    const normalizedKind = kind === "hydration" ? "hydration" : kind === "other" ? "other" : "meal";
+    if (normalizedKind !== "hydration" && (!Number.isFinite(parsedCalories) || parsedCalories < 0)) {
+      setTrackerError("Enter valid calories before adding to your consumables log.");
       return false;
     }
     const normalizedMealName = (mealName || "").trim() || inferFoodNameFromResult(result);
-    const nextEntryKey = normalizedEntryKey(normalizedMealName, parsedCalories);
+    const nextEntryKey = `${normalizedKind}|${normalizedEntryKey(normalizedMealName, parsedCalories)}`;
     const existingEntries = Array.isArray(historyPayload?.entries) ? historyPayload.entries : [];
     const duplicateRecent = existingEntries.some((entry) => {
-      const existingEntryKey = normalizedEntryKey(entry.mealName, entry.calories);
+      const existingEntryKey = `${entry.kind || "meal"}|${normalizedEntryKey(entry.name || entry.mealName, entry.calories)}`;
       if (existingEntryKey !== nextEntryKey) {
         return false;
       }
@@ -594,21 +690,33 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
       return Date.now() - createdAtMs <= 5000;
     });
     if (duplicateRecent) {
-      setTrackerError("This meal was just added. Duplicate entry prevented.");
+      setTrackerError("This consumable was just added. Duplicate entry prevented.");
       return false;
     }
 
     setTrackerLoading(true);
     setTrackerError("");
+    setLogFeedback("");
     try {
+      const safeDate = entryDate || formatLocalIsoDate(new Date());
+      const safeTime = typeof entryTime === "string" && /^\d{2}:\d{2}$/.test(entryTime) ? entryTime : "12:00";
       await addCalorieEntry(accountId, {
-        mealName: normalizedMealName,
-        calories: Math.round(parsedCalories),
-        date: entryDate || formatLocalIsoDate(new Date())
+        kind: normalizedKind,
+        name: normalizedMealName,
+        calories: Math.max(0, Math.round(parsedCalories || 0)),
+        amount: amount,
+        unit: unit,
+        servings: servings,
+        context: (context || "").trim() || inferMealContextFromTime(safeTime, normalizedKind),
+        quickNotes: quickNotes,
+        loggedAt: `${safeDate}T${safeTime}:00`,
+        date: safeDate,
+        sourceType: "analysis"
       }, accountEmail);
       await loadHistory(weekAnchor);
-      if (switchToHistory && activeSubPage !== "history") {
-        setActiveSubPage("history");
+      setLogFeedback(normalizedKind === "hydration" ? "Added to hydration log." : "Added to consumables log.");
+      if (switchToHistory && activeSubPage !== "logs") {
+        setActiveSubPage("logs");
       }
       return true;
     } catch (submitError) {
@@ -619,23 +727,17 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     }
   };
 
-  const confirmAddSuggested = async () => {
+  const addTrackerEntryFromHistory = async ({ date, mealName, calories, kind, amount, unit, servings, context }) => {
     const added = await addTrackerEntry({
-      mealName: suggestedMealName,
-      calories: suggestedCalories,
-      entryDate: formatLocalIsoDate(new Date()),
-      switchToHistory: false
-    });
-    if (added) {
-      setConfirmVisible(false);
-    }
-  };
-
-  const addTrackerEntryFromHistory = async ({ date, mealName, calories }) => {
-    const added = await addTrackerEntry({
+      kind: kind || "meal",
       mealName,
       calories,
       entryDate: date,
+      entryTime: "12:00",
+      amount: amount ?? (kind === "hydration" ? 250 : 1),
+      unit: unit || (kind === "hydration" ? "ml" : "serving"),
+      servings: servings ?? 1,
+      context: context || defaultContextForLog(kind || "meal"),
       switchToHistory: false
     });
     if (added) {
@@ -685,6 +787,14 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     }
   };
 
+  const deleteRunHistoryEntry = async (entryId) => {
+    const updated = await removeConsumableRunHistoryEntry(accountId, entryId);
+    setRunHistory(updated);
+    if (selectedRun?.id === entryId) {
+      setSelectedRun(null);
+    }
+  };
+
   const openPrevWeek = () => {
     setWeekAnchor((previous) => {
       const next = new Date(previous);
@@ -713,14 +823,23 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     }, 0);
   };
 
+  const reopenCrop = async () => {
+    if (selectedAssetSource === "camera") {
+      await captureImage();
+      return;
+    }
+    await pickImage();
+  };
+
   return (
     <View style={styles.pageStack}>
       <SectionTabs
         value={activeSubPage}
         onValueChange={setActiveSubPage}
         tabs={[
-          { value: "calculator", label: "Estimate", icon: "food-apple-outline" },
+          { value: "calculator", label: "Analyse", icon: "flask-outline" },
           { value: "history", label: "History", icon: "history" },
+          { value: "logs", label: "Logs", icon: "chart-box-outline" },
         ]}
       />
 
@@ -735,8 +854,6 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
             webcamEnabled={canUseWebcam}
             webcamActive={webcamActive}
             webcamError={webcamError}
-            cameraButtonLabel={canUseWebcam ? "Open webcam" : "Use camera"}
-            onCameraButtonPress={canUseWebcam ? openWebcam : captureImage}
             onOpenWebcam={openWebcam}
             onCaptureWebcam={captureWebcam}
             onCloseWebcam={closeWebcam}
@@ -744,9 +861,11 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
             webcamVideoRef={videoRef}
             selectedImageUri={selectedAsset?.uri || ""}
             selectedImageAspectRatio={selectedImageAspectRatio}
-            onCropImage={cropSelectedImage}
             onPickImage={pickImage}
             onSubmit={submit}
+            aspectRatio={aspectRatio}
+            onAspectRatioChange={setAspectRatio}
+            onOpenCrop={() => setCropVisible(true)}
           />
 
           {calcStartedAt && calcElapsedMs !== null ? (
@@ -761,6 +880,19 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
               <View style={styles.calcMetaTrack}>
                 <View style={[styles.calcMetaProgress, { width: `${progressWidth}%` }]} />
               </View>
+              <View style={styles.calcStepStack}>
+                {dietAnalysisSteps.map((step) => (
+                  <View key={step.label} style={styles.calcStepRow}>
+                    <View style={[styles.calcStepIconWrap, step.complete ? styles.calcStepIconWrapComplete : step.active ? styles.calcStepIconWrapActive : null]}>
+                      <MaterialCommunityIcons name={step.icon} size={16} color={step.complete ? palette.primary : step.active ? palette.warning : palette.muted} />
+                    </View>
+                    <View style={styles.calcStepCopy}>
+                      <Text style={styles.calcStepTitle}>{step.label}</Text>
+                      <Text style={styles.calcStepBody}>{step.body}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
               <Text style={styles.calcMetaText}>
                 {loading ? "Time elapsed: " : "Time taken: "}
                 {(calcElapsedMs / 1000).toFixed(1)} seconds
@@ -768,11 +900,83 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
             </View>
           ) : null}
           <CalorieResult result={result} />
+          {result ? (
+            <View style={styles.logCard}>
+              <View style={styles.logHeaderRow}>
+                <View style={styles.flexOne}>
+                  <Text style={styles.logTitle}>Add to your log</Text>
+                  <Text style={styles.logSubtitle}>Save this analysis as a meal, hydration entry, or another consumable so future advice can use the full day context.</Text>
+                </View>
+                <View style={styles.logTypeRow}>
+                  {[
+                    ["meal", "Meal"],
+                    ["hydration", "Hydration"],
+                    ["other", "Other"],
+                  ].map(([value, label]) => (
+                    <Pressable
+                      key={value}
+                      style={[styles.logTypeChip, logType === value && styles.logTypeChipActive]}
+                      onPress={() => {
+                        setLogType(value);
+                        setLogUnit(value === "hydration" ? "ml" : "serving");
+                        setLogContext(defaultContextForLog(value));
+                        if (value === "hydration" && !logAmount) {
+                          setLogAmount("350");
+                        }
+                      }}
+                    >
+                      <Text style={[styles.logTypeChipText, logType === value && styles.logTypeChipTextActive]}>{label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+              <View style={styles.logGrid}>
+                <TextInput style={styles.logInput} value={logName} onChangeText={setLogName} placeholder="Name" placeholderTextColor={palette.muted} />
+                <TextInput style={styles.logInput} value={logContext} onChangeText={setLogContext} placeholder="Context" placeholderTextColor={palette.muted} />
+                <TextInput style={styles.logInput} value={logDate} onChangeText={setLogDate} placeholder="YYYY-MM-DD" placeholderTextColor={palette.muted} />
+                <TextInput style={styles.logInput} value={logTime} onChangeText={setLogTime} placeholder="HH:MM" placeholderTextColor={palette.muted} />
+                <TextInput style={styles.logInput} value={logCalories} onChangeText={setLogCalories} placeholder={logType === "hydration" ? "Calories (optional)" : "Calories"} placeholderTextColor={palette.muted} keyboardType="numeric" />
+                <TextInput style={styles.logInput} value={logServings} onChangeText={setLogServings} placeholder="Servings" placeholderTextColor={palette.muted} keyboardType="decimal-pad" />
+                <TextInput style={styles.logInput} value={logAmount} onChangeText={setLogAmount} placeholder={logType === "hydration" ? "Amount" : "Quantity"} placeholderTextColor={palette.muted} keyboardType="numeric" />
+                <TextInput style={styles.logInput} value={logUnit} onChangeText={setLogUnit} placeholder="Unit" placeholderTextColor={palette.muted} />
+              </View>
+              {trackerError ? <Text style={styles.logError}>{trackerError}</Text> : null}
+              {logFeedback ? <Text style={styles.logFeedback}>{logFeedback}</Text> : null}
+              <View style={styles.logActionRow}>
+                <Pressable
+                  style={[styles.logPrimaryButton, trackerLoading && styles.modalButtonDisabled]}
+                  disabled={trackerLoading}
+                  onPress={() =>
+                    void addTrackerEntry({
+                      kind: logType,
+                      mealName: logName,
+                      calories: logCalories,
+                      amount: logAmount,
+                      unit: logUnit,
+                      servings: logServings,
+                      context: logContext,
+                      entryDate: logDate,
+                      entryTime: logTime,
+                      switchToHistory: false,
+                      quickNotes: Array.isArray(result?.topHighlights) ? result.topHighlights.slice(0, 3) : [],
+                    })
+                  }
+                >
+                  <Text style={styles.logPrimaryButtonText}>{trackerLoading ? "Saving..." : "Add to log"}</Text>
+                </Pressable>
+                <Pressable style={styles.logSecondaryButton} onPress={() => setActiveSubPage("logs")}>
+                  <Text style={styles.logSecondaryButtonText}>Open logs</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
         </>
       </View>
       <View style={activeSubPage === "history" ? undefined : styles.hiddenSection}>
         <CalorieHistoryPage
           history={historyPayload}
+          runHistory={runHistory}
+          initialMode="runs"
           loading={historyLoading}
           onPrevWeek={openPrevWeek}
           onNextWeek={openNextWeek}
@@ -780,33 +984,78 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
           onEditEntry={editTrackerEntry}
           onDeleteEntry={deleteTrackerEntry}
           onClearDayEntries={clearTrackerDay}
+          onOpenRun={setSelectedRun}
+          onDeleteRun={deleteRunHistoryEntry}
+          actionLoading={entryActionLoading}
+          trackerLoading={trackerLoading}
+          trackerError={trackerError}
+        />
+      </View>
+      <View style={activeSubPage === "logs" ? undefined : styles.hiddenSection}>
+        <CalorieHistoryPage
+          history={historyPayload}
+          runHistory={runHistory}
+          initialMode="logs"
+          loading={historyLoading}
+          onPrevWeek={openPrevWeek}
+          onNextWeek={openNextWeek}
+          onAddEntry={addTrackerEntryFromHistory}
+          onEditEntry={editTrackerEntry}
+          onDeleteEntry={deleteTrackerEntry}
+          onClearDayEntries={clearTrackerDay}
+          onOpenRun={setSelectedRun}
+          onDeleteRun={deleteRunHistoryEntry}
           actionLoading={entryActionLoading}
           trackerLoading={trackerLoading}
           trackerError={trackerError}
         />
       </View>
 
-      <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
+      <Modal visible={Boolean(selectedRun)} transparent animationType="slide" onRequestClose={() => setSelectedRun(null)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Add to daily tracker?</Text>
-            <Text style={styles.modalBody}>Food: {suggestedMealName || "Meal"}</Text>
-            <Text style={styles.modalBody}>Calories: {suggestedCalories || "--"} kcal</Text>
-            <Text style={styles.modalPrompt}>Do you want to add this to your daily calorie tracker?</Text>
-            {trackerError ? <Text style={styles.modalError}>{trackerError}</Text> : null}
-            <View style={styles.modalActions}>
-              <Pressable style={[styles.modalPrimary, trackerLoading && styles.modalButtonDisabled]} onPress={() => void confirmAddSuggested()} disabled={trackerLoading}>
-                <Text style={styles.modalPrimaryText}>Yes</Text>
+          <View style={styles.runModalCard}>
+            <View style={styles.runModalHeader}>
+              <View style={styles.flexOne}>
+                <Text style={styles.modalTitle}>{selectedRun?.title || "Saved analysis"}</Text>
+                <Text style={styles.modalPrompt}>{selectedRun ? formatDisplayTime(selectedRun.searchedAt) : ""}</Text>
+              </View>
+              <Pressable style={styles.modalSecondary} onPress={() => setSelectedRun(null)}>
+                <Text style={styles.modalSecondaryText}>Close</Text>
               </Pressable>
-              <Pressable style={[styles.modalSecondary, trackerLoading && styles.modalButtonDisabled]} onPress={() => setConfirmVisible(false)} disabled={trackerLoading}>
-                <Text style={styles.modalSecondaryText}>No</Text>
+            </View>
+            <ScrollView contentContainerStyle={styles.runModalScroller}>
+              <CalorieResult result={selectedRun?.result || null} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={cropVisible} transparent animationType="slide" onRequestClose={() => setCropVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.cropModalCard}>
+            <Text style={styles.modalTitle}>Crop & framing</Text>
+            <Text style={styles.modalPrompt}>Choose an aspect ratio before continuing. On mobile, re-open crop will let you refine the image with the selected frame.</Text>
+            {selectedAsset?.uri ? <View style={styles.cropPreviewWrap}><View style={[styles.cropPreviewFrame, { aspectRatio: selectedImageAspectRatio || 1 }]}><Text style={styles.cropPreviewText}>Preview frame</Text></View></View> : null}
+            <View style={styles.logTypeRow}>
+              {["1:1", "4:3", "3:4", "16:9"].map((ratio) => (
+                <Pressable key={ratio} style={[styles.logTypeChip, aspectRatio === ratio && styles.logTypeChipActive]} onPress={() => setAspectRatio(ratio)}>
+                  <Text style={[styles.logTypeChipText, aspectRatio === ratio && styles.logTypeChipTextActive]}>{ratio}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.logActionRow}>
+              <Pressable style={styles.logPrimaryButton} onPress={() => void reopenCrop()}>
+                <Text style={styles.logPrimaryButtonText}>Re-open crop</Text>
+              </Pressable>
+              <Pressable style={styles.logSecondaryButton} onPress={() => setCropVisible(false)}>
+                <Text style={styles.logSecondaryButtonText}>Use image</Text>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      <TutorialSheet visible={guideVisible} title="Nutrition tutorial" pages={CALORIE_GUIDE_PAGES} onClose={closeGuide} />
+      <TutorialSheet visible={guideVisible} title="Diet tutorial" pages={CALORIE_GUIDE_PAGES} onClose={closeGuide} />
     </View>
   );
 }
@@ -814,6 +1063,9 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
 const styles = StyleSheet.create({
   pageStack: {
     gap: 16
+  },
+  flexOne: {
+    flex: 1
   },
   hiddenSection: {
     display: "none"
@@ -920,12 +1172,217 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Poppins_400Regular"
   },
+  calcStepStack: {
+    gap: 8
+  },
+  calcStepRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    gap: 10
+  },
+  calcStepIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    marginTop: 1,
+    backgroundColor: palette.surfaceMuted,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  calcStepIconWrapActive: {
+    backgroundColor: `${palette.warning}18`
+  },
+  calcStepIconWrapComplete: {
+    backgroundColor: palette.primarySoft
+  },
+  calcStepCopy: {
+    flex: 1,
+    gap: 2
+  },
+  calcStepTitle: {
+    color: palette.ink,
+    fontSize: 13,
+    fontFamily: "Poppins_600SemiBold"
+  },
+  calcStepBody: {
+    color: palette.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: "Poppins_400Regular"
+  },
+  logCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    padding: 16,
+    gap: 12
+  },
+  logHeaderRow: {
+    gap: 10
+  },
+  logTitle: {
+    color: palette.ink,
+    fontSize: 16,
+    fontFamily: "Poppins_700Bold"
+  },
+  logSubtitle: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: "Poppins_400Regular"
+  },
+  logTypeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  logTypeChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 7
+  },
+  logTypeChipActive: {
+    backgroundColor: palette.primarySoft,
+    borderColor: palette.primary
+  },
+  logTypeChipText: {
+    color: palette.ink,
+    fontSize: 12,
+    fontFamily: "Poppins_600SemiBold"
+  },
+  logTypeChipTextActive: {
+    color: palette.primary
+  },
+  logGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  logInput: {
+    minHeight: 46,
+    minWidth: 138,
+    flexGrow: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    color: palette.ink,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontFamily: "Poppins_400Regular"
+  },
+  logActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  logPrimaryButton: {
+    borderRadius: 14,
+    backgroundColor: palette.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 11
+  },
+  logPrimaryButtonText: {
+    color: palette.surface,
+    fontSize: 13,
+    fontFamily: "Poppins_600SemiBold"
+  },
+  logSecondaryButton: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingHorizontal: 16,
+    paddingVertical: 11
+  },
+  logSecondaryButtonText: {
+    color: palette.ink,
+    fontSize: 13,
+    fontFamily: "Poppins_600SemiBold"
+  },
+  logError: {
+    color: palette.red,
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular"
+  },
+  logFeedback: {
+    color: palette.primary,
+    fontSize: 12,
+    fontFamily: "Poppins_500Medium"
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: "center",
     justifyContent: "center",
     padding: 20
+  },
+  runModalCard: {
+    width: "100%",
+    maxWidth: 760,
+    maxHeight: "90%",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    padding: 16,
+    gap: 10
+  },
+  cropModalCard: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    padding: 16,
+    gap: 12
+  },
+  runModalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12
+  },
+  runModalScroller: {
+    gap: 12,
+    paddingBottom: 6
+  },
+  cropPreviewWrap: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    padding: 16,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  cropPreviewFrame: {
+    width: "100%",
+    maxWidth: 260,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    borderColor: palette.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF"
+  },
+  cropPreviewText: {
+    color: palette.primary,
+    fontSize: 12,
+    paddingVertical: 28,
+    fontFamily: "Poppins_600SemiBold"
   },
   modalCard: {
     width: "100%",

@@ -221,6 +221,13 @@ class DrugInfoResult:
     side_effects: str
 
 
+@dataclass(slots=True)
+class DrugDeepDiveResult:
+    analysis_text: str
+    sections: list[SupplementSection]
+    structured_analysis: dict[str, object] | None = None
+
+
 def _normalize_drug_name(value: str) -> str:
     return re.sub(r"[^a-z0-9\-]+", "", (value or "").strip().lower())
 
@@ -320,6 +327,92 @@ def fetch_drug_info(drug_name: str, request_id: str | None = None) -> DrugInfoRe
     return DrugInfoResult(drug=drug, usage=usage, side_effects=side_effects)
 
 
+def fetch_drug_deep_dive(drug_name: str, profile_context: str = "", request_id: str | None = None) -> DrugDeepDiveResult:
+    request_id = request_id or str(uuid.uuid4())
+    normalized = (drug_name or "").strip()
+    if not normalized:
+        raise ValueError("Please provide a medicine or ingredient name.")
+    if not settings.openai_api_key:
+        raise RuntimeError("Drug lookup is unavailable because OPENAI_API_KEY is not configured.")
+
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_api_base_url,
+        timeout=settings.llm_timeout_seconds,
+        max_retries=0,
+    )
+    normalized_profile = profile_context.strip() or "No structured user profile context provided."
+    prompt = (
+        "You are a clinical pharmacist and evidence-based medicine explainer creating a highly structured, personalized breakdown of one drug or ingredient. "
+        "Be practical, conservative, and readable for an everyday user. "
+        "The FIRST LINE of your response must be exactly: 'Name: <name>'. "
+        "Do not add any text before that first line. "
+        "Return markdown with exactly these H2 headings in this exact order:\n"
+        "## Identity and Verdict\n"
+        "## Personalized Snapshot\n"
+        "## What It Does\n"
+        "## Dosage and Usage\n"
+        "## Risks and Side Effects\n"
+        "## Contraindications\n"
+        "## Interactions\n"
+        "## Deficiency Analysis\n"
+        "## Evidence Section\n"
+        "## Practical Recommendation\n"
+        "## Forms Comparison\n"
+        "## Timeline and Expectations\n"
+        "## Red Flags\n"
+        "## Sources and Transparency\n\n"
+        "Formatting rules:\n"
+        "- Use bullets only, no tables.\n"
+        "- Prioritize user-relevant warnings first.\n"
+        "- If something is uncertain or not applicable, say so clearly.\n"
+        "- In Identity and Verdict include bullets for Name, Category, Type, Main uses, Mechanism, Personalized verdict, Reason for verdict.\n"
+        "- In Identity and Verdict make the personalized verdict read like Safe / Caution / High risk with the reason immediately after it.\n"
+        "- In Personalized Snapshot include bullets for Goal matches, Medication conflicts, Condition conflicts, Nutrient duplication, Allergy flags, and Personal risk layer.\n"
+        "- In What It Does include one bullet per benefit with Evidence level, Effect size, Time to effect, Relevance.\n"
+        "- In Dosage and Usage include bullets for Standard dose, Effective range, Upper safe limit, Toxic levels, Timing and absorption, Personalized dosage guidance.\n"
+        "- In Risks and Side Effects include bullets for Common, Moderate, Serious, Personalized risk highlights, and short-term versus long-term concerns when relevant.\n"
+        "- In Contraindications and Interactions, put user-specific issues first and label severity clearly when possible.\n"
+        "- In Deficiency Analysis include Symptoms of low, Symptoms of excess, and Likelihood the user needs it.\n"
+        "- In Evidence Section include Evidence strength, Study types, Consensus vs uncertainty, and Regulatory status or common approval context if generally known.\n"
+        "- In Practical Recommendation include Best use cases, Not ideal cases, Better alternatives, Personalized advice.\n"
+        "- In Forms Comparison include Absorption differences, Side effects, and Best forms per goal.\n"
+        "- In Timeline and Expectations include Onset, Peak time if relevant, Duration, and When to stop.\n"
+        "- In Red Flags include When to stop and When to seek medical help.\n"
+        "- In Sources and Transparency include Confidence score and Evidence summary.\n\n"
+        f"Drug or ingredient: {normalized}\n"
+        f"User profile context:\n{normalized_profile}\n"
+    )
+
+    try:
+        response = _response_with_rate_limit_retry(
+            client,
+            model=SUPPLEMENT_DRUG_INFO_MODEL,
+            request_id=request_id,
+            trigger_source="supplement_drug_deep_dive",
+            input_payload=[
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": prompt}],
+                }
+            ],
+        )
+    except RateLimitError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"Drug deep-dive provider call failed: {exc}") from exc
+
+    analysis_text = (response.output_text or "").strip()
+    if not analysis_text:
+        raise RuntimeError("Drug deep-dive returned an empty response.")
+
+    return DrugDeepDiveResult(
+        analysis_text=analysis_text,
+        sections=_parse_sections(analysis_text),
+        structured_analysis=None,
+    )
+
+
 def _build_analysis_prompt(conditions: str, goals: str) -> str:
     normalized_conditions = conditions.strip() or "No prior illness or long term conditions."
     normalized_goals = goals.strip() or "General health support"
@@ -334,6 +427,7 @@ def _build_analysis_prompt(conditions: str, goals: str) -> str:
         "## Quick Match to User Goals\n"
         "## Plain Language Summary\n"
         "## Ingredient Breakdown\n"
+        "## Stack Analysis\n"
         "## Benefits\n"
         "## Risks and Warnings\n"
         "## Personalization\n"
@@ -343,6 +437,7 @@ def _build_analysis_prompt(conditions: str, goals: str) -> str:
         "Formatting rules:\n"
         "- Keep every section concise and scannable.\n"
         "- Use bullets only, no tables.\n"
+        "- This is supplement analysis, not drug prescribing. Emphasize effectiveness, redundancy, stacking risk, goal alignment, and uncertainty.\n"
         "- For Hero Summary use these bullets exactly:\n"
         "  - Product Name: ...\n"
         "  - Brand: ...\n"
@@ -352,11 +447,14 @@ def _build_analysis_prompt(conditions: str, goals: str) -> str:
         "  - Confidence: High / Medium / Low\n"
         "  - Key warning: ... (or 'None noted')\n"
         "  - Summary: one clear sentence\n"
+        "- In Hero Summary make the verdict reflect personal fit, not just general safety.\n"
         "- For Quick Match to User Goals use one bullet per goal in this format:\n"
         "  - Goal | Fit: Strong / Medium / Limited / Poor / Not relevant | Reason: ...\n"
         "- For Plain Language Summary use 3 to 5 bullets covering what it is, what it may do, and what it does not do.\n"
         "- For Ingredient Breakdown use one bullet per key ingredient in this format:\n"
         "  - Ingredient | Amount: ... or Unknown | Dose: Low / Normal / High / Unknown | Evidence: Strong / Moderate / Weak / Unclear | Risks: ... | Why it matters: ...\n"
+        "- For Stack Analysis use bullets exactly for Redundancies, Synergies, Overdoses, Inefficiencies, Goal alignment, and Confidence.\n"
+        "- In Stack Analysis explicitly mention dose aggregation, dead-weight ingredients, and unnecessary overlap when relevant.\n"
         "- For Benefits use one bullet per likely benefit in this format:\n"
         "  - Benefit | Evidence: Strong / Moderate / Weak | Best for: ... | Limit: ...\n"
         "- For Risks and Warnings use one bullet per warning in this format:\n"
@@ -365,13 +463,14 @@ def _build_analysis_prompt(conditions: str, goals: str) -> str:
         "  - Good: ...\n"
         "  - Caution: ...\n"
         "  - Avoid: ...\n"
+        "- In Personalization explicitly pull from age or sex relevance, conditions, allergies, current medications, current supplements, goals, sleep or caffeine habits when present.\n"
         "- For Usage Guide use bullets for Take, Timing, Avoid stacking, and Duration.\n"
-        "- For Evidence and Transparency use bullets for Evidence level, Confidence, Product-specific certainty, and Main uncertainty.\n"
+        "- For Evidence and Transparency use bullets for Evidence level, Confidence, Product-specific certainty, Consensus across studies, and Main uncertainty.\n"
         "- For Claim Analyzer (Quick) use bullets exactly for Real claims, Marketing fluff, Evidence-backed, Weak, and False or overstated.\n"
         "- If the image does not show enough detail, say so clearly and mark uncertain fields as Unknown.\n"
         "- Do not invent brand or dosage details when the image does not support them.\n\n"
         f"Patient goals: {normalized_goals}\n"
-        f"Patient medical history: {normalized_conditions}\n"
+        f"Full user profile context: {normalized_conditions}\n"
     )
 
 
@@ -391,6 +490,7 @@ def _build_text_analysis_prompt(supplement_name: str, conditions: str, goals: st
         "## Quick Match to User Goals\n"
         "## Plain Language Summary\n"
         "## Ingredient Breakdown\n"
+        "## Stack Analysis\n"
         "## Benefits\n"
         "## Risks and Warnings\n"
         "## Personalization\n"
@@ -400,6 +500,7 @@ def _build_text_analysis_prompt(supplement_name: str, conditions: str, goals: st
         "Formatting rules:\n"
         "- Keep every section concise and scannable.\n"
         "- Use bullets only, no tables.\n"
+        "- This is supplement analysis, not drug prescribing. Emphasize effectiveness, redundancy, stacking risk, goal alignment, and uncertainty.\n"
         "- For Hero Summary use these bullets exactly:\n"
         "  - Product Name: ...\n"
         "  - Brand: ...\n"
@@ -409,11 +510,14 @@ def _build_text_analysis_prompt(supplement_name: str, conditions: str, goals: st
         "  - Confidence: High / Medium / Low\n"
         "  - Key warning: ... (or 'None noted')\n"
         "  - Summary: one clear sentence\n"
+        "- In Hero Summary make the verdict reflect personal fit, not just generic safety.\n"
         "- For Quick Match to User Goals use one bullet per goal in this format:\n"
         "  - Goal | Fit: Strong / Medium / Limited / Poor / Not relevant | Reason: ...\n"
         "- For Plain Language Summary use 3 to 5 bullets covering what it is, what it may do, and what it does not do.\n"
         "- For Ingredient Breakdown use one bullet per key ingredient in this format:\n"
         "  - Ingredient | Amount: ... or Unknown | Dose: Low / Normal / High / Unknown | Evidence: Strong / Moderate / Weak / Unclear | Risks: ... | Why it matters: ...\n"
+        "- For Stack Analysis use bullets exactly for Redundancies, Synergies, Overdoses, Inefficiencies, Goal alignment, and Confidence.\n"
+        "- In Stack Analysis explicitly mention dose aggregation, dead-weight ingredients, and unnecessary overlap when relevant.\n"
         "- For Benefits use one bullet per likely benefit in this format:\n"
         "  - Benefit | Evidence: Strong / Moderate / Weak | Best for: ... | Limit: ...\n"
         "- For Risks and Warnings use one bullet per warning in this format:\n"
@@ -422,12 +526,13 @@ def _build_text_analysis_prompt(supplement_name: str, conditions: str, goals: st
         "  - Good: ...\n"
         "  - Caution: ...\n"
         "  - Avoid: ...\n"
+        "- In Personalization explicitly pull from age or sex relevance, conditions, allergies, current medications, current supplements, goals, sleep or caffeine habits when present.\n"
         "- For Usage Guide use bullets for Take, Timing, Avoid stacking, and Duration.\n"
-        "- For Evidence and Transparency use bullets for Evidence level, Confidence, Product-specific certainty, and Main uncertainty.\n"
+        "- For Evidence and Transparency use bullets for Evidence level, Confidence, Product-specific certainty, Consensus across studies, and Main uncertainty.\n"
         "- For Claim Analyzer (Quick) use bullets exactly for Real claims, Marketing fluff, Evidence-backed, Weak, and False or overstated.\n"
         "- Make it clear when a point is based on common formulations rather than verified label-specific data.\n\n"
         f"Patient goals: {normalized_goals}\n"
-        f"Patient medical history: {normalized_conditions}\n"
+        f"Full user profile context: {normalized_conditions}\n"
     )
 
 

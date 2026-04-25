@@ -282,6 +282,7 @@ def get_investigation_detail(investigation_id: str) -> InvestigationDetail | Non
         stepSummaries=state.stepSummaries,
         providerReviews=state.providerReviews,
         hoaxSignals=state.hoaxSignals,
+        profilePersonalizationReview=state.profilePersonalizationReview,
         singaporeAuthorityReview=state.singaporeAuthorityReview,
         sentiment=state.sentiment,
         consensus=state.consensus,

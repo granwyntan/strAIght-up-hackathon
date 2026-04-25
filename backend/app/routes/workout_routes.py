@@ -22,6 +22,13 @@ class WorkoutRoutineRequest(BaseModel):
     weightKg: str = ""
     goals: str = ""
     medicalHistory: str = ""
+    activityLevel: str = ""
+    sleepHours: str = ""
+    sleepQuality: str = ""
+    stressLevel: str = ""
+    activityGoals: list[str] = []
+    dietGoals: list[str] = []
+    profileContext: str = ""
 
 
 class WorkoutExerciseResponse(BaseModel):
@@ -111,7 +118,14 @@ def suggest_workout_routine(payload: WorkoutRoutineRequest) -> WorkoutRoutineRes
         "- trialWeeks must be 2.\n"
         "- Keep descriptions concise and practical.\n"
         "- Consider medicalHistory safety.\n"
-        f"Input age={payload.age or 'unknown'}, heightCm={payload.heightCm or 'unknown'}, weightKg={payload.weightKg or 'unknown'}, goals={payload.goals or 'unknown'}, medicalHistory={payload.medicalHistory or 'none'}"
+        "- Link the plan clearly to the user's goals, current activity level, recovery picture, and likely adherence.\n"
+        "- Blend strength, cardio, movement, and recovery in a realistic way.\n"
+        "- If sleep or stress look poor, tone recovery and intensity down appropriately.\n"
+        "- If medicalHistory suggests caution, bias toward safer, lower-impact options.\n"
+        f"Input age={payload.age or 'unknown'}, heightCm={payload.heightCm or 'unknown'}, weightKg={payload.weightKg or 'unknown'}, goals={payload.goals or 'unknown'}, "
+        f"activityLevel={payload.activityLevel or 'unknown'}, sleepHours={payload.sleepHours or 'unknown'}, sleepQuality={payload.sleepQuality or 'unknown'}, stressLevel={payload.stressLevel or 'unknown'}, "
+        f"activityGoals={', '.join(payload.activityGoals) if payload.activityGoals else 'none'}, dietGoals={', '.join(payload.dietGoals) if payload.dietGoals else 'none'}, "
+        f"profileContext={payload.profileContext or 'none'}, medicalHistory={payload.medicalHistory or 'none'}"
     )
 
     try:

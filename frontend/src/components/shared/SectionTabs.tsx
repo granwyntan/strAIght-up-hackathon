@@ -45,16 +45,16 @@ const styles = StyleSheet.create({
   },
   pill: {
     flex: 1,
-    minHeight: 50,
+    minHeight: 46,
     borderRadius: 999,
     backgroundColor: "transparent",
     borderWidth: 1,
     borderColor: "transparent",
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
   },
   pillSelected: {
     backgroundColor: palette.surface,
@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
   label: {
     color: palette.muted,
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
+    fontSize: 12,
   },
   labelSelected: {
     color: palette.primary,

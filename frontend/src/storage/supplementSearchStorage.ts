@@ -29,8 +29,10 @@ function normalizeEntry(input) {
     query: typeof source.query === "string" ? source.query : "",
     title: typeof source.title === "string" ? source.title : typeof source.query === "string" ? source.query : "",
     mode: source.mode === "image" ? "image" : "text",
+    analysisType: source.analysisType === "medicine" ? "medicine" : "supplement",
     searchedAt: typeof source.searchedAt === "string" ? source.searchedAt : new Date().toISOString(),
     result: source.result && typeof source.result === "object" ? source.result : null,
+    drugResult: source.drugResult && typeof source.drugResult === "object" ? source.drugResult : null,
     inputImage: typeof source.inputImage === "string" ? source.inputImage : "",
     infographic: typeof source.infographic === "string" ? source.infographic : ""
   };
@@ -49,7 +51,9 @@ function toFirestoreRecord(entry) {
     searched_at: entry.searchedAt,
     query: entry.query,
     title: entry.title,
-    result: entry.result || null
+    analysis_type: entry.analysisType || "supplement",
+    result: entry.result || null,
+    drug_result: entry.drugResult || null,
   };
 }
 
@@ -59,8 +63,10 @@ function fromFirestoreRecord(docId, source) {
     query: typeof source?.query === "string" ? source.query : typeof source?.name === "string" ? source.name : "",
     title: typeof source?.title === "string" ? source.title : typeof source?.name === "string" ? source.name : "",
     mode: source?.type === "image" ? "image" : "text",
+    analysisType: source?.analysis_type === "medicine" ? "medicine" : "supplement",
     searchedAt: typeof source?.searched_at === "string" ? source.searched_at : new Date().toISOString(),
     result: source?.result && typeof source.result === "object" ? source.result : null,
+    drugResult: source?.drug_result && typeof source.drug_result === "object" ? source.drug_result : null,
     inputImage: typeof source?.input_image === "string" ? source.input_image : "",
     infographic: typeof source?.infographic === "string" ? source.infographic : ""
   });

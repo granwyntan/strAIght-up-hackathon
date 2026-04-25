@@ -84,6 +84,13 @@ WORKFLOW_STAGES: tuple[WorkflowStageDefinition, ...] = (
         goal="Keep quote highlights exact and make each source's direction explicit.",
     ),
     WorkflowStageDefinition(
+        key="profile_personalization_review",
+        title="Profile Personalization Review",
+        role="Personal Health Interpreter",
+        summary="Waiting to connect the claim and evidence to the user profile, goals, allergies, and dietary rules.",
+        goal="Explain how the claim matters for this user before regional authority summaries and final scoring.",
+    ),
+    WorkflowStageDefinition(
         key="singapore_authority_review",
         title="Singapore Authority Review",
         role="Regional Health Authority Analyst",

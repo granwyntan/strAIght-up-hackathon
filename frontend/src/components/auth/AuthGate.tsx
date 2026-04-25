@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 
 import { palette } from "../../data";
 
-export default function AuthGate({ onAuthenticate, loading }) {
+export default function AuthGate({ onAuthenticate, loading, title = "Optional account sync", subtitle = "Stay local-only if you want. Sign in here only when you want your profile and history synced across devices." }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -26,8 +26,8 @@ export default function AuthGate({ onAuthenticate, loading }) {
   return (
     <View style={styles.shell}>
       <View style={styles.card}>
-        <Text style={styles.title}>Optional account sync</Text>
-        <Text style={styles.subtitle}>Stay local-only if you want. Sign in here only when you want your profile and history synced across devices.</Text>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.subtitle}>{subtitle}</Text>
 
         <View style={styles.field}>
           <Text style={styles.label}>Email</Text>

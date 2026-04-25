@@ -113,9 +113,24 @@ def get_investigations() -> InvestigationCollection:
 
 
 @app.get("/api/claim-suggestions")
-async def get_claim_suggestions(q: str = Query(default="", min_length=0, max_length=160)) -> dict[str, list[str]]:
+async def get_claim_suggestions(
+    q: str = Query(default="", min_length=0, max_length=160),
+    limit: int = Query(default=12, ge=1, le=20),
+) -> dict[str, list[str]]:
     try:
-        return {"items": await fetch_claim_suggestions(q)}
+        return {"items": await fetch_claim_suggestions(q, limit=limit)}
+    except Exception:
+        return {"items": []}
+
+
+@app.get("/api/search-suggestions")
+async def get_search_suggestions(
+    q: str = Query(default="", min_length=0, max_length=160),
+    hint: str = Query(default="", min_length=0, max_length=120),
+    limit: int = Query(default=12, ge=1, le=20),
+) -> dict[str, list[str]]:
+    try:
+        return {"items": await fetch_claim_suggestions(q, hint=hint, limit=limit)}
     except Exception:
         return {"items": []}
 
@@ -126,11 +141,6 @@ def create_investigation(payload: InvestigationCreateRequest) -> InvestigationDe
         raise HTTPException(
             status_code=422,
             detail="GramWIN is temporarily limited to English health claims while the multilingual pipeline is being tightened.",
-        )
-    if not is_health_related_query(payload.claim, payload.context):
-        raise HTTPException(
-            status_code=422,
-            detail="This tool is currently limited to health, medical, clinical, wellness, and research-related claims.",
         )
     summary = repository.create_investigation(
         claim=payload.claim,

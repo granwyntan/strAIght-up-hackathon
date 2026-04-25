@@ -104,7 +104,7 @@ def is_health_related_query(claim: str, context: str = "") -> bool:
     return True
 
 
-async def fetch_claim_suggestions(query: str) -> list[str]:
+async def fetch_claim_suggestions(query: str, hint: str = "", limit: int = 12) -> list[str]:
     cleaned = query.strip()
     if len(cleaned) < 2:
         return []
@@ -114,7 +114,7 @@ async def fetch_claim_suggestions(query: str) -> list[str]:
     async with httpx.AsyncClient(timeout=4.0) as client:
         response = await client.get(
             "http://suggestqueries.google.com/complete/search",
-            params={"client": "firefox", "q": cleaned},
+            params={"client": "firefox", "q": " ".join(part for part in [cleaned, hint.strip()] if part)},
             headers={"User-Agent": "GramWIN/1.0"},
         )
         response.raise_for_status()
@@ -125,6 +125,8 @@ async def fetch_claim_suggestions(query: str) -> list[str]:
 
     seen: set[str] = set()
     suggestions: list[str] = []
+    target_limit = max(1, min(limit, 20))
+
     for item in payload[1]:
         if not isinstance(item, str):
             continue
@@ -134,6 +136,6 @@ async def fetch_claim_suggestions(query: str) -> list[str]:
             continue
         seen.add(lowered)
         suggestions.append(normalized)
-        if len(suggestions) >= 8:
+        if len(suggestions) >= target_limit:
             break
     return suggestions
