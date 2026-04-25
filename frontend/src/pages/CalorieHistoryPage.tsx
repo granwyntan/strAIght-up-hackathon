@@ -482,7 +482,7 @@ export default function CalorieHistoryPage({
         {historyKind === "logs" ? null : null}
       </View>
 
-      {historyKind === "logs" ? <WeeklyCalorieGraph days={days} entries={entries} mode={historyView} timeframeLabel={timeFrameLabel} /> : null}
+      {historyKind === "logs" ? <WeeklyCalorieGraph days={days} entries={visibleEntries} mode={historyView} timeframeLabel={timeFrameLabel} /> : null}
 
       {historyKind === "logs" ? (
           <View style={styles.weekNavRow}>

@@ -46,7 +46,7 @@ import {
   TouchableRipple,
 } from "react-native-paper";
 import "./global.css";
-import AppBootScreen from "./src/components/shared/AppBootScreen";
+import AppBootScreen, { AppStartupCard } from "./src/components/shared/AppBootScreen";
 
 import {
   defaultBootstrap,
@@ -148,7 +148,7 @@ function createPaperTheme(typeScale: number) {
 
   return {
     ...MD3LightTheme,
-    roundness: 14,
+    roundness: 18,
     colors: {
       ...MD3LightTheme.colors,
       primary: palette.primary,
@@ -167,27 +167,27 @@ function createPaperTheme(typeScale: number) {
       surface: palette.surface,
       surfaceVariant: palette.surfaceSoft,
       outline: palette.border,
-      outlineVariant: "rgba(15, 23, 42, 0.05)",
+      outlineVariant: "rgba(16, 24, 40, 0.04)",
       error: palette.danger,
       onSurface: palette.text,
       onSurfaceVariant: palette.muted,
-      surfaceDisabled: "#EEF2F8",
+      surfaceDisabled: "#F1F3EE",
       onSurfaceDisabled: "#98A2B3",
-      backdrop: "rgba(15, 23, 42, 0.14)",
+      backdrop: "rgba(16, 24, 40, 0.12)",
       elevation: {
         ...MD3LightTheme.colors.elevation,
-        level1: "#FBFCFE",
-        level2: "#F8FAFD",
-        level3: "#F4F7FB",
-        level4: "#F0F4FA",
-        level5: "#EDF2F9",
+        level1: "#FCFCFA",
+        level2: "#FAFBF8",
+        level3: "#F7F8F5",
+        level4: "#F3F5F1",
+        level5: "#EFF2ED",
       },
     },
     fonts: {
       ...MD3LightTheme.fonts,
-      headlineSmall: { ...MD3LightTheme.fonts.headlineSmall, ...scaled(30, 38), fontFamily: "Poppins_700Bold", letterSpacing: -0.5 },
-      headlineMedium: { ...MD3LightTheme.fonts.headlineMedium, ...scaled(34, 42), fontFamily: "Poppins_700Bold", letterSpacing: -0.7 },
-      titleLarge: { ...MD3LightTheme.fonts.titleLarge, ...scaled(22, 28), fontFamily: "Poppins_600SemiBold", letterSpacing: -0.2 },
+      headlineSmall: { ...MD3LightTheme.fonts.headlineSmall, ...scaled(28, 36), fontFamily: "Poppins_700Bold", letterSpacing: -0.4 },
+      headlineMedium: { ...MD3LightTheme.fonts.headlineMedium, ...scaled(32, 40), fontFamily: "Poppins_700Bold", letterSpacing: -0.5 },
+      titleLarge: { ...MD3LightTheme.fonts.titleLarge, ...scaled(21, 29), fontFamily: "Poppins_600SemiBold", letterSpacing: -0.15 },
       titleMedium: { ...MD3LightTheme.fonts.titleMedium, ...scaled(17, 24), fontFamily: "Poppins_600SemiBold", letterSpacing: -0.1 },
       titleSmall: { ...MD3LightTheme.fonts.titleSmall, ...scaled(15, 22), fontFamily: "Poppins_600SemiBold" },
       bodyLarge: { ...MD3LightTheme.fonts.bodyLarge, ...scaled(16, 24), fontFamily: "Poppins_400Regular" },
@@ -204,18 +204,6 @@ const dashboardMetrics = [
   { label: "Sleep", value: "7h 42m", detail: "Last night", icon: "sleep" },
   { label: "Activity", value: "8,420", detail: "Steps today", icon: "walk" },
   { label: "Hydration", value: "2.1 L", detail: "Water intake", icon: "cup-water" },
-];
-
-const mealLogs = [
-  { title: "Breakfast", time: "08:10", detail: "Greek yogurt, berries, chia, coffee", icon: "food-croissant" },
-  { title: "Lunch", time: "13:05", detail: "Salmon bowl, greens, avocado, rice", icon: "food" },
-  { title: "Snack", time: "16:20", detail: "Apple slices and mixed nuts", icon: "food-apple" },
-];
-
-const medicationLogs = [
-  { title: "Vitamin D3", time: "08:15", detail: "1 capsule with breakfast", icon: "pill" },
-  { title: "Omega-3", time: "13:10", detail: "2 softgels with lunch", icon: "pill-multiple" },
-  { title: "Cetirizine", time: "21:00", detail: "10 mg in the evening", icon: "pill" },
 ];
 
 const consultantChecks = [
@@ -1692,7 +1680,19 @@ function GramwinApp() {
   const bottomInset = Math.max(insets.bottom, 16);
 
   if (!onboardingCheckResolved) {
-    return <AppBootScreen subtitle="Getting your dashboard ready" detail="Checking onboarding, saved profile details, and recent activity." />;
+    return (
+      <View style={styles.appShell}>
+        <StatusBar barStyle="dark-content" backgroundColor={palette.background} />
+        <View style={styles.background} />
+        <View style={styles.startupShell}>
+          <AppStartupCard
+            subtitle="Getting your dashboard ready"
+            detail="Checking onboarding, saved profile details, and recent activity."
+            loadingLabel="Syncing your workspace"
+          />
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -2050,49 +2050,6 @@ function HomeScreen({
 
       <QuickLinks onOpenTab={onOpenTab} />
 
-      <SectionTitle eyebrow="Meals" title="Meals log" body="A simple log view that feels like a real dashboard instead of placeholder filler." />
-      <View style={styles.cardStack}>
-        {mealLogs.map((log) => (
-          <Card key={log.title} mode="contained" style={styles.logCard}>
-            <Card.Content style={styles.logRow}>
-              <Avatar.Icon icon={log.icon} size={40} color={palette.primary} style={styles.logAvatar} />
-              <View style={styles.logCopy}>
-                <Text variant="titleMedium" style={styles.logTitle}>
-                  {log.title}
-                </Text>
-                <Text variant="bodyMedium" style={styles.logDetail}>
-                  {log.detail}
-                </Text>
-              </View>
-              <Text variant="labelMedium" style={styles.logTime}>
-                {log.time}
-              </Text>
-            </Card.Content>
-          </Card>
-        ))}
-      </View>
-
-      <SectionTitle eyebrow="Medication" title="Medication and supplement log" body="Low-clutter cards with room for the detail text to wrap naturally." />
-      <View style={styles.cardStack}>
-        {medicationLogs.map((log) => (
-          <Card key={log.title} mode="contained" style={styles.logCard}>
-            <Card.Content style={styles.logRow}>
-              <Avatar.Icon icon={log.icon} size={40} color={palette.primary} style={styles.logAvatar} />
-              <View style={styles.logCopy}>
-                <Text variant="titleMedium" style={styles.logTitle}>
-                  {log.title}
-                </Text>
-                <Text variant="bodyMedium" style={styles.logDetail}>
-                  {log.detail}
-                </Text>
-              </View>
-              <Text variant="labelMedium" style={styles.logTime}>
-                {log.time}
-              </Text>
-            </Card.Content>
-          </Card>
-        ))}
-      </View>
 
     </View>
   );
@@ -4325,6 +4282,12 @@ const styles = StyleSheet.create({
     backgroundColor: palette.background,
     alignItems: "center",
     justifyContent: "center",
+  },
+  startupShell: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
   },
   background: {
     ...StyleSheet.absoluteFillObject,

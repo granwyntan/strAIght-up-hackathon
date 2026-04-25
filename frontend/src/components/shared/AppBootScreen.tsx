@@ -11,33 +11,46 @@ type AppBootScreenProps = {
   title?: string;
   subtitle?: string;
   detail?: string;
+  loadingLabel?: string;
 };
 
 export default function AppBootScreen({
   title = "GramWIN",
   subtitle = "Loading your health workspace",
   detail = "Preparing the latest data, analysis tools, and saved context.",
+  loadingLabel = "Starting up",
 }: AppBootScreenProps) {
   return (
     <View style={styles.screen}>
-      <LinearGradient colors={["#F7FBF8", "#EEF5FF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.glowCard}>
-        <View style={styles.iconHalo}>
-          <Image source={APP_ICON} style={styles.icon} resizeMode="cover" />
-        </View>
-        <View style={styles.copy}>
-          <Text style={styles.eyebrow}>Health intelligence</Text>
-          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>
-            {title}
-          </Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
-          <Text style={styles.detail}>{detail}</Text>
-        </View>
-        <View style={styles.loaderRow}>
-          <ActivityIndicator size="small" color={palette.primary} />
-          <Text style={styles.loaderText}>Starting up</Text>
-        </View>
-      </LinearGradient>
+      <AppStartupCard title={title} subtitle={subtitle} detail={detail} loadingLabel={loadingLabel} />
     </View>
+  );
+}
+
+export function AppStartupCard({
+  title = "GramWIN",
+  subtitle = "Loading your health workspace",
+  detail = "Preparing the latest data, analysis tools, and saved context.",
+  loadingLabel = "Starting up",
+}: AppBootScreenProps) {
+  return (
+    <LinearGradient colors={["#F7FBF8", "#EEF5FF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.glowCard}>
+      <View style={styles.iconHalo}>
+        <Image source={APP_ICON} style={styles.icon} resizeMode="cover" />
+      </View>
+      <View style={styles.copy}>
+        <Text style={styles.eyebrow}>Health intelligence</Text>
+        <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>
+          {title}
+        </Text>
+        <Text style={styles.subtitle}>{subtitle}</Text>
+        <Text style={styles.detail}>{detail}</Text>
+      </View>
+      <View style={styles.loaderRow}>
+        <ActivityIndicator size="small" color={palette.primary} />
+        <Text style={styles.loaderText}>{loadingLabel}</Text>
+      </View>
+    </LinearGradient>
   );
 }
 

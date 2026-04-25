@@ -1098,7 +1098,7 @@ function inferMealContextFromTime(value, kind) {
 
 const styles = StyleSheet.create({
   pageStack: {
-    gap: 16
+    gap: 24
   },
   flexOne: {
     flex: 1
@@ -1110,15 +1110,15 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     borderWidth: 1,
     borderColor: palette.border,
-    padding: 20,
+    padding: 24,
     backgroundColor: palette.surface,
-    gap: 8
+    gap: 12
   },
   heroTitleRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    gap: 10
+    gap: 14
   },
   chip: {
     alignSelf: "flex-start",
@@ -1156,7 +1156,7 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     color: palette.muted,
     fontSize: 14,
-    lineHeight: 21,
+    lineHeight: 24,
     fontFamily: "Poppins_400Regular"
   },
   calcMetaCard: {
@@ -1164,9 +1164,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 8
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 10
   },
   calcMetaHeader: {
     flexDirection: "row",
@@ -1209,7 +1209,7 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular"
   },
   calcStepStack: {
-    gap: 8
+    gap: 10
   },
   calcStepRow: {
     flexDirection: "row",
@@ -1257,8 +1257,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
-    padding: 16,
-    gap: 12
+    padding: 18,
+    gap: 14
   },
   logHeaderRow: {
     gap: 10
@@ -1371,8 +1371,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
-    padding: 16,
-    gap: 10
+    padding: 18,
+    gap: 12
   },
   cropModalCard: {
     width: "100%",
@@ -1381,8 +1381,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
-    padding: 16,
-    gap: 12
+    padding: 18,
+    gap: 14
   },
   runModalHeader: {
     flexDirection: "row",
@@ -1427,8 +1427,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
-    padding: 16,
-    gap: 8
+    padding: 18,
+    gap: 10
   },
   modalTitle: {
     color: palette.ink,

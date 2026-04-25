@@ -83,7 +83,7 @@ export default function DietPage({ requestApi, accountId, accountEmail, guideSig
 
 const styles = StyleSheet.create({
   pageStack: {
-    gap: 16,
+    gap: 24,
   },
   hiddenSection: {
     display: "none",

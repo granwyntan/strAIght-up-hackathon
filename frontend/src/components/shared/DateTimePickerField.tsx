@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
@@ -59,6 +59,61 @@ function buildQuickActions(mode) {
   return [makeTime(now.getHours(), Math.floor(now.getMinutes() / 15) * 15, "Now"), makeTime(8, 0, "Morning"), makeTime(19, 0, "Evening")];
 }
 
+function monthKeyFromValue(value) {
+  const iso = parseDisplayDate(value) || parseDisplayDate(formatDisplayDate(new Date())) || "";
+  return iso ? iso.slice(0, 7) : formatInputDate(formatDisplayDate(new Date())).slice(0, 7);
+}
+
+function shiftMonthKey(monthKey, offset) {
+  const [yearText, monthText] = `${monthKey || ""}`.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const base = Number.isFinite(year) && Number.isFinite(month) ? new Date(year, month - 1, 1) : new Date();
+  base.setMonth(base.getMonth() + offset);
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildCalendarDays(monthKey, selectedValue) {
+  const selectedIso = parseDisplayDate(selectedValue) || "";
+  const [yearText, monthText] = `${monthKey || ""}`.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const base = Number.isFinite(year) && Number.isFinite(month) ? new Date(year, month - 1, 1) : new Date();
+  const gridStart = new Date(base);
+  const startDay = gridStart.getDay();
+  const mondayOffset = startDay === 0 ? -6 : 1 - startDay;
+  gridStart.setDate(gridStart.getDate() + mondayOffset);
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const cellDate = new Date(gridStart);
+    cellDate.setDate(gridStart.getDate() + index);
+    const iso = `${cellDate.getFullYear()}-${String(cellDate.getMonth() + 1).padStart(2, "0")}-${String(cellDate.getDate()).padStart(2, "0")}`;
+    const inMonth = cellDate.getMonth() === base.getMonth();
+    const isToday = iso === parseDisplayDate(formatDisplayDate(new Date()));
+    return {
+      key: iso,
+      iso,
+      value: formatDisplayDate(`${iso}T00:00:00`),
+      label: String(cellDate.getDate()),
+      inMonth,
+      selected: iso === selectedIso,
+      isToday,
+    };
+  });
+}
+
+function buildTimeSections(options) {
+  const sections = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    const hourLabel = `${String(hour).padStart(2, "0")}:00`;
+    sections.push({
+      title: hourLabel,
+      items: options.filter((option) => option.key.startsWith(`${String(hour).padStart(2, "0")}:`)),
+    });
+  }
+  return sections;
+}
+
 export default function DateTimePickerField({
   mode,
   value,
@@ -68,7 +123,10 @@ export default function DateTimePickerField({
   editable = true,
 }) {
   const [open, setOpen] = useState(false);
+  const [monthKey, setMonthKey] = useState(monthKeyFromValue(value));
   const options = useMemo(() => (mode === "date" ? buildDateOptions(value) : buildTimeOptions()), [mode, value]);
+  const timeSections = useMemo(() => buildTimeSections(options), [options]);
+  const calendarDays = useMemo(() => buildCalendarDays(monthKey, value), [monthKey, value]);
   const quickActions = useMemo(() => buildQuickActions(mode), [mode]);
   const displayValue = value || "";
   const selectedIndex = useMemo(() => findNearestIndex(options, displayValue), [options, displayValue]);
@@ -76,6 +134,12 @@ export default function DateTimePickerField({
     const start = Math.max(0, selectedIndex - 2);
     return options.slice(start, Math.min(options.length, start + 5));
   }, [options, selectedIndex]);
+
+  useEffect(() => {
+    if (mode === "date") {
+      setMonthKey(monthKeyFromValue(value));
+    }
+  }, [mode, value]);
 
   if (Platform.OS === "web") {
     return (
@@ -155,38 +219,81 @@ export default function DateTimePickerField({
                 );
               })}
             </View>
-            <View style={styles.previewWheel}>
-              {previewOptions.map((option) => {
-                const selected = option.value === displayValue;
-                return (
-                  <View key={`preview-${option.key}`} style={[styles.previewRow, selected && styles.previewRowSelected]}>
-                    <Text style={[styles.previewLabel, selected && styles.previewLabelSelected]}>{option.label}</Text>
-                    <Text style={[styles.previewValue, selected && styles.previewValueSelected]}>{option.value}</Text>
-                  </View>
-                );
-              })}
-            </View>
-            <ScrollView contentContainerStyle={styles.optionStack} showsVerticalScrollIndicator={false}>
-              {options.map((option) => {
-                const selected = option.value === displayValue;
-                return (
-                  <Pressable
-                    key={option.key}
-                    style={[styles.optionRow, selected && styles.optionRowSelected]}
-                    onPress={() => {
-                      onChange(option.value);
-                      setOpen(false);
-                    }}
-                  >
-                    <View style={styles.optionCopy}>
-                      <Text style={[styles.optionLabel, selected && styles.optionLabelSelected]}>{option.label}</Text>
-                      <Text style={[styles.optionValue, selected && styles.optionValueSelected]}>{option.value}</Text>
-                    </View>
-                    <MaterialCommunityIcons name={selected ? "check-circle" : "chevron-right"} size={18} color={selected ? palette.primary : palette.muted} />
+            {mode === "date" ? (
+              <>
+                <View style={styles.calendarHeader}>
+                  <Pressable style={styles.calendarArrowButton} onPress={() => setMonthKey((current) => shiftMonthKey(current, -1))}>
+                    <MaterialCommunityIcons name="chevron-left" size={18} color={palette.ink} />
                   </Pressable>
-                );
-              })}
-            </ScrollView>
+                  <Text style={styles.calendarTitle}>
+                    {new Date(`${monthKey}-01T00:00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+                  </Text>
+                  <Pressable style={styles.calendarArrowButton} onPress={() => setMonthKey((current) => shiftMonthKey(current, 1))}>
+                    <MaterialCommunityIcons name="chevron-right" size={18} color={palette.ink} />
+                  </Pressable>
+                </View>
+                <View style={styles.weekdayRow}>
+                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
+                    <Text key={label} style={styles.weekdayLabel}>
+                      {label}
+                    </Text>
+                  ))}
+                </View>
+                <View style={styles.calendarGrid}>
+                  {calendarDays.map((day) => (
+                    <Pressable
+                      key={day.key}
+                      style={[styles.dayCell, !day.inMonth && styles.dayCellMuted, day.isToday && styles.dayCellToday, day.selected && styles.dayCellSelected]}
+                      onPress={() => {
+                        onChange(day.value);
+                        setMonthKey(day.iso.slice(0, 7));
+                        setOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.dayCellText, !day.inMonth && styles.dayCellTextMuted, day.selected && styles.dayCellTextSelected]}>{day.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.previewWheel}>
+                  {previewOptions.map((option) => {
+                    const selected = option.value === displayValue;
+                    return (
+                      <View key={`preview-${option.key}`} style={[styles.previewRow, selected && styles.previewRowSelected]}>
+                        <Text style={[styles.previewLabel, selected && styles.previewLabelSelected]}>{option.label}</Text>
+                        <Text style={[styles.previewValue, selected && styles.previewValueSelected]}>{option.value}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                <ScrollView contentContainerStyle={styles.timeSectionStack} showsVerticalScrollIndicator={false}>
+                  {timeSections.map((section) => (
+                    <View key={section.title} style={styles.timeSection}>
+                      <Text style={styles.timeSectionTitle}>{section.title}</Text>
+                      <View style={styles.timeOptionGrid}>
+                        {section.items.map((option) => {
+                          const selected = option.value === displayValue;
+                          return (
+                            <Pressable
+                              key={option.key}
+                              style={[styles.timeOptionChip, selected && styles.timeOptionChipSelected]}
+                              onPress={() => {
+                                onChange(option.value);
+                                setOpen(false);
+                              }}
+                            >
+                              <Text style={[styles.timeOptionText, selected && styles.timeOptionTextSelected]}>{option.value}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ))}
+                </ScrollView>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -427,6 +534,115 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   optionValueSelected: {
+    color: palette.primary,
+  },
+  calendarHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  calendarArrowButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  calendarTitle: {
+    flex: 1,
+    textAlign: "center",
+    color: palette.ink,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 15,
+  },
+  weekdayRow: {
+    flexDirection: "row",
+  },
+  weekdayLabel: {
+    flex: 1,
+    textAlign: "center",
+    color: palette.muted,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 11,
+  },
+  calendarGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  dayCell: {
+    width: "12.8%",
+    aspectRatio: 1,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.surfaceSoft,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  dayCellMuted: {
+    opacity: 0.42,
+  },
+  dayCellToday: {
+    borderColor: palette.border,
+  },
+  dayCellSelected: {
+    backgroundColor: palette.primary,
+    borderColor: palette.primary,
+  },
+  dayCellText: {
+    color: palette.ink,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 13,
+  },
+  dayCellTextMuted: {
+    color: palette.muted,
+  },
+  dayCellTextSelected: {
+    color: "#FFFFFF",
+  },
+  timeSectionStack: {
+    gap: 12,
+    paddingBottom: 6,
+  },
+  timeSection: {
+    gap: 8,
+  },
+  timeSectionTitle: {
+    color: palette.muted,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12,
+  },
+  timeOptionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  timeOptionChip: {
+    width: "23%",
+    minHeight: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  timeOptionChipSelected: {
+    borderColor: palette.primary,
+    backgroundColor: palette.primarySoft,
+  },
+  timeOptionText: {
+    color: palette.ink,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12,
+  },
+  timeOptionTextSelected: {
     color: palette.primary,
   },
 });

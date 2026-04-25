@@ -105,24 +105,23 @@ export default function WeeklyCalorieGraph({ days, entries, mode = "timeline", t
     return (
       <View style={styles.card}>
         <Text style={styles.title}>Week trends</Text>
-        <Text style={styles.subtitle}>Calories run as a simple weekly trend line, while hydration stays visible as supporting intake bars.</Text>
+        <Text style={styles.subtitle}>Calories and hydration use the same paired bar layout so the week reads clearly at a glance.</Text>
         <View style={styles.legendRow}>
-          <LegendSwatch color={palette.primary} label="Calories trend" />
-          <LegendSwatch color={palette.secondary} label="Hydration bars" />
+          <LegendSwatch color={palette.primary} label="Calories" />
+          <LegendSwatch color={palette.secondary} label="Hydration" />
         </View>
         {safeDays.length === 0 ? (
           <EmptyChartBox body="No logs in this week yet. The chart frame stays here so the layout does not jump around." />
         ) : (
-          <View style={styles.weekChartRow}>
+          <View style={styles.chartRow}>
             {safeDays.map((day, index) => {
-              const dotOffset = 10 + Math.round(((day.totalCalories || 0) / maxCalories) * 74);
-              const hydrationHeight = Math.max(6, Math.round(((day.hydrationMl || 0) / maxHydration) * 48));
+              const calorieHeight = Math.max(6, Math.round(((day.totalCalories || 0) / maxCalories) * 86));
+              const hydrationHeight = Math.max(6, Math.round(((day.hydrationMl || 0) / maxHydration) * 86));
               return (
-                <View key={day.date} style={styles.weekColumn}>
-                  <View style={styles.weekPlot}>
-                    <View style={[styles.hydrationMiniBar, { height: hydrationHeight }]} />
-                    <View style={[styles.weekDot, { bottom: dotOffset }]} />
-                    {index < safeDays.length - 1 ? <View style={[styles.weekLine, { bottom: dotOffset + 5 }]} /> : null}
+                <View key={day.date} style={styles.dayColumn}>
+                  <View style={styles.barLane}>
+                    <View style={[styles.bar, styles.calorieBar, { height: calorieHeight }]} />
+                    <View style={[styles.bar, styles.hydrationBar, { height: hydrationHeight }]} />
                   </View>
                   <Text style={styles.dayLabel}>{weekdayShort[index] || day.date.slice(5)}</Text>
                   <Text style={styles.dayMeta}>{day.totalCalories || 0} kcal</Text>
@@ -142,28 +141,26 @@ export default function WeeklyCalorieGraph({ days, entries, mode = "timeline", t
     return (
       <View style={styles.card}>
         <Text style={styles.title}>{mode === "month" ? "Month overview" : "Year overview"}</Text>
-        <Text style={styles.subtitle}>Squares make it easier to spot heavier intake periods and hydration gaps without overloading the screen.</Text>
+        <Text style={styles.subtitle}>Bar charts keep the monthly and yearly views consistent with the rest of the history experience.</Text>
         {gridItems.length === 0 ? (
           <EmptyChartBox body={`No logs in this ${mode} yet. This overview stays visible so the page structure stays consistent.`} />
         ) : (
-          <>
-            <Text style={styles.gridLabel}>Calories</Text>
-            <View style={styles.squareGrid}>
-              {gridItems.map((item) => (
-                <View key={`cal-${item.key}`} style={[styles.squareCell, { backgroundColor: toneForCalories(item.calories, gridCaloriesMax) }]}>
-                  <Text style={styles.squareText}>{item.label}</Text>
+          <View style={styles.chartRow}>
+            {gridItems.map((item) => {
+              const calorieHeight = Math.max(6, Math.round(((item.calories || 0) / gridCaloriesMax) * 86));
+              const hydrationHeight = Math.max(6, Math.round(((item.hydration || 0) / gridHydrationMax) * 86));
+              return (
+                <View key={item.key} style={styles.dayColumn}>
+                  <View style={styles.barLane}>
+                    <View style={[styles.bar, styles.calorieBar, { height: calorieHeight }]} />
+                    <View style={[styles.bar, styles.hydrationBar, { height: hydrationHeight }]} />
+                  </View>
+                  <Text style={styles.dayLabel}>{item.label}</Text>
+                  <Text style={styles.dayMeta}>{item.calories || 0} kcal</Text>
                 </View>
-              ))}
-            </View>
-            <Text style={styles.gridLabel}>Hydration</Text>
-            <View style={styles.squareGrid}>
-              {gridItems.map((item) => (
-                <View key={`hyd-${item.key}`} style={[styles.squareCell, { backgroundColor: toneForHydration(item.hydration, gridHydrationMax) }]}>
-                  <Text style={styles.squareText}>{item.label}</Text>
-                </View>
-              ))}
-            </View>
-          </>
+              );
+            })}
+          </View>
         )}
       </View>
     );
@@ -357,74 +354,6 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     borderColor: palette.border,
     backgroundColor: "#FFFFFF",
-  },
-  weekChartRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 8,
-    alignItems: "flex-end",
-  },
-  weekColumn: {
-    flex: 1,
-    alignItems: "center",
-    gap: 6,
-  },
-  weekPlot: {
-    width: "100%",
-    minHeight: 110,
-    maxWidth: 42,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    position: "relative",
-    paddingHorizontal: 6,
-    paddingBottom: 8,
-    justifyContent: "flex-end",
-  },
-  hydrationMiniBar: {
-    width: 10,
-    borderRadius: 999,
-    backgroundColor: palette.secondary,
-    alignSelf: "center",
-  },
-  weekDot: {
-    position: "absolute",
-    alignSelf: "center",
-    width: 12,
-    height: 12,
-    borderRadius: 999,
-    backgroundColor: palette.primary,
-  },
-  weekLine: {
-    position: "absolute",
-    left: "55%",
-    width: 22,
-    height: 2,
-    backgroundColor: palette.primary,
-  },
-  gridLabel: {
-    color: palette.ink,
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
-    marginTop: 4,
-  },
-  squareGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  squareCell: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  squareText: {
-    color: "#FFFFFF",
-    fontFamily: "Poppins_700Bold",
-    fontSize: 10,
   },
   timelineStack: {
     gap: 10,

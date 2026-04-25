@@ -224,16 +224,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
-    padding: 18,
-    gap: 12
+    padding: 22,
+    gap: 16
   },
   heroCard: {
     borderRadius: 18,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
-    padding: 14,
-    gap: 10
+    padding: 18,
+    gap: 12
   },
   heroHeader: {
     gap: 4
@@ -243,8 +243,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
-    padding: 14,
-    gap: 10
+    padding: 16,
+    gap: 12
   },
   inputBoxTitle: {
     color: palette.ink,
@@ -315,8 +315,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
-    padding: 12,
-    gap: 10
+    padding: 16,
+    gap: 12
   },
   label: {
     color: palette.ink,
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   formGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10
+    gap: 12
   },
   optionSection: {
     gap: 6,
@@ -373,7 +373,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   toggleStack: {
-    gap: 10,
+    gap: 12,
   },
   toggleRow: {
     flexDirection: "row",
@@ -472,8 +472,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
-    padding: 10,
-    gap: 8
+    padding: 12,
+    gap: 10
   },
   webcamVideo: {
     width: "100%",
@@ -564,7 +564,7 @@ const styles = StyleSheet.create({
   submitButton: {
     borderRadius: 16,
     backgroundColor: palette.primary,
-    paddingVertical: 13,
+    paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center"
   },

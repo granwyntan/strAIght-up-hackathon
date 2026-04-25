@@ -504,21 +504,21 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: "#FAFCF9",
-    padding: 18,
-    gap: 16,
+    backgroundColor: palette.surface,
+    padding: 24,
+    gap: 22,
     shadowColor: "#173122",
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   heroCard: {
     borderRadius: 26,
     borderWidth: 1,
     borderColor: palette.border,
-    padding: 18,
-    gap: 14,
+    padding: 24,
+    gap: 20,
   },
   heroChipRow: {
     flexDirection: "row",
@@ -545,11 +545,11 @@ const styles = StyleSheet.create({
   heroTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 14,
+    gap: 20,
   },
   heroCopy: {
     flex: 1,
-    gap: 6,
+    gap: 10,
   },
   eyebrow: {
     color: palette.primary,
@@ -561,8 +561,8 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
-    fontSize: 22,
-    lineHeight: 30,
+    fontSize: 23,
+    lineHeight: 31,
   },
   heroSubtitle: {
     color: palette.muted,
@@ -597,12 +597,12 @@ const styles = StyleSheet.create({
   topMetricRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    gap: 14,
   },
   metricGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    gap: 14,
   },
   metricTile: {
     flexGrow: 1,
@@ -611,9 +611,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    gap: 8,
   },
   metricLabel: {
     color: palette.muted,
@@ -634,8 +634,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: palette.border,
-    padding: 14,
-    gap: 10,
+    padding: 18,
+    gap: 14,
   },
   rowBetween: {
     flexDirection: "row",
@@ -690,23 +690,23 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   dashboardGrid: {
-    gap: 12,
+    gap: 18,
   },
   dashboardColumn: {
-    gap: 12,
+    gap: 18,
   },
   sectionCard: {
     borderRadius: 22,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: "#F6FAF7",
-    padding: 14,
-    gap: 10,
+    backgroundColor: palette.surfaceSoft,
+    padding: 18,
+    gap: 14,
   },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 14,
   },
   sectionIconWrap: {
     width: 34,
@@ -725,7 +725,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   sectionContent: {
-    gap: 10,
+    gap: 14,
   },
   signalGrid: {
     flexDirection: "row",
@@ -736,8 +736,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexBasis: 140,
     borderRadius: 18,
-    padding: 12,
-    gap: 6,
+    padding: 16,
+    gap: 10,
   },
   signalLabel: {
     color: palette.muted,
@@ -813,7 +813,7 @@ const styles = StyleSheet.create({
     maxHeight: 420,
   },
   resultContent: {
-    gap: 12,
+    gap: 18,
   },
   markdownBlock: {
     gap: 6,
