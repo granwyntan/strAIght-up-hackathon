@@ -103,3 +103,36 @@ For Android emulators, `http://10.0.2.2:8000` is still added automatically as a 
 5. `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
 
 If you launch from VS Code, use the `Backend: FastAPI` launch configuration so the API is reachable from emulators and devices on your local network.
+
+## Deploy
+
+### Frontend to Vercel (static web export)
+
+This Expo app is deployed as a static site using `expo export --platform web`.
+
+1. Push this repo to GitHub (or GitLab).
+2. In Vercel, create a new project and select the repo.
+3. Set the project **Root Directory** to `frontend/`.
+4. Confirm build settings (these match `frontend/vercel.json`):
+   - Install Command: `npm install`
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+5. Add environment variables in Vercel (Project Settings -> Environment Variables):
+   - `EXPO_PUBLIC_API_BASE_URL` = your Render backend URL (for example `https://YOUR-SERVICE.onrender.com`)
+
+### Backend to Render (FastAPI)
+
+Render runs the backend as a Python Web Service using `uvicorn`.
+
+1. In Render, create a new **Web Service** from this repo.
+2. Set **Root Directory** to `backend/`.
+3. Set:
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+4. Add environment variables in Render (at minimum):
+   - `APP_ENV=production`
+   - `BACKEND_PUBLIC_BASE_URL=https://YOUR-SERVICE.onrender.com`
+   - `CORS_ALLOWED_ORIGINS=https://YOUR-VERCEL-SITE.vercel.app`
+   - Provider keys you want enabled (for example `OPENAI_API_KEY`, plus any of `TAVILY_API_KEY`, `SERPAPI_API_KEY`, etc.)
+
+Note: `render.yaml` at the repo root can also be used to deploy with Render Blueprints; it assumes the backend service name `gramwin-backend` and `backend/` as the root dir.

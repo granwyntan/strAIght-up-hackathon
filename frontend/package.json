@@ -3,13 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "main": "expo/AppEntry",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "start": "expo start",
     "start:lan": "expo start --lan --clear",
     "start:tunnel": "expo start --tunnel --clear",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build": "expo export --platform web"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.1",
