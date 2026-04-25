@@ -17,6 +17,7 @@ export default function ToolHeader({ eyebrow, title, subtitle, icon, onPressHelp
 
   return (
     <View style={styles.headerCard}>
+      <View style={styles.accentOrb} />
       <View style={styles.headerTop}>
         <View style={styles.titleWrap}>
           {showEyebrowRow ? (
@@ -30,7 +31,9 @@ export default function ToolHeader({ eyebrow, title, subtitle, icon, onPressHelp
             </View>
           ) : null}
           <View style={styles.titleRow}>
-            <Text style={styles.title}>{title}</Text>
+            <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>
+              {title}
+            </Text>
             {onPressHelp ? (
               <Pressable style={styles.helpButton} onPress={onPressHelp} accessibilityRole="button" accessibilityLabel={`Open ${title} tutorial`}>
                 <Text style={styles.helpButtonText}>?</Text>
@@ -39,21 +42,38 @@ export default function ToolHeader({ eyebrow, title, subtitle, icon, onPressHelp
           </View>
         </View>
       </View>
-      <Text style={styles.subtitle}>{subtitle}</Text>
+      <Text style={styles.subtitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.88}>
+        {subtitle}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   headerCard: {
-    borderRadius: 16,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: palette.surface,
+    backgroundColor: "#FBFCFA",
     paddingHorizontal: 20,
-    paddingTop: 14,
+    paddingTop: 16,
     paddingBottom: 18,
     gap: 10,
+    overflow: "hidden",
+    shadowColor: "#173122",
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  accentOrb: {
+    position: "absolute",
+    top: -24,
+    right: -10,
+    width: 120,
+    height: 120,
+    borderRadius: 999,
+    backgroundColor: "rgba(124, 179, 66, 0.08)",
   },
   headerTop: {
     flexDirection: "row",
@@ -75,9 +95,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   iconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: palette.primarySoft,
@@ -108,7 +128,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: palette.surfaceSoft,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: palette.border,
     flexShrink: 0,

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React, { useMemo, useState } from "react";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { palette } from "../../data";
@@ -146,8 +147,12 @@ function sectionMeta(heading) {
 function MetricTile({ label, value, muted = false }) {
   return (
     <View style={styles.metricTile}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={[styles.metricValue, muted && styles.metricValueMuted]}>{value || "-"}</Text>
+      <Text style={styles.metricLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.84}>
+        {label}
+      </Text>
+      <Text style={[styles.metricValue, muted && styles.metricValueMuted]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>
+        {value || "-"}
+      </Text>
     </View>
   );
 }
@@ -158,7 +163,9 @@ function DataLine({ label, value }) {
   }
   return (
     <View style={styles.dataLine}>
-      <Text style={styles.dataLabel}>{label}</Text>
+      <Text style={styles.dataLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.84}>
+        {label}
+      </Text>
       <Text style={styles.dataValue}>{value}</Text>
     </View>
   );
@@ -167,7 +174,9 @@ function DataLine({ label, value }) {
 function AccentChip({ label, tone }) {
   return (
     <View style={[styles.chip, { backgroundColor: tone.backgroundColor }]}>
-      <Text style={[styles.chipText, { color: tone.color }]}>{label}</Text>
+      <Text style={[styles.chipText, { color: tone.color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -180,7 +189,9 @@ function AccordionSection({ title, accent, icon, children, defaultExpanded = fal
         <View style={[styles.sectionIconWrap, { backgroundColor: `${accent}18` }]}>
           <MaterialCommunityIcons name={icon} size={18} color={accent} />
         </View>
-        <Text style={[styles.sectionHeading, { color: accent }]}>{title}</Text>
+        <Text style={[styles.sectionHeading, { color: accent }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>
+          {title}
+        </Text>
         <MaterialCommunityIcons name={expanded ? "chevron-up" : "chevron-down"} size={18} color={accent} style={styles.sectionChevron} />
       </Pressable>
       {expanded ? <View style={styles.sectionContent}>{children}</View> : null}
@@ -249,11 +260,27 @@ export default function CalorieResult({ result }) {
 
   return (
     <View style={styles.card}>
-      <View style={styles.heroCard}>
+      <LinearGradient colors={["#F7FBF8", "#EEF4FF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
+        <View style={styles.heroChipRow}>
+          <View style={styles.heroChip}>
+            <MaterialCommunityIcons name="sparkles" size={14} color={palette.primary} />
+            <Text style={styles.heroChipText}>AI nutrition analysis</Text>
+          </View>
+          {goalMap["goal"] ? (
+            <View style={styles.heroChip}>
+              <MaterialCommunityIcons name="flag-checkered" size={14} color={palette.primary} />
+              <Text style={styles.heroChipText} numberOfLines={1}>
+                {goalMap["goal"]}
+              </Text>
+            </View>
+          ) : null}
+        </View>
         <View style={styles.heroTopRow}>
           <View style={styles.heroCopy}>
             <Text style={styles.eyebrow}>Nutrition snapshot</Text>
-            <Text style={styles.heroTitle}>{mealTitle}</Text>
+            <Text style={styles.heroTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.76}>
+              {mealTitle}
+            </Text>
             <Text style={styles.heroSubtitle}>
               {(overviewMap["portion"] || "Estimated portion")} · {(overviewMap["confidence"] || "AI estimate from visible food cues")}
             </Text>
@@ -279,8 +306,12 @@ export default function CalorieResult({ result }) {
         {(protein > 0 || carbs > 0 || fats > 0) ? (
           <View style={styles.balanceCard}>
             <View style={styles.rowBetween}>
-              <Text style={styles.sectionTitle}>Macro balance</Text>
-              <Text style={styles.visualBalanceText}>{overviewMap["visual balance"] || "Protein / Carbs / Fats"}</Text>
+              <Text style={styles.sectionTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.84}>
+                Macro balance
+              </Text>
+              <Text style={styles.visualBalanceText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.84}>
+                {overviewMap["visual balance"] || "Protein / Carbs / Fats"}
+              </Text>
             </View>
             <View style={styles.balanceTrack}>
               <View style={[styles.balanceSegment, { flex: protein || 0.1, backgroundColor: palette.success }]} />
@@ -295,7 +326,7 @@ export default function CalorieResult({ result }) {
             {overviewMap["macro interpretation"] ? <Text style={styles.balanceInsight}>{overviewMap["macro interpretation"]}</Text> : null}
           </View>
         ) : null}
-      </View>
+      </LinearGradient>
 
       <View style={styles.dashboardGrid}>
         <View style={styles.dashboardColumn}>
@@ -470,20 +501,46 @@ function LegendDot({ color, label }) {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 24,
+    borderRadius: 28,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: palette.surface,
+    backgroundColor: "#FAFCF9",
+    padding: 18,
+    gap: 16,
+    shadowColor: "#173122",
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  heroCard: {
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: palette.border,
     padding: 18,
     gap: 14,
   },
-  heroCard: {
-    borderRadius: 24,
+  heroChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  heroChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: "rgba(255,255,255,0.82)",
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    padding: 18,
-    gap: 14,
+    borderColor: "#DDE7E0",
+  },
+  heroChipText: {
+    color: palette.primary,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 11,
+    maxWidth: 170,
   },
   heroTopRow: {
     flexDirection: "row",
@@ -519,12 +576,14 @@ const styles = StyleSheet.create({
   },
   scoreCard: {
     minWidth: 96,
-    borderRadius: 22,
+    borderRadius: 24,
     paddingHorizontal: 14,
     paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.55)",
   },
   scoreValue: {
     fontFamily: "Poppins_700Bold",
@@ -548,7 +607,7 @@ const styles = StyleSheet.create({
   metricTile: {
     flexGrow: 1,
     minWidth: 120,
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: "#FFFFFF",
@@ -571,7 +630,7 @@ const styles = StyleSheet.create({
     color: palette.muted,
   },
   balanceCard: {
-    borderRadius: 20,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: palette.border,
@@ -623,6 +682,7 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontFamily: "Poppins_500Medium",
     fontSize: 12,
+    flexShrink: 1,
   },
   balanceInsight: {
     color: palette.ink,
@@ -636,10 +696,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   sectionCard: {
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
+    backgroundColor: "#F6FAF7",
     padding: 14,
     gap: 10,
   },
@@ -662,6 +722,7 @@ const styles = StyleSheet.create({
   },
   sectionChevron: {
     marginLeft: "auto",
+    flexShrink: 0,
   },
   sectionContent: {
     gap: 10,
@@ -697,7 +758,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   subCard: {
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: "#FFFFFF",

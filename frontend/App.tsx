@@ -46,6 +46,7 @@ import {
   TouchableRipple,
 } from "react-native-paper";
 import "./global.css";
+import AppBootScreen from "./src/components/shared/AppBootScreen";
 
 import {
   defaultBootstrap,
@@ -823,11 +824,7 @@ function AppRoot() {
   });
 
   if (!fontsLoaded) {
-    return (
-      <View style={styles.bootScreen}>
-        <ActivityIndicator size="large" color={palette.primary} />
-      </View>
-    );
+    return <AppBootScreen subtitle="Loading your health workspace" detail="Syncing typography, theme, and app shell." />;
   }
 
   return (
@@ -1695,11 +1692,7 @@ function GramwinApp() {
   const bottomInset = Math.max(insets.bottom, 16);
 
   if (!onboardingCheckResolved) {
-    return (
-      <View style={styles.bootScreen}>
-        <ActivityIndicator size="large" color={palette.primary} />
-      </View>
-    );
+    return <AppBootScreen subtitle="Getting your dashboard ready" detail="Checking onboarding, saved profile details, and recent activity." />;
   }
 
   return (
