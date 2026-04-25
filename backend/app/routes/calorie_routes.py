@@ -138,7 +138,7 @@ def _to_week_payload(week) -> CalorieTrackerWeekResponse:
 
 
 async def _calculate_calories_response(
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(default=None),
     age: str | None = Form(default=None),
     bmi: str | None = Form(default=None),
     weightKg: str | None = Form(default=None),
@@ -146,17 +146,25 @@ async def _calculate_calories_response(
     activityLevel: str | None = Form(default=None),
     sex: str | None = Form(default=None),
     medicalHistory: str | None = Form(default=None),
+    mealDescription: str | None = Form(default=None),
+    mealType: str | None = Form(default=None),
+    mealDate: str | None = Form(default=None),
+    mealTime: str | None = Form(default=None),
+    hungerLevel: str | None = Form(default=None),
 ) -> CalorieCalculationResponse:
-    image_bytes = await photo.read()
-    content_type = (photo.content_type or "").strip().lower()
-    if content_type == "image/jpg":
-        content_type = "image/jpeg"
-    if not content_type and photo.filename:
-        lower_name = photo.filename.lower()
-        for ext, mapped_type in EXTENSION_TO_CONTENT_TYPE.items():
-            if lower_name.endswith(ext):
-                content_type = mapped_type
-                break
+    image_bytes = b""
+    content_type = ""
+    if photo is not None:
+        image_bytes = await photo.read()
+        content_type = (photo.content_type or "").strip().lower()
+        if content_type == "image/jpg":
+            content_type = "image/jpeg"
+        if not content_type and photo.filename:
+            lower_name = photo.filename.lower()
+            for ext, mapped_type in EXTENSION_TO_CONTENT_TYPE.items():
+                if lower_name.endswith(ext):
+                    content_type = mapped_type
+                    break
 
     try:
         result = calculate_calories(
@@ -169,6 +177,11 @@ async def _calculate_calories_response(
             activity_level=activityLevel,
             sex=sex,
             medical_history=medicalHistory,
+            meal_description=mealDescription,
+            meal_type=mealType,
+            meal_date=mealDate,
+            meal_time=mealTime,
+            hunger_level=hungerLevel,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -187,7 +200,7 @@ async def _calculate_calories_response(
 
 @router.post("/calculate", response_model=CalorieCalculationResponse)
 async def calculate_calories_endpoint(
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(default=None),
     age: str | None = Form(default=None),
     bmi: str | None = Form(default=None),
     weightKg: str | None = Form(default=None),
@@ -195,13 +208,32 @@ async def calculate_calories_endpoint(
     activityLevel: str | None = Form(default=None),
     sex: str | None = Form(default=None),
     medicalHistory: str | None = Form(default=None),
+    mealDescription: str | None = Form(default=None),
+    mealType: str | None = Form(default=None),
+    mealDate: str | None = Form(default=None),
+    mealTime: str | None = Form(default=None),
+    hungerLevel: str | None = Form(default=None),
 ) -> CalorieCalculationResponse:
-    return await _calculate_calories_response(photo, age, bmi, weightKg, heightCm, activityLevel, sex, medicalHistory)
+    return await _calculate_calories_response(
+        photo,
+        age,
+        bmi,
+        weightKg,
+        heightCm,
+        activityLevel,
+        sex,
+        medicalHistory,
+        mealDescription,
+        mealType,
+        mealDate,
+        mealTime,
+        hungerLevel,
+    )
 
 
 @legacy_router.post("/calculate", response_model=CalorieCalculationResponse)
 async def calculate_calories_endpoint_legacy(
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(default=None),
     age: str | None = Form(default=None),
     bmi: str | None = Form(default=None),
     weightKg: str | None = Form(default=None),
@@ -209,9 +241,28 @@ async def calculate_calories_endpoint_legacy(
     activityLevel: str | None = Form(default=None),
     sex: str | None = Form(default=None),
     medicalHistory: str | None = Form(default=None),
+    mealDescription: str | None = Form(default=None),
+    mealType: str | None = Form(default=None),
+    mealDate: str | None = Form(default=None),
+    mealTime: str | None = Form(default=None),
+    hungerLevel: str | None = Form(default=None),
 ) -> CalorieCalculationResponse:
     # Backward-compatible alias for clients calling /api/calorie/calculate
-    return await _calculate_calories_response(photo, age, bmi, weightKg, heightCm, activityLevel, sex, medicalHistory)
+    return await _calculate_calories_response(
+        photo,
+        age,
+        bmi,
+        weightKg,
+        heightCm,
+        activityLevel,
+        sex,
+        medicalHistory,
+        mealDescription,
+        mealType,
+        mealDate,
+        mealTime,
+        hungerLevel,
+    )
 
 
 @router.get("/tracker", response_model=CalorieTrackerWeekResponse)

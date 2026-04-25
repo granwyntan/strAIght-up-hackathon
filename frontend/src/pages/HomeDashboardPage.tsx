@@ -197,6 +197,7 @@ export default function HomeDashboardPage({
   history,
   accountId,
   accountEmail,
+  onOpenInvestigate,
   onOpenHistory,
   onOpenTab,
   requestApi,
@@ -204,6 +205,7 @@ export default function HomeDashboardPage({
   history: InvestigationSummary[];
   accountId?: string;
   accountEmail?: string;
+  onOpenInvestigate?: () => void;
   onOpenHistory: (id: string) => void;
   onOpenTab: (tab: AppTab) => void;
   requestApi: (path: string, init?: RequestInit) => Promise<Response>;

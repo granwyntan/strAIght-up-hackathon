@@ -233,6 +233,11 @@ def _normalize_sex(value: str | None) -> str | None:
 
 def _build_cache_key(
     image_bytes: bytes,
+    meal_description: str | None,
+    meal_type: str | None,
+    meal_date: str | None,
+    meal_time: str | None,
+    hunger_level: str | None,
     age: float,
     bmi: float,
     activity_level: str,
@@ -243,7 +248,9 @@ def _build_cache_key(
 ) -> str:
     digest = hashlib.sha256(image_bytes).hexdigest()
     return (
-        f"{digest}|{age:.2f}|{bmi:.2f}|{activity_level}|{sex or ''}|{weight_kg or ''}|{height_cm or ''}|"
+        f"{digest}|{(meal_description or '').strip().lower()}|{(meal_type or '').strip().lower()}|"
+        f"{(meal_date or '').strip()}|{(meal_time or '').strip()}|{(hunger_level or '').strip()}|"
+        f"{age:.2f}|{bmi:.2f}|{activity_level}|{sex or ''}|{weight_kg or ''}|{height_cm or ''}|"
         f"{(medical_history or '').strip().lower()}"
     )
 
@@ -318,13 +325,33 @@ def _build_calorie_context(
     )
 
 
-def _build_prompt(context: CalorieContext) -> str:
+def _build_prompt(
+    context: CalorieContext,
+    *,
+    meal_description: str | None,
+    meal_type: str | None,
+    meal_date: str | None,
+    meal_time: str | None,
+    hunger_level: str | None,
+    has_image: bool,
+) -> str:
+    normalized_description = (meal_description or "").strip()
+    normalized_type = (meal_type or "").strip() or "auto"
+    normalized_date = (meal_date or "").strip() or "unknown"
+    normalized_time = (meal_time or "").strip() or "unknown"
+    normalized_hunger = (hunger_level or "").strip() or "unknown"
+    evidence_mode = (
+        "Use the image as the main source of truth and use the text description only as supporting context when both are present."
+        if has_image
+        else "There is no image for this request, so infer the meal entirely from the user's typed description and lower confidence when details are uncertain."
+    )
     return (
         "You are an AI food, drink, and consumables analysis assistant. "
         "Internally work in 3 lightweight passes: Food Input Processor, User Context Engine, and Insight Generator. "
         "First standardize the input into a likely meal or drink identity, core ingredients, portion estimate, and timing context. "
         "Then compare that structured meal against likely ingredient properties, nutrition signals, claims, and user profile context. "
         "Finally convert the findings into concise user-facing insights with clear confidence and practical next steps. "
+        f"{evidence_mode} "
         "The FIRST LINE of your response must be exactly: 'Food Name: <name>'. "
         "Use the most likely local or culturally accurate item name from the image and do not add any text before that first line. "
         "Preserve dish identity carefully for regional foods and drinks. For example, keep names like Hokkien mee, nasi lemak, laksa, teh tarik, kopi, bubble tea, or mee goreng when the image supports them. "
@@ -333,8 +360,10 @@ def _build_prompt(context: CalorieContext) -> str:
         "Estimate realistic portion size, likely ingredients, calories, and major nutrition signals. "
         "Provide concise markdown with these exact H2 sections in this order: "
         "Summary, Ingredients, Body Impact, How This Affects You, Claims vs Reality, Benefits, Drawbacks, Food or Drink Quality, Smart Suggestions. "
-        "In Summary, use bullet points for: Item, Portion, Context, Overall Read, Confidence, Calories, Protein, Carbs, Fat, Sugar, Caffeine, Alcohol, Sodium, Quick Tags, Extended Summary. "
+        "Inside sections, prefer short labeled lines using ':' or '='. Bullets are allowed, but avoid unnecessary dash-heavy filler. "
+        "In Summary, use bullet points for: Item, Portion, Context, Overall Read, Health Score, Confidence, Calories, Protein, Carbs, Fat, Sugar, Caffeine, Alcohol, Sodium, Quick Tags, Extended Summary. "
         "Overall Read should be one of: Supportive, Mixed, or Watch-outs. "
+        "Health Score must be an integer from 0 to 100 based on the meal's likely fit for the user's goals, intake balance, and watch-outs. "
         "Confidence should explain certainty briefly, especially when portion size or image clarity is weak. "
         "In Ingredients, list as many meaningful ingredients or components as you can infer, one bullet per ingredient in this format: Ingredient | Type | Why it matters. "
         "In Body Impact, use bullets for Blood Sugar Impact, Energy Effect, Fullness, and when relevant Hydration, Stimulant Effect, Alcohol Effect. "
@@ -344,9 +373,14 @@ def _build_prompt(context: CalorieContext) -> str:
         "In Benefits, use one bullet per benefit in this format: Benefit | Why it helps | Best for. "
         "In Drawbacks, use one bullet per drawback in this format: Drawback | Why it matters | Watch-out. "
         "In Food or Drink Quality, describe processing level, sugar density, additive load, ingredient quality, and whether it feels minimally processed or ultra-processed. "
-        "In Smart Suggestions, give practical next steps or swaps. "
+        "In Smart Suggestions, give practical next steps or swaps. Focus on information a user can actually act on next, not filler. "
         "Include a final line: Total Estimated Calories.\n"
         "In that final line, write calories as digits only with NO commas or separators (for example 1000, not 1,000).\n\n"
+        f"Meal description: {normalized_description or 'None provided'}\n"
+        f"Requested meal type: {normalized_type}\n"
+        f"Meal date: {normalized_date}\n"
+        f"Meal time: {normalized_time}\n"
+        f"Hunger level out of 5: {normalized_hunger}\n"
         f"User age: {context.age:.0f}\n"
         f"User BMI: {context.bmi:.1f}\n"
         f"Activity level: {context.activity_level}\n"
@@ -458,15 +492,23 @@ def calculate_calories(
     activity_level: str | None,
     sex: str | None,
     medical_history: str | None = None,
+    meal_description: str | None = None,
+    meal_type: str | None = None,
+    meal_date: str | None = None,
+    meal_time: str | None = None,
+    hunger_level: str | None = None,
 ) -> CalorieCalculationResult:
     if not settings.openai_api_key:
         raise RuntimeError("Calorie calculator is unavailable because OPENAI_API_KEY is not configured.")
-    if not image_bytes:
-        raise ValueError("The uploaded image was empty.")
-    if len(image_bytes) > MAX_UPLOAD_BYTES:
-        raise ValueError("Image is too large. Please upload an image smaller than 10MB.")
-    if content_type not in ALLOWED_CONTENT_TYPES:
-        raise ValueError("Unsupported image type. Please upload PNG, JPG, JPEG, or WEBP.")
+    normalized_description = (meal_description or "").strip()
+    has_image = bool(image_bytes)
+    if not has_image and not normalized_description:
+        raise ValueError("Add a meal description or upload a meal image before analysing.")
+    if has_image:
+        if len(image_bytes) > MAX_UPLOAD_BYTES:
+            raise ValueError("Image is too large. Please upload an image smaller than 10MB.")
+        if content_type not in ALLOWED_CONTENT_TYPES:
+            raise ValueError("Unsupported image type. Please upload PNG, JPG, JPEG, or WEBP.")
 
     parsed_age = _parse_float(age, "age", minimum=5, maximum=120) or DEFAULT_AGE
     parsed_bmi = _parse_float(bmi, "BMI", minimum=10, maximum=70)
@@ -492,6 +534,11 @@ def calculate_calories(
 
     cache_key = _build_cache_key(
         image_bytes=image_bytes,
+        meal_description=normalized_description,
+        meal_type=meal_type,
+        meal_date=meal_date,
+        meal_time=meal_time,
+        hunger_level=hunger_level,
         age=context.age,
         bmi=context.bmi,
         activity_level=context.activity_level,
@@ -504,12 +551,6 @@ def calculate_calories(
     if cached is not None:
         return cached
 
-    optimized_bytes, optimized_content_type = optimize_image_for_openai(
-        image_bytes,
-        max_dimension=settings.openai_vision_max_dimension,
-        jpeg_quality=settings.openai_vision_jpeg_quality,
-    )
-
     client = OpenAI(
         api_key=settings.openai_api_key,
         base_url=settings.openai_api_base_url,
@@ -517,18 +558,37 @@ def calculate_calories(
         max_retries=0,
     )
     request_id = str(uuid.uuid4())
-    image_data = base64.b64encode(optimized_bytes).decode("utf-8")
-    content_payload: list[dict[str, str]] = [{"type": "input_text", "text": _build_prompt(context)}]
+    content_payload: list[dict[str, str]] = [
+        {
+            "type": "input_text",
+            "text": _build_prompt(
+                context,
+                meal_description=normalized_description,
+                meal_type=meal_type,
+                meal_date=meal_date,
+                meal_time=meal_time,
+                hunger_level=hunger_level,
+                has_image=has_image,
+            ),
+        }
+    ]
     warning_instructions = _build_medical_warning_instructions(medical_history)
     if warning_instructions:
         content_payload.append({"type": "input_text", "text": warning_instructions})
-    content_payload.append(
-        {
-            "type": "input_image",
-            "image_url": f"data:{optimized_content_type};base64,{image_data}",
-            "detail": settings.openai_vision_detail_normalized,
-        }
-    )
+    if has_image:
+        optimized_bytes, optimized_content_type = optimize_image_for_openai(
+            image_bytes,
+            max_dimension=settings.openai_vision_max_dimension,
+            jpeg_quality=settings.openai_vision_jpeg_quality,
+        )
+        image_data = base64.b64encode(optimized_bytes).decode("utf-8")
+        content_payload.append(
+            {
+                "type": "input_image",
+                "image_url": f"data:{optimized_content_type};base64,{image_data}",
+                "detail": settings.openai_vision_detail_normalized,
+            }
+        )
     try:
         response = _response_with_rate_limit_retry(
             client,

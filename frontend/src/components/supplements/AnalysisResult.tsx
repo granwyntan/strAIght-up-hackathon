@@ -51,7 +51,7 @@ function bulletLines(content: string) {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => line.replace(/^[-*]\s*/, "").trim())
+    .map((line) => line.replace(/^[-*=]\s*/, "").trim())
     .filter(Boolean);
 }
 

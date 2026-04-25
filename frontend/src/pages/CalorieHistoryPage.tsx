@@ -1,11 +1,12 @@
 // @ts-nocheck
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { palette } from "../data";
 import WeeklyCalorieGraph from "../components/calories/WeeklyCalorieGraph";
 import SectionTabs from "../components/shared/SectionTabs";
-import { formatDisplayDate, formatDisplayDateLabel, formatDisplayDateTime, formatDisplayTime } from "../utils/dateTime";
+import DateTimePickerField from "../components/shared/DateTimePickerField";
+import { formatDisplayDate, formatDisplayDateLabel, formatDisplayDateTime, formatDisplayTime, parseDisplayDate, parseDisplayTime } from "../utils/dateTime";
 
 function formatRange(start, end) {
   if (!start || !end) {
@@ -101,8 +102,61 @@ function groupDaysIntoYears(days) {
   return Array.from(grouped.values());
 }
 
+function toIsoDate(value) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+  const parsed = new Date(value || Date.now());
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+}
+
+function addDaysToIso(isoDate, offset) {
+  const base = new Date(`${isoDate}T00:00:00`);
+  base.setDate(base.getDate() + offset);
+  return toIsoDate(base);
+}
+
+function addMonthsToIso(isoDate, offset) {
+  const base = new Date(`${isoDate}T00:00:00`);
+  base.setMonth(base.getMonth() + offset);
+  return toIsoDate(base);
+}
+
+function addYearsToIso(isoDate, offset) {
+  const base = new Date(`${isoDate}T00:00:00`);
+  base.setFullYear(base.getFullYear() + offset);
+  return toIsoDate(base);
+}
+
+function startOfWeekIso(isoDate) {
+  const base = new Date(`${isoDate}T00:00:00`);
+  const jsDay = base.getDay();
+  const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
+  base.setDate(base.getDate() + mondayOffset);
+  return toIsoDate(base);
+}
+
+function buildDaySummary(date, dayEntries) {
+  const hydrationEntries = dayEntries.filter((entry) => entry.kind === "hydration");
+  const mealEntries = dayEntries.filter((entry) => entry.kind === "meal");
+  const otherEntries = dayEntries.filter((entry) => entry.kind === "other");
+  return {
+    date,
+    totalCalories: dayEntries.reduce((sum, entry) => sum + Number(entry.calories || 0), 0),
+    hydrationMl: hydrationEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
+    mealCount: mealEntries.length,
+    hydrationCount: hydrationEntries.length,
+    otherCount: otherEntries.length,
+    entryCount: dayEntries.length,
+  };
+}
+
 export default function CalorieHistoryPage({
   history,
+  allEntries = [],
   runHistory,
   initialMode = "logs",
   loading,
@@ -118,14 +172,91 @@ export default function CalorieHistoryPage({
   trackerLoading,
   trackerError,
 }) {
-  const days = history?.days || [];
-  const entries = history?.entries || [];
+  const [selectedDate, setSelectedDate] = useState("");
+  const [historyView, setHistoryView] = useState("timeline");
+  const [historyAnchor, setHistoryAnchor] = useState("");
+
+  const entries = useMemo(
+    () =>
+      (Array.isArray(allEntries) && allEntries.length ? allEntries : history?.entries || [])
+        .slice()
+        .sort((a, b) => `${a.loggedAt || a.createdAt || ""}`.localeCompare(`${b.loggedAt || b.createdAt || ""}`)),
+    [allEntries, history?.entries]
+  );
+
+  useEffect(() => {
+    const latest = entries[entries.length - 1];
+    const nextAnchor = toIsoDate(latest?.date || latest?.loggedAt || new Date());
+    setHistoryAnchor((current) => current || nextAnchor);
+  }, [entries]);
+
+  const rangeMeta = useMemo(() => {
+    const anchor = historyAnchor || toIsoDate(new Date());
+    if (historyView === "day") {
+      return { start: anchor, end: anchor };
+    }
+    if (historyView === "week") {
+      const start = startOfWeekIso(anchor);
+      return { start, end: addDaysToIso(start, 6) };
+    }
+    if (historyView === "month") {
+      const parsed = new Date(`${anchor}T00:00:00`);
+      const start = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-01`;
+      const endDate = new Date(parsed.getFullYear(), parsed.getMonth() + 1, 0);
+      return { start, end: toIsoDate(endDate) };
+    }
+    if (historyView === "year") {
+      const parsed = new Date(`${anchor}T00:00:00`);
+      return { start: `${parsed.getFullYear()}-01-01`, end: `${parsed.getFullYear()}-12-31` };
+    }
+    return {
+      start: entries[0]?.date || "",
+      end: entries[entries.length - 1]?.date || "",
+    };
+  }, [entries, historyAnchor, historyView]);
+
+  const visibleEntries = useMemo(() => {
+    if (historyView === "timeline") {
+      return entries.filter((entry) => Boolean(entry?.date || entry?.loggedAt));
+    }
+    return entries.filter((entry) => {
+      const date = entry?.date || toIsoDate(entry?.loggedAt);
+      return date >= rangeMeta.start && date <= rangeMeta.end;
+    });
+  }, [entries, historyView, rangeMeta.end, rangeMeta.start]);
+
+  const days = useMemo(() => {
+    const grouped = {};
+    for (const entry of visibleEntries) {
+      const date = entry?.date || "";
+      if (!grouped[date]) {
+        grouped[date] = [];
+      }
+      grouped[date].push(entry);
+    }
+    if (historyView === "timeline") {
+      return Object.keys(grouped)
+        .sort((a, b) => a.localeCompare(b))
+        .map((date) => buildDaySummary(date, grouped[date]));
+    }
+    if (!rangeMeta.start || !rangeMeta.end) {
+      return [];
+    }
+    const builtDays = [];
+    let cursor = rangeMeta.start;
+    while (cursor <= rangeMeta.end) {
+      builtDays.push(buildDaySummary(cursor, grouped[cursor] || []));
+      cursor = addDaysToIso(cursor, 1);
+    }
+    return builtDays;
+  }, [historyView, rangeMeta.end, rangeMeta.start, visibleEntries]);
+
   const totalWeekCalories = days.reduce((sum, day) => sum + (day.totalCalories || 0), 0);
   const totalWeekHydration = days.reduce((sum, day) => sum + (day.hydrationMl || 0), 0);
 
   const entriesByDate = useMemo(() => {
     const grouped = {};
-    for (const entry of entries) {
+    for (const entry of visibleEntries) {
       const date = entry?.date || "";
       if (!grouped[date]) {
         grouped[date] = [];
@@ -133,17 +264,15 @@ export default function CalorieHistoryPage({
       grouped[date].push(entry);
     }
     return grouped;
-  }, [entries]);
+  }, [visibleEntries]);
 
-  const [selectedDate, setSelectedDate] = useState("");
-  const [historyView, setHistoryView] = useState("timeline");
   const [newKind, setNewKind] = useState("meal");
   const [newName, setNewName] = useState("");
   const [newCalories, setNewCalories] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [newContext, setNewContext] = useState("");
-  const [newDate, setNewDate] = useState(formatDisplayDate(new Date()).split("/").reverse().join("-"));
-  const [newTime, setNewTime] = useState("12:00");
+  const [newDate, setNewDate] = useState(formatDisplayDate(new Date()));
+  const [newTime, setNewTime] = useState(formatDisplayTime(new Date()));
   const [dayError, setDayError] = useState("");
   const [editingId, setEditingId] = useState("");
   const [editName, setEditName] = useState("");
@@ -161,31 +290,27 @@ export default function CalorieHistoryPage({
           : historyView === "month"
             ? "Month"
             : "Year";
-  const sortedTimelineDays = useMemo(
-    () => [...days].filter((day) => day.entryCount > 0).sort((a, b) => `${a.date || ""}`.localeCompare(`${b.date || ""}`)),
-    [days]
-  );
+  const sortedTimelineDays = useMemo(() => [...days].sort((a, b) => `${a.date || ""}`.localeCompare(`${b.date || ""}`)), [days]);
   const monthGroups = useMemo(() => groupDaysIntoMonths(days), [days]);
   const yearGroups = useMemo(() => groupDaysIntoYears(days), [days]);
   const visibleDayLabel = useMemo(() => {
     if (historyView === "day") {
-      const target = days[days.length - 1]?.date || "";
-      return relativeDayLabel(target);
+      return relativeDayLabel(rangeMeta.start);
     }
     if (historyView === "week") {
-      return formatRange(history?.weekStart, history?.weekEnd);
+      return formatRange(rangeMeta.start, rangeMeta.end);
     }
     if (historyView === "month") {
-      return monthLabelFromKey(monthGroups[monthGroups.length - 1]?.date || "");
+      return monthLabelFromKey(rangeMeta.start.slice(0, 7));
     }
     if (historyView === "year") {
-      return yearGroups[yearGroups.length - 1]?.date || "";
+      return rangeMeta.start.slice(0, 4);
     }
     if (sortedTimelineDays.length > 0) {
       return `${formatDayLabel(sortedTimelineDays[0].date)} → ${formatDayLabel(sortedTimelineDays[sortedTimelineDays.length - 1].date)}`;
     }
     return "No saved logs yet";
-  }, [days, history?.weekEnd, history?.weekStart, historyView, monthGroups, sortedTimelineDays, yearGroups]);
+  }, [historyView, monthGroups, rangeMeta.end, rangeMeta.start, sortedTimelineDays, yearGroups]);
   const intakeHeading =
     historyView === "timeline"
       ? "Intake in range"
@@ -206,6 +331,18 @@ export default function CalorieHistoryPage({
           : historyView === "month"
             ? "Hydration this month"
             : "Hydration this year";
+
+  const shiftRange = (direction) => {
+    if (!historyAnchor) return;
+    setHistoryAnchor((current) => {
+      const base = current || toIsoDate(new Date());
+      if (historyView === "day") return addDaysToIso(base, direction);
+      if (historyView === "week") return addDaysToIso(base, direction * 7);
+      if (historyView === "month") return addMonthsToIso(base, direction);
+      if (historyView === "year") return addYearsToIso(base, direction);
+      return base;
+    });
+  };
   const filteredRuns = useMemo(() => {
     const query = (runSearch || "").trim().toLowerCase();
     const items = Array.isArray(runHistory) ? [...runHistory] : [];
@@ -238,8 +375,8 @@ export default function CalorieHistoryPage({
     setNewCalories("");
     setNewAmount("");
     setNewContext("");
-    setNewDate(dayDate);
-    setNewTime("12:00");
+    setNewDate(formatDisplayDate(`${dayDate}T00:00:00`));
+    setNewTime(formatDisplayTime(new Date()));
     setEditingId("");
     setEditName("");
     setEditCalories("");
@@ -263,7 +400,7 @@ export default function CalorieHistoryPage({
     }
     setDayError("");
     const added = await onAddEntry?.({
-      date: newDate || selectedDate,
+      date: parseDisplayDate(newDate) || selectedDate,
       mealName: newName,
       calories: parsedCalories,
       kind: newKind,
@@ -271,7 +408,7 @@ export default function CalorieHistoryPage({
       unit: newKind === "hydration" ? "ml" : "serving",
       servings: 1,
       context: newContext || (newKind === "hydration" ? "Hydration" : "Meal"),
-      entryTime: newTime,
+      entryTime: parseDisplayTime(newTime) || newTime,
     });
     if (added) {
       setNewName("");
@@ -348,11 +485,11 @@ export default function CalorieHistoryPage({
 
       {historyKind === "logs" ? (
           <View style={styles.weekNavRow}>
-            <Pressable style={styles.arrowButton} onPress={onPrevWeek}>
+            <Pressable style={styles.arrowButton} onPress={() => shiftRange(-1)} disabled={historyView === "timeline"}>
               <Text style={styles.arrowText}>←</Text>
             </Pressable>
             <Text style={styles.weekRange}>{visibleDayLabel}</Text>
-            <Pressable style={styles.arrowButton} onPress={onNextWeek}>
+            <Pressable style={styles.arrowButton} onPress={() => shiftRange(1)} disabled={historyView === "timeline"}>
               <Text style={styles.arrowText}>→</Text>
             </Pressable>
           </View>
@@ -373,7 +510,17 @@ export default function CalorieHistoryPage({
 
       {historyKind === "logs" ? (
       <View style={styles.listCard}>
-        <Text style={styles.listTitle}>Daily log</Text>
+        <Text style={styles.listTitle}>
+          {historyView === "timeline"
+            ? "Timeline log"
+            : historyView === "day"
+              ? "Day breakdown"
+              : historyView === "week"
+                ? "Week breakdown"
+                : historyView === "month"
+                  ? "Month overview"
+                  : "Year overview"}
+        </Text>
         {(historyView === "month"
           ? monthGroups
           : historyView === "year"
@@ -381,7 +528,16 @@ export default function CalorieHistoryPage({
             : historyView === "timeline"
               ? sortedTimelineDays
               : days).map((day) => (
-          <Pressable key={day.date} style={styles.dayCard} onPress={() => openDayDetails(day.date)}>
+          <Pressable
+            key={day.date}
+            style={styles.dayCard}
+            onPress={() => {
+              if (historyView === "month" || historyView === "year") {
+                return;
+              }
+              openDayDetails(day.date);
+            }}
+          >
             <View style={styles.dayHeader}>
               <View style={styles.dayTextWrap}>
                 <Text style={styles.dayDate}>
@@ -393,7 +549,13 @@ export default function CalorieHistoryPage({
                         ? relativeDayLabel(day.date)
                         : formatDayLabel(day.date)}
                 </Text>
-                <Text style={styles.entryMeta}>{historyView === "timeline" ? "Sorted from oldest to newest." : "Tap to open the full log for this period"}</Text>
+                <Text style={styles.entryMeta}>
+                  {historyView === "timeline"
+                    ? "Sorted from oldest to newest."
+                    : historyView === "month" || historyView === "year"
+                      ? "Range summary for the selected period."
+                      : "Tap to open the full log for this period"}
+                </Text>
               </View>
               <View style={styles.dayRight}>
                 <Text style={styles.dayCalories}>{day.totalCalories} kcal</Text>
@@ -483,11 +645,11 @@ export default function CalorieHistoryPage({
                 </View>
                 <View style={styles.formField}>
                   <Text style={styles.formLabel}>Date</Text>
-                  <TextInput style={styles.input} value={newDate} onChangeText={setNewDate} placeholder="YYYY-MM-DD" editable={!trackerLoading} placeholderTextColor={palette.muted} />
+                  <DateTimePickerField mode="date" style={styles.input} value={newDate} onChange={setNewDate} placeholder="DD/MM/YYYY" editable={!trackerLoading} />
                 </View>
                 <View style={styles.formField}>
                   <Text style={styles.formLabel}>Time</Text>
-                  <TextInput style={styles.input} value={newTime} onChangeText={setNewTime} placeholder="HH:MM" editable={!trackerLoading} placeholderTextColor={palette.muted} />
+                  <DateTimePickerField mode="time" style={styles.input} value={newTime} onChange={setNewTime} placeholder="HH:MM" editable={!trackerLoading} />
                 </View>
                 <View style={styles.formField}>
                   <Text style={styles.formLabel}>{newKind === "hydration" ? "Calories (optional)" : "Calories"}</Text>
