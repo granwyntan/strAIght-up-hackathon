@@ -34,6 +34,11 @@ function buildTimeOptions() {
   });
 }
 
+function findNearestIndex(options, displayValue) {
+  const index = options.findIndex((option) => option.value === displayValue);
+  return index >= 0 ? index : Math.max(0, Math.floor(options.length / 2));
+}
+
 export default function DateTimePickerField({
   mode,
   value,
@@ -45,6 +50,11 @@ export default function DateTimePickerField({
   const [open, setOpen] = useState(false);
   const options = useMemo(() => (mode === "date" ? buildDateOptions(value) : buildTimeOptions()), [mode, value]);
   const displayValue = value || "";
+  const selectedIndex = useMemo(() => findNearestIndex(options, displayValue), [options, displayValue]);
+  const previewOptions = useMemo(() => {
+    const start = Math.max(0, selectedIndex - 2);
+    return options.slice(start, Math.min(options.length, start + 5));
+  }, [options, selectedIndex]);
 
   if (Platform.OS === "web") {
     return (
@@ -73,18 +83,41 @@ export default function DateTimePickerField({
   return (
     <>
       <Pressable style={[style, styles.trigger, !editable && styles.disabled]} onPress={() => editable && setOpen(true)}>
-        <Text style={[styles.triggerText, !displayValue && styles.placeholderText]}>{displayValue || placeholder}</Text>
+        <View style={styles.triggerInner}>
+          <Text style={[styles.triggerText, !displayValue && styles.placeholderText]}>{displayValue || placeholder}</Text>
+          <View style={styles.triggerMeta}>
+            <Text style={styles.triggerMetaText}>{mode === "date" ? "Date" : "Time"}</Text>
+          </View>
+        </View>
       </Pressable>
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={styles.backdrop}>
           <View style={styles.sheet}>
+            <View style={styles.handle} />
             <View style={styles.header}>
-              <Text style={styles.title}>{mode === "date" ? "Pick date" : "Pick time"}</Text>
+              <View style={styles.headerCopy}>
+                <Text style={styles.eyebrow}>{mode === "date" ? "Calendar" : "Clock"}</Text>
+                <Text style={styles.title}>{mode === "date" ? "Choose date" : "Choose time"}</Text>
+                <Text style={styles.subtitle}>
+                  {displayValue || (mode === "date" ? "No date selected yet" : "No time selected yet")}
+                </Text>
+              </View>
               <Pressable style={styles.closeButton} onPress={() => setOpen(false)}>
                 <Text style={styles.closeText}>Done</Text>
               </Pressable>
             </View>
-            <ScrollView contentContainerStyle={styles.optionStack}>
+            <View style={styles.previewWheel}>
+              {previewOptions.map((option) => {
+                const selected = option.value === displayValue;
+                return (
+                  <View key={`preview-${option.key}`} style={[styles.previewRow, selected && styles.previewRowSelected]}>
+                    <Text style={[styles.previewLabel, selected && styles.previewLabelSelected]}>{option.label}</Text>
+                    <Text style={[styles.previewValue, selected && styles.previewValueSelected]}>{option.value}</Text>
+                  </View>
+                );
+              })}
+            </View>
+            <ScrollView contentContainerStyle={styles.optionStack} showsVerticalScrollIndicator={false}>
               {options.map((option) => {
                 const selected = option.value === displayValue;
                 return (
@@ -93,7 +126,6 @@ export default function DateTimePickerField({
                     style={[styles.optionRow, selected && styles.optionRowSelected]}
                     onPress={() => {
                       onChange(option.value);
-                      setOpen(false);
                     }}
                   >
                     <Text style={[styles.optionLabel, selected && styles.optionLabelSelected]}>{option.label}</Text>
@@ -113,10 +145,27 @@ const styles = StyleSheet.create({
   trigger: {
     justifyContent: "center",
   },
+  triggerInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
   triggerText: {
     color: palette.ink,
     fontFamily: "Poppins_500Medium",
     fontSize: 14,
+  },
+  triggerMeta: {
+    borderRadius: 999,
+    backgroundColor: palette.primarySoft,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  triggerMetaText: {
+    color: palette.primary,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 11,
   },
   placeholderText: {
     color: palette.muted,
@@ -137,16 +186,40 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
+  handle: {
+    alignSelf: "center",
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: palette.border,
+  },
   header: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 12,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  eyebrow: {
+    color: palette.primary,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
   title: {
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
     fontSize: 18,
+  },
+  subtitle: {
+    color: palette.muted,
+    fontFamily: "Poppins_400Regular",
+    fontSize: 12,
+    lineHeight: 18,
   },
   closeButton: {
     borderRadius: 999,
@@ -158,6 +231,43 @@ const styles = StyleSheet.create({
     color: palette.primary,
     fontFamily: "Poppins_600SemiBold",
     fontSize: 12,
+  },
+  previewWheel: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+  },
+  previewRow: {
+    minHeight: 42,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: palette.border,
+    opacity: 0.45,
+  },
+  previewRowSelected: {
+    backgroundColor: palette.primarySoft,
+    opacity: 1,
+  },
+  previewLabel: {
+    color: palette.muted,
+    fontFamily: "Poppins_500Medium",
+    fontSize: 12,
+  },
+  previewLabelSelected: {
+    color: palette.primary,
+  },
+  previewValue: {
+    color: palette.ink,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 13,
+  },
+  previewValueSelected: {
+    color: palette.primary,
   },
   optionStack: {
     gap: 8,

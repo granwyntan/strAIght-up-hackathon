@@ -42,7 +42,7 @@ export default function ImageUpload({
   disableImageOptions = false,
   onClearImageSelection,
   clearImageSelectionLabel = "Clear image",
-  analyzeLabel = "Analyze supplement",
+  analyzeLabel = "Analyse medicine",
   showActionButtons = true,
   showAnalyzeButton = true,
   onAspectRatioChange,

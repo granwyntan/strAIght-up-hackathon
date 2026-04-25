@@ -49,7 +49,7 @@ export default function DietPage({ requestApi, accountId, accountEmail, guideSig
         onValueChange={(value) => setActiveMode(value as "food" | "supplements")}
         tabs={[
           { value: "food", label: "Diet", icon: "silverware-fork-knife" },
-          { value: "supplements", label: "Nutraceuticals", icon: "pill-multiple" },
+          { value: "supplements", label: "Medicine", icon: "pill-multiple" },
         ]}
       />
 

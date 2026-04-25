@@ -331,6 +331,7 @@ export default function CalorieHistoryPage({
           : historyView === "month"
             ? "Hydration this month"
             : "Hydration this year";
+  const showSummaryCards = historyView === "day" || historyView === "week";
 
   const shiftRange = (direction) => {
     if (!historyAnchor) return;
@@ -495,8 +496,8 @@ export default function CalorieHistoryPage({
           </View>
         ) : null}
 
-      {historyKind === "logs" ? (
-      <View style={styles.summaryRow}>
+      {historyKind === "logs" && showSummaryCards ? (
+        <View style={styles.summaryRow}>
         <View style={styles.statsCard}>
           <Text style={styles.statTitle}>{intakeHeading}</Text>
           <Text style={styles.statValue}>{totalWeekCalories} kcal</Text>
@@ -506,7 +507,7 @@ export default function CalorieHistoryPage({
           <Text style={styles.statValue}>{totalWeekHydration} ml</Text>
         </View>
       </View>
-      ) : null}
+        ) : null}
 
       {historyKind === "logs" ? (
       <View style={styles.listCard}>
@@ -562,12 +563,12 @@ export default function CalorieHistoryPage({
                 <Text style={styles.dayHydration}>{day.hydrationMl || 0} ml</Text>
               </View>
             </View>
-            <View style={styles.dayMetricsRow}>
-              <MiniPill label={`${day.mealCount || 0} meals`} tone="primary" />
-              <MiniPill label={`${day.hydrationCount || 0} drinks`} tone="secondary" />
-              <MiniPill label={`${day.otherCount || 0} other`} tone="warning" />
-              <MiniPill label={`${day.entryCount || 0} logs`} tone="neutral" />
-            </View>
+              <View style={styles.dayMetricsRow}>
+                <MiniPill label={`${day.mealCount || 0} meals`} tone="primary" />
+                <MiniPill label={`${day.hydrationCount || 0} drinks`} tone="secondary" />
+                <MiniPill label={`${day.otherCount || 0} other`} tone="warning" />
+                {(historyView === "day" || historyView === "week") ? <MiniPill label={`${day.entryCount || 0} logs`} tone="neutral" /> : null}
+              </View>
           </Pressable>
         ))}
       </View>

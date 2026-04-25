@@ -4218,7 +4218,7 @@ function ExpandableResultSection({
                 </Text>
               </View>
             </View>
-            <IconButton icon={expanded ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={styles.dragButton} />
+            <IconButton icon="dots-vertical" iconColor={palette.primary} size={18} style={styles.dragButton} />
           </View>
         </TouchableRipple>
         {expanded ? <View style={styles.cardStack}>{children}</View> : null}

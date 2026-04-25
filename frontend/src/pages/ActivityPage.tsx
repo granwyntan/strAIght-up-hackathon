@@ -262,7 +262,7 @@ export default function ActivityPage({ requestApi, accountId, accountEmail, guid
           accountId,
           editingExerciseId,
           {
-            title: activityType,
+            title: capitalizeTitle(activityType),
             duration: safeTrim(duration),
             intensity,
             notes: safeTrim(notes),
@@ -290,7 +290,7 @@ export default function ActivityPage({ requestApi, accountId, accountEmail, guid
         const next = await addExerciseEntry(
           accountId,
           {
-            title: activityType,
+            title: capitalizeTitle(activityType),
             duration: safeTrim(duration),
             intensity,
             notes: safeTrim(notes),
@@ -315,19 +315,27 @@ export default function ActivityPage({ requestApi, accountId, accountEmail, guid
   }
 
   async function suggestRoutine() {
+    const ageValue = safeTrim(routineForm.age) || safeTrim(profile?.age);
+    const heightValue = safeTrim(routineForm.heightCm) || safeTrim(profile?.height);
+    const weightValue = safeTrim(routineForm.weightKg) || safeTrim(profile?.weight);
+    const goalsValue = safeTrim(routineForm.goals) || safeTrim(profile?.goals);
+    if (!goalsValue) {
+      setError("Add at least one goal before generating a routine.");
+      return;
+    }
     setRoutineLoading(true);
     setError("");
     try {
       const response = await requestApi(
         "/api/workout-routine/suggest",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            age: safeTrim(routineForm.age) || safeTrim(profile?.age),
-            heightCm: safeTrim(routineForm.heightCm) || safeTrim(profile?.height),
-            weightKg: safeTrim(routineForm.weightKg) || safeTrim(profile?.weight),
-            goals: safeTrim(routineForm.goals) || safeTrim(profile?.goals),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+            age: ageValue,
+            heightCm: heightValue,
+            weightKg: weightValue,
+            goals: goalsValue,
             activityLevel: safeTrim(profile?.activityLevel),
             sleepHours: safeTrim(profile?.sleepHours),
             sleepQuality: safeTrim(profile?.sleepQuality),
@@ -387,7 +395,7 @@ export default function ActivityPage({ requestApi, accountId, accountEmail, guid
   function openExerciseEdit(entry) {
     setEditingExerciseId(entry.id);
     setEditingRoutineId("");
-    setActivityType(safeTrim(entry.title));
+    setActivityType(capitalizeTitle(entry.title));
     setDuration(safeTrim(entry.duration));
     setIntensity(safeTrim(entry.intensity) || "Mid");
     setNotes(safeTrim(entry.notes));
@@ -397,7 +405,7 @@ export default function ActivityPage({ requestApi, accountId, accountEmail, guid
   function openRoutineEdit(task) {
     setEditingRoutineId(task.id);
     setEditingExerciseId("");
-    setActivityType(safeTrim(task.type));
+    setActivityType(capitalizeTitle(task.type));
     setDuration(safeTrim(task.duration));
     setIntensity(safeTrim(task.intensity) || "Mid");
     setNotes(safeTrim(task.description));
@@ -490,6 +498,16 @@ export default function ActivityPage({ requestApi, accountId, accountEmail, guid
     setManualRoutineDescription("");
     setManualRoutineError("");
     setActiveView("history");
+  }
+
+  function openRoutineBuilder() {
+    setRoutineForm({
+      age: safeTrim(profile?.age),
+      heightCm: safeTrim(profile?.height),
+      weightKg: safeTrim(profile?.weight),
+      goals: safeTrim(profile?.goals),
+    });
+    setRoutineBuilderModalVisible(true);
   }
 
   return (
@@ -590,7 +608,7 @@ export default function ActivityPage({ requestApi, accountId, accountEmail, guid
                 Create a routine manually, or ask AI to generate one.
               </Text>
               <View style={styles.actionRow}>
-                <Button mode="contained" onPress={() => setRoutineBuilderModalVisible(true)} buttonColor={palette.primary}>
+                <Button mode="contained" onPress={openRoutineBuilder} buttonColor={palette.primary}>
                   Ask AI to generate routine
                 </Button>
                 <Button mode="outlined" onPress={() => setManualRoutineModalVisible(true)} textColor={palette.primary}>

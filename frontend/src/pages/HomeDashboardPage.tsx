@@ -523,7 +523,7 @@ export default function HomeDashboardPage({
 
   const openExerciseEdit = (entry: { id: string; title: string; duration: string; intensity: string; notes: string }) => {
     setEditingExerciseId(entry.id);
-    setExerciseTitle(entry.title || "");
+    setExerciseTitle(capitalizeWorkoutType(entry.title || ""));
     setExerciseDuration(entry.duration || "");
     setExerciseIntensity(normalizeIntensity(entry.intensity || ""));
     setExerciseNotes(entry.notes || "");
@@ -532,7 +532,7 @@ export default function HomeDashboardPage({
   };
 
   const saveExercise = async () => {
-    const title = safeTrim(exerciseTitle);
+    const title = capitalizeWorkoutType(exerciseTitle);
     const duration = safeTrim(exerciseDuration);
     const intensity = normalizeIntensity(exerciseIntensity);
     const notes = safeTrim(exerciseNotes);
@@ -1160,7 +1160,7 @@ export default function HomeDashboardPage({
                     <Pressable style={styles.rowBetween} onPress={() => setExpandedExerciseId(expanded ? "" : entry.id)}>
                       <View style={styles.flexOne}>
                         <Text variant="titleMedium" style={styles.linkTitle}>
-                          {entry.title || "Exercise"}
+                          {capitalizeWorkoutType(entry.title) || "Exercise"}
                         </Text>
                         <Text variant="bodySmall" style={styles.sectionBody}>
                           Duration: {entry.duration || "--"} • Intensity: {formatIntensity(entry.intensity)} • {formatTime(entry.createdAt)}

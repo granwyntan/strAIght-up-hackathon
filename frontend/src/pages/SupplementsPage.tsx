@@ -950,7 +950,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
           />
           {selectedHistoryEntryId ? (
             <View className="gap-2 rounded-[18px] border border-line bg-soft px-4 py-4">
-              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">Viewing a saved nutraceutical analysis inside the live analyser layout.</Text>
+              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">Viewing a saved medicine or supplement analysis inside the live analyser layout.</Text>
               <Pressable className="self-start rounded-full border border-line bg-card px-3 py-2" onPress={exitHistoryPreviewMode}>
                 <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Start a new analysis</Text>
               </Pressable>
@@ -960,7 +960,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
               {analysisMode === "supplement" ? (
                 <>
                   <View className="gap-3 rounded-[22px] border border-line bg-card p-5 shadow-panel">
-                    <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Nutraceutical analysis</Text>
+                      <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Medicine and supplement analysis</Text>
                     <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Search by name or scan a label. Your saved profile is loaded automatically in the background for relevance, safety, and stack checks.</Text>
                     <View className="gap-2 rounded-[18px] border border-line bg-soft p-4">
                       <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[13px] text-ink">Search by name</Text>
@@ -1031,7 +1031,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                       ) : (
                         <View className="flex-row items-center gap-2">
                           <MaterialCommunityIcons name="magnify-scan" size={18} color={palette.surface} />
-                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analyse nutraceutical</Text>
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analyse medicine</Text>
                         </View>
                       )}
                     </Pressable>
@@ -1079,7 +1079,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                       disableImageOptions={imageOptionsDisabled}
                       onClearImageSelection={clearImageSelection}
                       clearImageSelectionLabel="Clear image"
-                      analyzeLabel="Analyse nutraceutical"
+                      analyzeLabel="Analyse medicine"
                       onAspectRatioChange={setAspectRatio}
                       onOpenCrop={() => setCropVisible(true)}
                       onCaptureImage={captureImage}
@@ -1091,7 +1091,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                   <View className="flex-row items-center justify-between gap-3 rounded-[22px] border border-line bg-card px-5 py-4 shadow-panel">
                     <View className="flex-1">
                       <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Generate infographic</Text>
-                      <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Turn this off if you want a faster nutraceutical analysis without the infographic pass.</Text>
+                      <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Turn this off if you want a faster medicine or supplement analysis without the infographic pass.</Text>
                     </View>
                     <Switch value={infographicEnabled} onValueChange={setInfographicEnabled} disabled={loading} />
                   </View>
@@ -1226,7 +1226,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
               <View className="h-9 w-9 items-center justify-center rounded-[12px] bg-moss">
                 <MaterialCommunityIcons name="history" size={18} color={palette.primary} />
               </View>
-              <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Recent nutraceutical analyses</Text>
+              <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Recent medicine and supplement analyses</Text>
             </View>
             <Pressable className="rounded-full border border-line bg-soft px-3 py-2" onPress={() => void clearAllHistoryItems()}>
               <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Clear all</Text>
@@ -1310,7 +1310,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
             <View className="h-9 w-9 items-center justify-center rounded-[12px] bg-soft">
               <MaterialCommunityIcons name="text-box-outline" size={18} color={palette.primary} />
             </View>
-            <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Nutraceutical logs</Text>
+            <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Medicine and supplement logs</Text>
           </View>
           <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] leading-5 text-muted">This is the running log of medicine and supplement analyses that have been saved so you can revisit what was checked and when.</Text>
           {groupedHistoryLogs.length === 0 ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">No logs yet.</Text> : null}
@@ -1344,7 +1344,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
             <View style={styles.sheetHandle} />
             <View style={styles.historyModalHeader}>
               <View style={styles.historyModalCopy}>
-                <Text style={styles.guideTitle}>{historyModalEntry?.analysisType === "medicine" ? "Saved medicine analysis" : "Saved nutraceutical analysis"}</Text>
+                <Text style={styles.guideTitle}>{historyModalEntry?.analysisType === "medicine" ? "Saved medicine analysis" : "Saved supplement analysis"}</Text>
                 <Text style={styles.historyModalMeta}>
                   {(historyModalEntry?.analysisType === "medicine" ? "Medicine deep-dive" : historyModalEntry?.mode === "image" ? "Image scan" : "Text search")} • {historyModalEntry ? formatDisplayDateTime(historyModalEntry.searchedAt) : ""}
                 </Text>
@@ -1422,7 +1422,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
         </View>
       </Modal>
 
-      <TutorialSheet visible={guideVisible} title="Nutraceutical tutorial" pages={SCANNER_GUIDE_PAGES} onClose={closeGuide} />
+      <TutorialSheet visible={guideVisible} title="Medicine analysis tutorial" pages={SCANNER_GUIDE_PAGES} onClose={closeGuide} />
       </ScrollView>
     </KeyboardAvoidingView>
   );

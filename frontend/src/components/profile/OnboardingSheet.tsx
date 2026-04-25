@@ -87,10 +87,13 @@ function normalizeFreeformTerm(rawValue, allowedOptions) {
 }
 
 async function fetchGoogleAutocomplete(query, contextHint = "", requestApi) {
-  const cleaned = cleanTagValue(query);
-  if (!cleaned || cleaned.length < 2) {
-    return [];
-  }
+    const cleaned = cleanTagValue(query);
+    if (typeof requestApi !== "function") {
+      return [];
+    }
+    if (!cleaned || cleaned.length < 2) {
+      return [];
+    }
   try {
     if (typeof requestApi !== "function") {
       return [];

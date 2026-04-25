@@ -30,6 +30,26 @@ function toneForHydration(value, max) {
   return "#DCEEF7";
 }
 
+function buildMonthCells(days) {
+  const grouped = new Map();
+  (Array.isArray(days) ? days : []).forEach((day) => {
+    const key = `${day?.date || ""}`.slice(0, 7);
+    if (!key) return;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        key,
+        label: new Date(`${key}-01T00:00:00`).toLocaleDateString("en-GB", { month: "short" }),
+        calories: 0,
+        hydration: 0,
+      });
+    }
+    const bucket = grouped.get(key);
+    bucket.calories += Number(day?.totalCalories || 0);
+    bucket.hydration += Number(day?.hydrationMl || 0);
+  });
+  return Array.from(grouped.values());
+}
+
 export default function WeeklyCalorieGraph({ days, entries, mode = "timeline", timeframeLabel = "Timeline" }) {
   const safeDays = Array.isArray(days) ? days : [];
   const safeEntries = Array.isArray(entries) ? entries : [];
@@ -55,6 +75,7 @@ export default function WeeklyCalorieGraph({ days, entries, mode = "timeline", t
     calories: day.totalCalories || 0,
     hydration: day.hydrationMl || 0,
   }));
+  const yearSquares = useMemo(() => buildMonthCells(safeDays), [safeDays]);
 
   if (mode === "day") {
     return (
@@ -115,26 +136,29 @@ export default function WeeklyCalorieGraph({ days, entries, mode = "timeline", t
   }
 
   if (mode === "month" || mode === "year") {
+    const gridItems = mode === "year" ? yearSquares : monthSquares;
+    const gridCaloriesMax = Math.max(1, ...gridItems.map((item) => item.calories || 0));
+    const gridHydrationMax = Math.max(1, ...gridItems.map((item) => item.hydration || 0));
     return (
       <View style={styles.card}>
         <Text style={styles.title}>{mode === "month" ? "Month overview" : "Year overview"}</Text>
         <Text style={styles.subtitle}>Squares make it easier to spot heavier intake periods and hydration gaps without overloading the screen.</Text>
-        {monthSquares.length === 0 ? (
+        {gridItems.length === 0 ? (
           <EmptyChartBox body={`No logs in this ${mode} yet. This overview stays visible so the page structure stays consistent.`} />
         ) : (
           <>
             <Text style={styles.gridLabel}>Calories</Text>
             <View style={styles.squareGrid}>
-              {monthSquares.map((item) => (
-                <View key={`cal-${item.key}`} style={[styles.squareCell, { backgroundColor: toneForCalories(item.calories, maxCalories) }]}>
+              {gridItems.map((item) => (
+                <View key={`cal-${item.key}`} style={[styles.squareCell, { backgroundColor: toneForCalories(item.calories, gridCaloriesMax) }]}>
                   <Text style={styles.squareText}>{item.label}</Text>
                 </View>
               ))}
             </View>
             <Text style={styles.gridLabel}>Hydration</Text>
             <View style={styles.squareGrid}>
-              {monthSquares.map((item) => (
-                <View key={`hyd-${item.key}`} style={[styles.squareCell, { backgroundColor: toneForHydration(item.hydration, maxHydration) }]}>
+              {gridItems.map((item) => (
+                <View key={`hyd-${item.key}`} style={[styles.squareCell, { backgroundColor: toneForHydration(item.hydration, gridHydrationMax) }]}>
                   <Text style={styles.squareText}>{item.label}</Text>
                 </View>
               ))}

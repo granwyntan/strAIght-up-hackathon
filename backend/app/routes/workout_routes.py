@@ -58,6 +58,64 @@ class SmartActivityInputResponse(BaseModel):
     notes: str
 
 
+def _fallback_routine(payload: WorkoutRoutineRequest) -> WorkoutRoutineResponse:
+    goals_text = (payload.goals or "").strip().lower()
+    low_recovery = any(
+        marker in f"{payload.sleepQuality} {payload.stressLevel} {payload.medicalHistory} {payload.profileContext}".lower()
+        for marker in ["poor", "high", "injury", "pain", "recover", "fatigue"]
+    )
+    base_intensity = "easy" if low_recovery else "medium"
+    cardio_duration = "20 min" if low_recovery else "30 min"
+    strength_duration = "25 min" if low_recovery else "35 min"
+    focus_title = "Balanced weekly plan"
+    if any(marker in goals_text for marker in ["muscle", "strength", "gain"]):
+        focus_title = "Strength-focused weekly plan"
+    elif any(marker in goals_text for marker in ["fat", "loss", "lean"]):
+        focus_title = "Fat-loss friendly weekly plan"
+    elif any(marker in goals_text for marker in ["run", "endurance", "performance"]):
+        focus_title = "Performance and conditioning plan"
+
+    return WorkoutRoutineResponse(
+        routineTitle=focus_title,
+        continuous="weekly",
+        trialWeeks=2,
+        exercises=[
+            WorkoutExerciseResponse(
+                type="Walk",
+                duration=cardio_duration,
+                intensity=base_intensity,
+                description="Steady movement block to build consistency without overwhelming recovery.",
+                frequency="weekly",
+                daysOfWeek=["mon", "thu"],
+            ),
+            WorkoutExerciseResponse(
+                type="Strength training",
+                duration=strength_duration,
+                intensity="medium" if not low_recovery else "easy",
+                description="Full-body session with controlled reps and enough rest between sets.",
+                frequency="weekly",
+                daysOfWeek=["tue", "fri"],
+            ),
+            WorkoutExerciseResponse(
+                type="Mobility",
+                duration="15 min",
+                intensity="easy",
+                description="Mobility and stretching to support recovery, posture, and adherence.",
+                frequency="weekly",
+                daysOfWeek=["wed", "sat"],
+            ),
+            WorkoutExerciseResponse(
+                type="Recovery",
+                duration="20 min",
+                intensity="easy",
+                description="Light recovery day with easy walking or gentle cycling only.",
+                frequency="weekly",
+                daysOfWeek=["sun"],
+            ),
+        ],
+    )
+
+
 def _extract_json(text: str) -> dict[str, Any]:
     raw = text.strip()
     if not raw:
@@ -164,10 +222,9 @@ def suggest_workout_routine(payload: WorkoutRoutineRequest) -> WorkoutRoutineRes
         )
         content = (response.output_text or "").strip()
         data = _extract_json(content)
-    except HTTPException:
-        raise
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Workout suggestion failed: {exc}") from exc
+        logger.warning("Workout suggestion provider failed, using fallback routine: %s", exc)
+        return _fallback_routine(payload)
 
     exercises_raw = data.get("exercises")
     if not isinstance(exercises_raw, list) or len(exercises_raw) == 0:
