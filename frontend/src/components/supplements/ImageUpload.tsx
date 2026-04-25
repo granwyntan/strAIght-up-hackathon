@@ -104,7 +104,14 @@ export default function ImageUpload({
           onPress={onAnalyze}
           disabled={loading || !selectedImageUri}
         >
-          {loading ? <ActivityIndicator color={palette.surface} size="small" /> : <Text className="font-['Poppins_600SemiBold'] text-card">{analyzeLabel}</Text>}
+          {loading ? (
+            <ActivityIndicator color={palette.surface} size="small" />
+          ) : (
+            <View className="flex-row items-center gap-2">
+              <MaterialCommunityIcons name="magnify-scan" size={18} color={palette.surface} />
+              <Text className="font-['Poppins_600SemiBold'] text-card">{analyzeLabel}</Text>
+            </View>
+          )}
         </Pressable>
       ) : null}
 

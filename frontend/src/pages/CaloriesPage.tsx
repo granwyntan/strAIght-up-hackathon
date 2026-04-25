@@ -9,11 +9,13 @@ import CalorieForm from "../components/calories/CalorieForm";
 import CalorieResult from "../components/calories/CalorieResult";
 import SectionTabs from "../components/shared/SectionTabs";
 import TutorialSheet from "../components/shared/TutorialSheet";
+import DateTimePickerField from "../components/shared/DateTimePickerField";
 import CalorieHistoryPage from "./CalorieHistoryPage";
 import { buildDietProfileContext, loadProfile, saveProfile } from "../storage/profileStorage";
-import { formatDisplayTime } from "../utils/dateTime";
+import { formatDisplayDate, formatDisplayTime, formatInputDate, formatInputTime, parseDisplayDate, parseDisplayTime } from "../utils/dateTime";
 import {
   addCalorieEntry,
+  loadCalorieEntries,
   addConsumableRunHistoryEntry,
   clearCalorieDay,
   deleteCalorieEntry,
@@ -33,11 +35,11 @@ const DEFAULT_VALUES = {
   medicalHistory: "",
   mealDescription: "",
   mealType: "food",
-  mealDate: formatLocalIsoDate(new Date()),
-  mealTime: "",
+  mealDate: formatDisplayDate(new Date()),
+  mealTime: formatDisplayTime(new Date()),
   hungerLevel: "3",
   goalContext: "energy",
-  addToLogs: "yes",
+  addToLogs: "no",
   includeProfile: "yes"
 };
 const CALORIE_GUIDE_PAGES = [
@@ -151,6 +153,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
   const [entryActionLoading, setEntryActionLoading] = useState(false);
   const [weekAnchor, setWeekAnchor] = useState(new Date());
   const [historyPayload, setHistoryPayload] = useState(null);
+  const [allHistoryEntries, setAllHistoryEntries] = useState([]);
   const [runHistory, setRunHistory] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
   const [logType, setLogType] = useState("meal");
@@ -160,8 +163,8 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
   const [logUnit, setLogUnit] = useState("serving");
   const [logServings, setLogServings] = useState("1");
   const [logContext, setLogContext] = useState("");
-  const [logDate, setLogDate] = useState(formatLocalIsoDate(new Date()));
-  const [logTime, setLogTime] = useState("12:00");
+  const [logDate, setLogDate] = useState(formatDisplayDate(new Date()));
+  const [logTime, setLogTime] = useState(formatDisplayTime(new Date()));
   const [logFeedback, setLogFeedback] = useState("");
   const [guideVisible, setGuideVisible] = useState(false);
   const [guidePageWidth, setGuidePageWidth] = useState(320);
@@ -218,6 +221,8 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     setValues((previous) => ({ ...previous, [key]: value }));
   };
 
+  const canSubmitAnalysis = Boolean(selectedAsset?.uri || values.mealDescription.trim());
+
   const normalizedEntryKey = (mealName, calories) => `${(mealName || "").trim().toLowerCase()}|${Math.round(Number(calories) || 0)}`;
 
   useEffect(() => {
@@ -251,7 +256,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
           sex: mapProfileGenderToSex(profile.gender) || previous.sex,
           medicalHistory: buildDietProfileContext(profile) || profile.medicalHistory || profile.medicalConditions || previous.medicalHistory,
           goalContext: firstProfileGoal(profile),
-          mealDate: previous.mealDate || formatLocalIsoDate(new Date()),
+          mealDate: previous.mealDate || formatDisplayDate(new Date()),
         }));
       } catch (error) {
         console.warn("Unable to prefill calorie inputs from profile", error);
@@ -293,8 +298,12 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
   async function loadHistory(anchorDate = weekAnchor) {
     setHistoryLoading(true);
     try {
-      const payload = await loadCalorieWeek(accountId, weekStartIso(anchorDate), accountEmail);
+      const [payload, allEntries] = await Promise.all([
+        loadCalorieWeek(accountId, weekStartIso(anchorDate), accountEmail),
+        loadCalorieEntries(accountId, accountEmail),
+      ]);
       setHistoryPayload(payload);
+      setAllHistoryEntries(Array.isArray(allEntries) ? allEntries : []);
     } catch (loadError) {
       setTrackerError(loadError instanceof Error ? loadError.message : "Unable to load calorie history.");
     } finally {
@@ -535,11 +544,11 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     return "Meal";
   }
 
-  function inferMealContextFromTime(value, kind) {
-    if (kind === "hydration") {
-      return "Hydration";
-    }
-    const match = typeof value === "string" ? value.match(/^(\d{2}):(\d{2})$/) : null;
+function inferMealContextFromTime(value, kind) {
+  if (kind === "hydration") {
+    return "Hydration";
+  }
+  const match = typeof value === "string" ? value.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/) : null;
     if (!match) {
       return kind === "other" ? "Consumable" : "Meal";
     }
@@ -568,14 +577,20 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     setLogUnit(hydration ? "ml" : "serving");
     setLogServings("1");
     setLogContext(defaultContextForLog(nextType));
-    setLogDate(formatLocalIsoDate(new Date()));
-    setLogTime(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }));
+    setLogDate(formatDisplayDate(new Date()));
+    setLogTime(formatDisplayTime(new Date()));
     setLogFeedback("");
   }
 
+  function shouldAutoSaveToLog() {
+    const toggleEnabled = (values.addToLogs || "").toLowerCase() === "yes";
+    const requestedInNote = /\badd\s+(this\s+)?to\s+(my\s+)?log\b/i.test(values.mealDescription || "");
+    return toggleEnabled || requestedInNote;
+  }
+
   const submit = async () => {
-    if (!selectedAsset) {
-      setError("Please select a meal image before calculation.");
+    if (!selectedAsset && !values.mealDescription.trim()) {
+      setError("Add a meal description or select a meal image before calculation.");
       return;
     }
     if (typeof requestApi !== "function") {
@@ -591,9 +606,9 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
 
     try {
       const formData = new FormData();
-      if (Platform.OS === "web" && selectedAsset.file) {
+      if (Platform.OS === "web" && selectedAsset?.file) {
         formData.append("photo", selectedAsset.file);
-      } else {
+      } else if (selectedAsset?.uri) {
         formData.append("photo", {
           uri: selectedAsset.uri,
           name: selectedAsset.fileName || "meal.jpg",
@@ -610,8 +625,8 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
       formData.append("medicalHistory", values.includeProfile === "no" ? "" : values.medicalHistory);
       formData.append("mealDescription", values.mealDescription);
       formData.append("mealType", values.mealType);
-      formData.append("mealDate", values.mealDate || formatLocalIsoDate(new Date()));
-      formData.append("mealTime", values.mealTime);
+      formData.append("mealDate", parseDisplayDate(values.mealDate) || formatLocalIsoDate(new Date()));
+      formData.append("mealTime", parseDisplayTime(values.mealTime) || formatDisplayTime(new Date()));
       formData.append("hungerLevel", values.hungerLevel);
 
       const response = await requestApi("/api/calories/calculate", {
@@ -660,6 +675,24 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
       if (!inferred) {
         setLogCalories("");
       }
+      if (shouldAutoSaveToLog()) {
+        const autoSaved = await addTrackerEntry({
+          kind: looksLikeHydrationResult(payload) ? "hydration" : "meal",
+          mealName: inferFoodNameFromResult(payload),
+          calories: inferred || "0",
+          amount: looksLikeHydrationResult(payload) ? "350" : "1",
+          unit: looksLikeHydrationResult(payload) ? "ml" : "serving",
+          servings: "1",
+          context: inferMealContextFromTime(parseDisplayTime(values.mealTime) || formatDisplayTime(new Date()), looksLikeHydrationResult(payload) ? "hydration" : "meal"),
+          entryDate: values.mealDate,
+          entryTime: values.mealTime,
+          switchToHistory: false,
+          quickNotes: [],
+        });
+        if (autoSaved) {
+          setLogFeedback("Saved to your log automatically from this analysis.");
+        }
+      }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Unable to calculate calories right now.");
     } finally {
@@ -698,8 +731,8 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
     setTrackerError("");
     setLogFeedback("");
     try {
-      const safeDate = entryDate || formatLocalIsoDate(new Date());
-      const safeTime = typeof entryTime === "string" && /^\d{2}:\d{2}$/.test(entryTime) ? entryTime : "12:00";
+      const safeDate = parseDisplayDate(entryDate) || entryDate || formatLocalIsoDate(new Date());
+      const safeTime = parseDisplayTime(entryTime) || "12:00:00";
       await addCalorieEntry(accountId, {
         kind: normalizedKind,
         name: normalizedMealName,
@@ -709,7 +742,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
         servings: servings,
         context: (context || "").trim() || inferMealContextFromTime(safeTime, normalizedKind),
         quickNotes: quickNotes,
-        loggedAt: `${safeDate}T${safeTime}:00`,
+        loggedAt: `${safeDate}T${safeTime}`,
         date: safeDate,
         sourceType: "analysis"
       }, accountEmail);
@@ -866,6 +899,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
             aspectRatio={aspectRatio}
             onAspectRatioChange={setAspectRatio}
             onOpenCrop={() => setCropVisible(true)}
+            canSubmit={canSubmitAnalysis}
           />
 
           {calcStartedAt && calcElapsedMs !== null ? (
@@ -905,7 +939,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
               <View style={styles.logHeaderRow}>
                 <View style={styles.flexOne}>
                   <Text style={styles.logTitle}>Add to your log</Text>
-                  <Text style={styles.logSubtitle}>Save this analysis as a meal or hydration entry so future advice can use the full day context.</Text>
+                  <Text style={styles.logSubtitle}>Save this analysis as a meal, hydration entry, or another consumable so future advice can use the full day context.</Text>
                 </View>
                 <View style={styles.logTypeRow}>
                   {[
@@ -933,8 +967,8 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
               <View style={styles.logGrid}>
                 <TextInput style={styles.logInput} value={logName} onChangeText={setLogName} placeholder="Name" placeholderTextColor={palette.muted} />
                 <TextInput style={styles.logInput} value={logContext} onChangeText={setLogContext} placeholder="Context" placeholderTextColor={palette.muted} />
-                <TextInput style={styles.logInput} value={logDate} onChangeText={setLogDate} placeholder="YYYY-MM-DD" placeholderTextColor={palette.muted} />
-                <TextInput style={styles.logInput} value={logTime} onChangeText={setLogTime} placeholder="HH:MM" placeholderTextColor={palette.muted} />
+                <DateTimePickerField mode="date" style={styles.logInput} value={logDate} onChange={setLogDate} placeholder="DD/MM/YYYY" editable={!trackerLoading} />
+                <DateTimePickerField mode="time" style={styles.logInput} value={logTime} onChange={setLogTime} placeholder="HH:MM" editable={!trackerLoading} />
                 <TextInput style={styles.logInput} value={logCalories} onChangeText={setLogCalories} placeholder={logType === "hydration" ? "Calories (optional)" : "Calories"} placeholderTextColor={palette.muted} keyboardType="numeric" />
                 <TextInput style={styles.logInput} value={logServings} onChangeText={setLogServings} placeholder="Servings" placeholderTextColor={palette.muted} keyboardType="decimal-pad" />
                 <TextInput style={styles.logInput} value={logAmount} onChangeText={setLogAmount} placeholder={logType === "hydration" ? "Amount" : "Quantity"} placeholderTextColor={palette.muted} keyboardType="numeric" />
@@ -962,7 +996,7 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
                     })
                   }
                 >
-                  <Text style={styles.logPrimaryButtonText}>{trackerLoading ? "Saving..." : "Add to log"}</Text>
+                  <Text style={styles.logPrimaryButtonText}>{trackerLoading ? "Saving..." : logFeedback ? "Save another copy" : "Add to log"}</Text>
                 </Pressable>
                 <Pressable style={styles.logSecondaryButton} onPress={() => setActiveSubPage("logs")}>
                   <Text style={styles.logSecondaryButtonText}>Open logs</Text>
@@ -974,8 +1008,9 @@ export default function CaloriesPage({ requestApi, accountId, accountEmail, guid
       </View>
       <View style={activeSubPage === "history" ? undefined : styles.hiddenSection}>
         <CalorieHistoryPage
-          history={historyPayload}
-          runHistory={runHistory}
+        history={historyPayload}
+        allEntries={allHistoryEntries}
+        runHistory={runHistory}
           initialMode="runs"
           loading={historyLoading}
           onPrevWeek={openPrevWeek}

@@ -61,8 +61,8 @@ function parseBulletMap(content) {
   const result = {};
   const lines = (typeof content === "string" ? content : "").split("\n");
   for (const rawLine of lines) {
-    const line = rawLine.trim().replace(/^[-*]\s*/, "");
-    const match = line.match(/^([^:]+):\s*(.+)$/);
+    const line = rawLine.trim().replace(/^[-*=]\s*/, "");
+    const match = line.match(/^([^:=]+)\s*[:=]\s*(.+)$/);
     if (!match) continue;
     result[match[1].trim().toLowerCase()] = match[2].trim();
   }
@@ -126,11 +126,6 @@ function buildNutritionMetrics(nutritionMap, totalEstimatedCalories) {
     }
   };
 
-  if (typeof totalEstimatedCalories === "number" && Number.isFinite(totalEstimatedCalories)) {
-    pushMetric("Calories", `${Math.round(totalEstimatedCalories)} kcal`);
-  } else {
-    pushMetric("Calories", nutritionMap["calories"]);
-  }
   pushMetric("Protein", nutritionMap["protein"]);
   pushMetric("Carbs", nutritionMap["carbs"]);
   pushMetric("Fat", nutritionMap["fat"]);
@@ -161,6 +156,14 @@ function parseProfileImpactCards(content) {
       note,
     };
   });
+}
+
+function sanitizeSectionContent(content) {
+  return (typeof content === "string" ? content : "")
+    .split("\n")
+    .filter((line) => !/^\s*total estimated calories\b/i.test(line.trim()))
+    .join("\n")
+    .trim();
 }
 
 function parseProsConsCards(content, kind) {
@@ -215,7 +218,16 @@ export default function CalorieResult({ result }) {
   const bodyImpactMap = useMemo(() => parseBulletMap(bodyImpactSection?.content), [bodyImpactSection?.content]);
   const quickTags = useMemo(() => buildQuickTags(topSummaryMap), [topSummaryMap]);
   const nutritionMetrics = useMemo(() => buildNutritionMetrics(nutritionMap, result?.totalEstimatedCalories), [nutritionMap, result?.totalEstimatedCalories]);
-  const profileCards = useMemo(() => parseProfileImpactCards(profileSection?.content), [profileSection?.content]);
+  const profileCards = useMemo(
+    () =>
+      parseProfileImpactCards(profileSection?.content).filter(
+        (item) =>
+          item.detail ||
+          item.note ||
+          !/(no major mismatch detected|not applicable|none noted)/i.test(`${item.label} ${item.detail} ${item.note}`)
+      ),
+    [profileSection?.content]
+  );
   const benefitCards = useMemo(() => parseProsConsCards(benefitsSection?.content, "benefit"), [benefitsSection?.content]);
   const drawbackCards = useMemo(() => parseProsConsCards(drawbacksSection?.content, "drawback"), [drawbacksSection?.content]);
   const claimCards = useMemo(() => parseClaimRealityCards(claimsSection?.content), [claimsSection?.content]);
@@ -225,7 +237,8 @@ export default function CalorieResult({ result }) {
   }
 
   const healthScore = parseNumericValue(topSummaryMap["health score"]);
-  const fitLabel = typeof healthScore === "number" ? (healthScore >= 75 ? "Supportive" : healthScore >= 50 ? "Mixed" : "Watch-outs") : "Review";
+  const overallRead = topSummaryMap["overall read"] || "";
+  const fitLabel = typeof healthScore === "number" ? (healthScore >= 75 ? "Supportive" : healthScore >= 50 ? "Mixed" : "Watch-outs") : overallRead || "Quick read";
   const confidence = topSummaryMap["confidence"] || "Estimated from visible food cues";
   const proteinValue = Math.max(0, parseNumericValue(nutritionMap["protein"]) || 0);
   const carbsValue = Math.max(0, parseNumericValue(nutritionMap["carbs"]) || 0);
@@ -234,6 +247,11 @@ export default function CalorieResult({ result }) {
   const summaryLine = topSummaryMap["item"] || result.analysisText.split("\n").find((line) => line.trim())?.replace(/^Food Name:\s*/i, "").trim() || "Consumable analysis";
   const portionLine = topSummaryMap["portion"] || "Estimated from the uploaded image";
   const contextLine = topSummaryMap["context"] || "General dietary review";
+  const extendedSummary = topSummaryMap["extended summary"] || topSummaryMap["overall read"] || "";
+  const topCaloriesLabel =
+    typeof result?.totalEstimatedCalories === "number" && Number.isFinite(result.totalEstimatedCalories)
+      ? `${Math.round(result.totalEstimatedCalories)} kcal`
+      : nutritionMap["calories"] || "Estimate unavailable";
 
   const handledSectionKeys = new Set(
     [
@@ -254,7 +272,7 @@ export default function CalorieResult({ result }) {
 
   return (
     <View style={styles.card}>
-      <AccordionSection title="Summary" accent={palette.primary} icon="text-box-check-outline">
+      <AccordionSection title="Summary" accent={palette.primary} icon="text-box-check-outline" defaultExpanded>
       <View style={styles.heroCard}>
         <View style={styles.heroHeaderRow}>
           <View style={styles.heroCopy}>
@@ -263,15 +281,16 @@ export default function CalorieResult({ result }) {
             <Text style={styles.heroSubline}>
               {portionLine} · {contextLine}
             </Text>
-            {topSummarySection?.content ? <Text style={styles.heroDetail}>{topSummarySection.content}</Text> : null}
+            {extendedSummary ? <Text style={styles.heroDetail}>{extendedSummary}</Text> : null}
           </View>
           <View style={styles.scoreRing}>
-            <Text style={styles.scoreValue}>{typeof healthScore === "number" ? Math.round(healthScore) : "--"}</Text>
-            <Text style={styles.scoreLabel}>{fitLabel}</Text>
+            <Text style={styles.scoreValue}>{typeof healthScore === "number" ? Math.round(healthScore) : fitLabel}</Text>
+            <Text style={styles.scoreLabel}>{typeof healthScore === "number" ? fitLabel : "Overall read"}</Text>
           </View>
         </View>
 
         <View style={styles.contextRow}>
+          <Metric label="Estimated calories" value={topCaloriesLabel} />
           <Metric label="Confidence" value={confidence} wide />
           <Metric label="Daily target" value={`${result.calorieContext.dailyTarget} kcal`} />
           {typeof result.calorieContext.bmr === "number" ? <Metric label="BMR" value={`${result.calorieContext.bmr} kcal`} /> : null}
@@ -315,12 +334,12 @@ export default function CalorieResult({ result }) {
 
       {ingredientsSection ? (
         <AccordionSection title="Ingredients" accent={palette.success} icon="format-list-bulleted-square">
-          {renderMarkdownBlock(ingredientsSection.content || "-", "ingredients")}
+          {renderMarkdownBlock(sanitizeSectionContent(ingredientsSection.content || "-"), "ingredients")}
         </AccordionSection>
       ) : null}
 
       {bodyImpactSection ? (
-        <AccordionSection title="Body impact" accent={palette.warning} icon="heart-pulse">
+        <AccordionSection title="Body impact" accent={palette.warning} icon="heart-pulse" defaultExpanded>
           <View style={styles.impactRow}>
           {["blood sugar impact", "energy effect", "fullness", "hydration", "stimulant effect", "alcohol effect"]
             .filter((key) => bodyImpactMap[key])
@@ -336,7 +355,7 @@ export default function CalorieResult({ result }) {
       ) : null}
 
       {profileCards.length > 0 ? (
-        <AccordionSection title="How this affects you" accent={palette.primary} icon="account-heart-outline">
+        <AccordionSection title="How this affects you" accent={palette.primary} icon="account-heart-outline" defaultExpanded>
           <View style={styles.profileImpactStack}>
             {profileCards.map((item) => {
               const tone = chipTone(item.label);
@@ -408,15 +427,15 @@ export default function CalorieResult({ result }) {
         </>
       ) : null}
 
-      {qualitySection ? (
+          {qualitySection ? (
         <AccordionSection title="Food or drink quality" accent={palette.primary} icon="leaf-circle-outline">
-          {renderMarkdownBlock(qualitySection.content || "-", "quality")}
+          {renderMarkdownBlock(sanitizeSectionContent(qualitySection.content || "-"), "quality")}
         </AccordionSection>
       ) : null}
 
       {suggestionsSection ? (
-        <AccordionSection title="Smart suggestions" accent={palette.success} icon="lightbulb-on-outline">
-          {renderMarkdownBlock(suggestionsSection.content || "-", "suggestions")}
+        <AccordionSection title="Smart suggestions" accent={palette.success} icon="lightbulb-on-outline" defaultExpanded>
+          {renderMarkdownBlock(sanitizeSectionContent(suggestionsSection.content || "-"), "suggestions")}
         </AccordionSection>
       ) : null}
 
@@ -427,13 +446,13 @@ export default function CalorieResult({ result }) {
                 return null;
               }
               const meta = sectionMeta(section.heading);
-              return (
+                return (
                 <AccordionSection key={`${section.heading}-${index}`} title={section.heading} accent={meta.accent} icon={meta.icon}>
-                  {renderMarkdownBlock(section.content || "-", `calorie-section-${index}`)}
+                  {renderMarkdownBlock(sanitizeSectionContent(section.content || "-"), `calorie-section-${index}`)}
                 </AccordionSection>
               );
             })
-          : renderMarkdownBlock(result.analysisText, "calorie-fallback")}
+          : renderMarkdownBlock(sanitizeSectionContent(result.analysisText), "calorie-fallback")}
       </ScrollView>
     </View>
   );
@@ -448,8 +467,8 @@ function Metric({ label, value, wide = false }) {
   );
 }
 
-function AccordionSection({ title, accent, icon, children, style }) {
-  const [expanded, setExpanded] = useState(false);
+function AccordionSection({ title, accent, icon, children, style, defaultExpanded = false }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   return (
     <View style={[styles.sectionCard, style]}>
       <Pressable style={styles.sectionHeader} onPress={() => setExpanded((value) => !value)}>

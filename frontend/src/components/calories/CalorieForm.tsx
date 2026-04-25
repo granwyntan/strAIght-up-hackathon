@@ -1,16 +1,31 @@
 // @ts-nocheck
 import React from "react";
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { palette } from "../../data";
+import DateTimePickerField from "../shared/DateTimePickerField";
 
 const TYPE_OPTIONS = ["Auto", "Food", "Drink", "Food and Drink"];
-const BOOLEAN_OPTIONS = [
-  { label: "Yes", value: "yes" },
-  { label: "No", value: "no" },
-];
-const HUNGER_OPTIONS = ["1", "2", "3", "4", "5"];
+const HUNGER_OPTIONS = [1, 2, 3, 4, 5];
+
+function ToggleRow({ label, body, value, onValueChange, disabled = false }) {
+  return (
+    <View style={styles.toggleRow}>
+      <View style={styles.toggleCopy}>
+        <Text style={styles.formLabel}>{label}</Text>
+        {body ? <Text style={styles.toggleBody}>{body}</Text> : null}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        disabled={disabled}
+        trackColor={{ false: palette.border, true: palette.primary }}
+        thumbColor={palette.surface}
+      />
+    </View>
+  );
+}
 
 export default function CalorieForm({
   values,
@@ -32,7 +47,8 @@ export default function CalorieForm({
   onSubmit,
   aspectRatio,
   onAspectRatioChange,
-  onOpenCrop
+  onOpenCrop,
+  canSubmit
 }) {
   return (
     <View style={styles.card}>
@@ -47,7 +63,7 @@ export default function CalorieForm({
           style={styles.descriptionInput}
           value={values.mealDescription}
           onChangeText={(value) => onChange("mealDescription", value)}
-          placeholder="Describe your meal or drink..."
+          placeholder="Describe your meal or drink."
           placeholderTextColor={palette.muted}
           multiline
         />
@@ -103,13 +119,14 @@ export default function CalorieForm({
           </View>
         </View>
         <View style={styles.optionSection}>
-          <Text style={styles.formLabel}>Hunger out of 5</Text>
-          <View style={styles.optionChipRow}>
+          <Text style={styles.formLabel}>Hunger Level</Text>
+          <View style={styles.scaleRow}>
             {HUNGER_OPTIONS.map((option) => {
-              const selected = `${values.hungerLevel || ""}` === option;
+              const selected = `${values.hungerLevel || ""}` === String(option);
               return (
-                <Pressable key={option} style={[styles.optionChip, styles.optionChipTight, selected && styles.optionChipActive]} onPress={() => onChange("hungerLevel", option)}>
-                  <Text style={[styles.optionChipText, selected && styles.optionChipTextActive]}>{option}</Text>
+                <Pressable key={option} style={styles.scaleStep} onPress={() => onChange("hungerLevel", String(option))}>
+                  <View style={[styles.scaleDot, selected && styles.scaleDotActive]} />
+                  <Text style={[styles.scaleLabel, selected && styles.scaleLabelActive]}>{option}</Text>
                 </Pressable>
               );
             })}
@@ -118,54 +135,30 @@ export default function CalorieForm({
         <View style={styles.formGrid}>
           <View style={styles.formField}>
             <Text style={styles.formLabel}>Date</Text>
-            <TextInput
-              style={styles.optionInput}
-              value={values.mealDate || ""}
-              onChangeText={(value) => onChange("mealDate", value)}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={palette.muted}
-            />
+            <DateTimePickerField mode="date" style={styles.optionInput} value={values.mealDate || ""} onChange={(value) => onChange("mealDate", value)} placeholder="DD/MM/YYYY" editable={!loading} />
           </View>
           <View style={styles.formField}>
             <Text style={styles.formLabel}>Time</Text>
-            <TextInput
-              style={styles.optionInput}
-              value={values.mealTime || ""}
-              onChangeText={(value) => onChange("mealTime", value)}
-              placeholder="HH:MM"
-              placeholderTextColor={palette.muted}
-            />
+            <DateTimePickerField mode="time" style={styles.optionInput} value={values.mealTime || ""} onChange={(value) => onChange("mealTime", value)} placeholder="HH:MM" editable={!loading} />
           </View>
         </View>
-        <View style={styles.formGrid}>
-          <View style={styles.formField}>
-            <Text style={styles.formLabel}>Add to logs</Text>
-            <View style={styles.inlineBooleanRow}>
-              {BOOLEAN_OPTIONS.map((option) => {
-                const selected = (values.addToLogs || "").toLowerCase() === option.value;
-                return (
-                  <Pressable key={option.value} style={[styles.optionChip, styles.optionChipHalf, selected && styles.optionChipActive]} onPress={() => onChange("addToLogs", option.value)}>
-                    <Text style={[styles.optionChipText, selected && styles.optionChipTextActive]}>{option.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-          <View style={styles.formField}>
-            <Text style={styles.formLabel}>Load from profile</Text>
-            <View style={styles.inlineBooleanRow}>
-              {BOOLEAN_OPTIONS.map((option) => {
-                const selected = (values.includeProfile || "").toLowerCase() === option.value;
-                return (
-                  <Pressable key={option.value} style={[styles.optionChip, styles.optionChipHalf, selected && styles.optionChipActive]} onPress={() => onChange("includeProfile", option.value)}>
-                    <Text style={[styles.optionChipText, selected && styles.optionChipTextActive]}>{option.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
+        <View style={styles.toggleStack}>
+          <ToggleRow
+            label="Auto-save to log"
+            body="Save the finished analysis to your food log right after the scan."
+            value={(values.addToLogs || "").toLowerCase() === "yes"}
+            onValueChange={(nextValue) => onChange("addToLogs", nextValue ? "yes" : "no")}
+            disabled={loading}
+          />
+          <ToggleRow
+            label="Load from profile"
+            body="Use your saved conditions, goals, and diet context during analysis."
+            value={(values.includeProfile || "").toLowerCase() === "yes"}
+            onValueChange={(nextValue) => onChange("includeProfile", nextValue ? "yes" : "no")}
+            disabled={loading}
+          />
         </View>
-        <Text style={styles.hintText}>Goal fit and profile context are loaded automatically from your saved profile unless you switch profile off.</Text>
+        <Text style={styles.hintText}>Goal fit and profile context are loaded automatically from your saved profile unless you switch profile off. If your note includes "add to log", the finished result will also auto-save.</Text>
       </View>
 
       {webcamEnabled ? (
@@ -209,8 +202,15 @@ export default function CalorieForm({
         </>
       ) : null}
 
-      <Pressable style={[styles.submitButton, (loading || !selectedImageUri) && styles.submitButtonDisabled]} onPress={onSubmit} disabled={loading || !selectedImageUri}>
-        {loading ? <ActivityIndicator color={palette.surface} size="small" /> : <Text style={styles.submitButtonText}>Analyse diet</Text>}
+      <Pressable style={[styles.submitButton, (loading || !canSubmit) && styles.submitButtonDisabled]} onPress={onSubmit} disabled={loading || !canSubmit}>
+        {loading ? (
+          <ActivityIndicator color={palette.surface} size="small" />
+        ) : (
+          <View style={styles.submitButtonInner}>
+            <MaterialCommunityIcons name="magnify-scan" size={18} color={palette.surface} />
+            <Text style={styles.submitButtonText}>Analyse food</Text>
+          </View>
+        )}
       </Pressable>
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -336,9 +336,66 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
   },
+  scaleRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  scaleStep: {
+    flex: 1,
+    alignItems: "center",
+    gap: 6,
+  },
+  scaleDot: {
+    width: "100%",
+    minHeight: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+  },
+  scaleDotActive: {
+    backgroundColor: palette.primary,
+    borderColor: palette.primary,
+  },
+  scaleLabel: {
+    color: palette.muted,
+    fontFamily: "Poppins_500Medium",
+    fontSize: 11,
+  },
+  scaleLabelActive: {
+    color: palette.primary,
+    fontFamily: "Poppins_700Bold",
+  },
   inlineBooleanRow: {
     flexDirection: "row",
     gap: 8,
+  },
+  toggleStack: {
+    gap: 10,
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  toggleCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  toggleBody: {
+    color: palette.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: "Poppins_400Regular",
   },
   formField: {
     width: "48%",
@@ -510,6 +567,11 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: "center",
     justifyContent: "center"
+  },
+  submitButtonInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   submitButtonDisabled: {
     opacity: 0.5

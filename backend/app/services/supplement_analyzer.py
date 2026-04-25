@@ -436,7 +436,7 @@ def _build_analysis_prompt(conditions: str, goals: str) -> str:
         "## Claim Analyzer (Quick)\n\n"
         "Formatting rules:\n"
         "- Keep every section concise and scannable.\n"
-        "- Use bullets only, no tables.\n"
+        "- Use short labeled lines with ':' or '=' when possible. Bullets are fine, but no tables.\n"
         "- This is supplement analysis, not drug prescribing. Emphasize effectiveness, redundancy, stacking risk, goal alignment, and uncertainty.\n"
         "- For Hero Summary use these bullets exactly:\n"
         "  - Product Name: ...\n"
@@ -499,7 +499,7 @@ def _build_text_analysis_prompt(supplement_name: str, conditions: str, goals: st
         "## Claim Analyzer (Quick)\n\n"
         "Formatting rules:\n"
         "- Keep every section concise and scannable.\n"
-        "- Use bullets only, no tables.\n"
+        "- Use short labeled lines with ':' or '=' when possible. Bullets are fine, but no tables.\n"
         "- This is supplement analysis, not drug prescribing. Emphasize effectiveness, redundancy, stacking risk, goal alignment, and uncertainty.\n"
         "- For Hero Summary use these bullets exactly:\n"
         "  - Product Name: ...\n"
@@ -551,7 +551,7 @@ def _bullet_lines(content: str) -> list[str]:
         line = raw_line.strip()
         if not line:
             continue
-        line = re.sub(r"^[-*]\s*", "", line).strip()
+        line = re.sub(r"^[-*=]\s*", "", line).strip()
         if line:
             lines.append(line)
     return lines

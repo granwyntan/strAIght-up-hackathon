@@ -321,6 +321,19 @@ export async function loadConsumableWeek(accountId, weekStart, accountEmail) {
   }
 }
 
+export async function loadConsumableEntries(accountId, accountEmail) {
+  const userId = toFirestoreUserId(accountEmail);
+  if (!userId || !firestore) {
+    return loadAllEntries(accountId);
+  }
+  try {
+    return await loadFirestoreAllEntries(accountEmail);
+  } catch (error) {
+    console.warn("Unable to load all consumable entries from Firestore; falling back to local storage", error);
+    return loadAllEntries(accountId);
+  }
+}
+
 export async function addConsumableEntry(accountId, entry, accountEmail) {
   const next = normalizeEntry(entry);
   const userId = toFirestoreUserId(accountEmail);
@@ -423,6 +436,10 @@ export async function clearConsumableDay(accountId, isoDate, accountEmail) {
 
 export async function loadCalorieWeek(accountId, weekStart, accountEmail) {
   return loadConsumableWeek(accountId, weekStart, accountEmail);
+}
+
+export async function loadCalorieEntries(accountId, accountEmail) {
+  return loadConsumableEntries(accountId, accountEmail);
 }
 
 export async function addCalorieEntry(accountId, entry, accountEmail) {

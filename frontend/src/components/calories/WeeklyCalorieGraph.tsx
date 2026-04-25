@@ -89,23 +89,27 @@ export default function WeeklyCalorieGraph({ days, entries, mode = "timeline", t
           <LegendSwatch color={palette.primary} label="Calories trend" />
           <LegendSwatch color={palette.secondary} label="Hydration bars" />
         </View>
-        <View style={styles.weekChartRow}>
-          {safeDays.map((day, index) => {
-            const dotOffset = 10 + Math.round(((day.totalCalories || 0) / maxCalories) * 74);
-            const hydrationHeight = Math.max(6, Math.round(((day.hydrationMl || 0) / maxHydration) * 48));
-            return (
-              <View key={day.date} style={styles.weekColumn}>
-                <View style={styles.weekPlot}>
-                  <View style={[styles.hydrationMiniBar, { height: hydrationHeight }]} />
-                  <View style={[styles.weekDot, { bottom: dotOffset }]} />
-                  {index < safeDays.length - 1 ? <View style={[styles.weekLine, { bottom: dotOffset + 5 }]} /> : null}
+        {safeDays.length === 0 ? (
+          <EmptyChartBox body="No logs in this week yet. The chart frame stays here so the layout does not jump around." />
+        ) : (
+          <View style={styles.weekChartRow}>
+            {safeDays.map((day, index) => {
+              const dotOffset = 10 + Math.round(((day.totalCalories || 0) / maxCalories) * 74);
+              const hydrationHeight = Math.max(6, Math.round(((day.hydrationMl || 0) / maxHydration) * 48));
+              return (
+                <View key={day.date} style={styles.weekColumn}>
+                  <View style={styles.weekPlot}>
+                    <View style={[styles.hydrationMiniBar, { height: hydrationHeight }]} />
+                    <View style={[styles.weekDot, { bottom: dotOffset }]} />
+                    {index < safeDays.length - 1 ? <View style={[styles.weekLine, { bottom: dotOffset + 5 }]} /> : null}
+                  </View>
+                  <Text style={styles.dayLabel}>{weekdayShort[index] || day.date.slice(5)}</Text>
+                  <Text style={styles.dayMeta}>{day.totalCalories || 0} kcal</Text>
                 </View>
-                <Text style={styles.dayLabel}>{weekdayShort[index] || day.date.slice(5)}</Text>
-                <Text style={styles.dayMeta}>{day.totalCalories || 0} kcal</Text>
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
+        )}
       </View>
     );
   }
@@ -115,22 +119,28 @@ export default function WeeklyCalorieGraph({ days, entries, mode = "timeline", t
       <View style={styles.card}>
         <Text style={styles.title}>{mode === "month" ? "Month overview" : "Year overview"}</Text>
         <Text style={styles.subtitle}>Squares make it easier to spot heavier intake periods and hydration gaps without overloading the screen.</Text>
-        <Text style={styles.gridLabel}>Calories</Text>
-        <View style={styles.squareGrid}>
-          {monthSquares.map((item) => (
-            <View key={`cal-${item.key}`} style={[styles.squareCell, { backgroundColor: toneForCalories(item.calories, maxCalories) }]}>
-              <Text style={styles.squareText}>{item.label}</Text>
+        {monthSquares.length === 0 ? (
+          <EmptyChartBox body={`No logs in this ${mode} yet. This overview stays visible so the page structure stays consistent.`} />
+        ) : (
+          <>
+            <Text style={styles.gridLabel}>Calories</Text>
+            <View style={styles.squareGrid}>
+              {monthSquares.map((item) => (
+                <View key={`cal-${item.key}`} style={[styles.squareCell, { backgroundColor: toneForCalories(item.calories, maxCalories) }]}>
+                  <Text style={styles.squareText}>{item.label}</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
-        <Text style={styles.gridLabel}>Hydration</Text>
-        <View style={styles.squareGrid}>
-          {monthSquares.map((item) => (
-            <View key={`hyd-${item.key}`} style={[styles.squareCell, { backgroundColor: toneForHydration(item.hydration, maxHydration) }]}>
-              <Text style={styles.squareText}>{item.label}</Text>
+            <Text style={styles.gridLabel}>Hydration</Text>
+            <View style={styles.squareGrid}>
+              {monthSquares.map((item) => (
+                <View key={`hyd-${item.key}`} style={[styles.squareCell, { backgroundColor: toneForHydration(item.hydration, maxHydration) }]}>
+                  <Text style={styles.squareText}>{item.label}</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+          </>
+        )}
       </View>
     );
   }
@@ -143,9 +153,7 @@ export default function WeeklyCalorieGraph({ days, entries, mode = "timeline", t
         {safeDays.length === 0 ? (
           <Text style={styles.emptyText}>No saved intake logs in this range yet.</Text>
         ) : (
-          safeDays
-            .filter((day) => (day.entryCount || 0) > 0)
-            .map((day) => (
+          safeDays.map((day) => (
               <View key={day.date} style={styles.timelineRow}>
                 <View style={styles.timelineDateBadge}>
                   <Text style={styles.timelineDateText}>{day.date.slice(-2)}</Text>
@@ -162,6 +170,15 @@ export default function WeeklyCalorieGraph({ days, entries, mode = "timeline", t
             ))
         )}
       </View>
+    </View>
+  );
+}
+
+function EmptyChartBox({ body }) {
+  return (
+    <View style={styles.emptyChartBox}>
+      <View style={styles.emptyChartFrame} />
+      <Text style={styles.emptyText}>{body}</Text>
     </View>
   );
 }
@@ -300,6 +317,22 @@ const styles = StyleSheet.create({
     color: palette.muted,
     fontFamily: "Poppins_400Regular",
     fontSize: 12,
+  },
+  emptyChartBox: {
+    gap: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    padding: 14,
+  },
+  emptyChartFrame: {
+    minHeight: 110,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: palette.border,
+    backgroundColor: "#FFFFFF",
   },
   weekChartRow: {
     flexDirection: "row",

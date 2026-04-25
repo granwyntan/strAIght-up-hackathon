@@ -1026,9 +1026,14 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                       onPress={() => void runSupplementAnalysisFromCurrentInput()}
                       disabled={loading || (!trimmedSearchQuery && !selectedAsset?.uri)}
                     >
-                      <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">
-                        {loading ? "Analysing..." : "Analyse nutraceutical"}
-                      </Text>
+                      {loading ? (
+                        <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analysing...</Text>
+                      ) : (
+                        <View className="flex-row items-center gap-2">
+                          <MaterialCommunityIcons name="magnify-scan" size={18} color={palette.surface} />
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analyse nutraceutical</Text>
+                        </View>
+                      )}
                     </Pressable>
                   </View>
 
@@ -1137,7 +1142,14 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                   </View>
                   <View className="flex-row flex-wrap items-center gap-2">
                     <Pressable className={`rounded-2xl px-4 py-3 ${loading || !trimmedDrugQuery ? "bg-sage/50" : "bg-sage"}`} onPress={() => void searchDrugDeepDive()} disabled={loading || !trimmedDrugQuery}>
-                      <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">{loading ? "Analysing..." : "Analyse medicine/drug"}</Text>
+                      {loading ? (
+                        <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analysing...</Text>
+                      ) : (
+                        <View className="flex-row items-center gap-2">
+                          <MaterialCommunityIcons name="magnify-scan" size={18} color={palette.surface} />
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analyse medicine/drug</Text>
+                        </View>
+                      )}
                     </Pressable>
                     {trimmedDrugQuery ? (
                       <Pressable className="rounded-2xl border border-line bg-soft px-4 py-3" onPress={clearSearchInput} disabled={loading}>
