@@ -28,8 +28,10 @@
       "infoPlist": {
         "NSCameraUsageDescription": "GramWIN can use the camera for future document and source capture flows.",
         "NSPhotoLibraryUsageDescription": "GramWIN can use your photos for future source and evidence uploads.",
-        "NSUserNotificationUsageDescription": "GramWIN sends a notification when your investigation is ready."
-      }
+        "NSUserNotificationUsageDescription": "GramWIN sends a notification when your investigation is ready.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.greny.gramwin"
     },
     "android": {
       "adaptiveIcon": {

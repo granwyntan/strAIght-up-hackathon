@@ -263,7 +263,7 @@ export default function CalorieResult({ result }) {
       <LinearGradient colors={["#F7FBF8", "#EEF4FF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
         <View style={styles.heroChipRow}>
           <View style={styles.heroChip}>
-            <MaterialCommunityIcons name="sparkles" size={14} color={palette.primary} />
+            <MaterialCommunityIcons name="star-four-points-outline" size={14} color={palette.primary} />
             <Text style={styles.heroChipText}>AI nutrition analysis</Text>
           </View>
           {goalMap["goal"] ? (
@@ -501,24 +501,29 @@ function LegendDot({ color, label }) {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 28,
+    borderRadius: 30,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: palette.surface,
-    padding: 24,
-    gap: 22,
+    backgroundColor: "#FCFDFC",
+    padding: 20,
+    gap: 18,
     shadowColor: "#173122",
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 1,
+    shadowOpacity: 0.06,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 2,
   },
   heroCard: {
-    borderRadius: 26,
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: palette.border,
-    padding: 24,
-    gap: 20,
+    borderColor: "#E1ECE4",
+    padding: 22,
+    gap: 16,
+    shadowColor: "#173122",
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 1,
   },
   heroChipRow: {
     flexDirection: "row",
@@ -532,9 +537,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 7,
-    backgroundColor: "rgba(255,255,255,0.82)",
+    backgroundColor: "rgba(255,255,255,0.92)",
     borderWidth: 1,
-    borderColor: "#DDE7E0",
+    borderColor: "#DFE9E1",
   },
   heroChipText: {
     color: palette.primary,
@@ -545,11 +550,12 @@ const styles = StyleSheet.create({
   heroTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 20,
+    gap: 16,
+    alignItems: "flex-start",
   },
   heroCopy: {
     flex: 1,
-    gap: 10,
+    gap: 8,
   },
   eyebrow: {
     color: palette.primary,
@@ -561,8 +567,8 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
-    fontSize: 23,
-    lineHeight: 31,
+    fontSize: 24,
+    lineHeight: 32,
   },
   heroSubtitle: {
     color: palette.muted,
@@ -572,18 +578,23 @@ const styles = StyleSheet.create({
   heroSummary: {
     color: palette.ink,
     fontFamily: "Poppins_500Medium",
-    lineHeight: 21,
+    lineHeight: 22,
+    backgroundColor: "rgba(255,255,255,0.82)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   scoreCard: {
-    minWidth: 96,
-    borderRadius: 24,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
+    width: 108,
+    minHeight: 108,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.55)",
+    borderColor: "rgba(255,255,255,0.7)",
   },
   scoreValue: {
     fontFamily: "Poppins_700Bold",
@@ -597,7 +608,7 @@ const styles = StyleSheet.create({
   topMetricRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 14,
+    gap: 10,
   },
   metricGrid: {
     flexDirection: "row",
@@ -607,13 +618,13 @@ const styles = StyleSheet.create({
   metricTile: {
     flexGrow: 1,
     minWidth: 120,
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: palette.border,
+    borderColor: "#E4ECE7",
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 6,
   },
   metricLabel: {
     color: palette.muted,
@@ -630,12 +641,12 @@ const styles = StyleSheet.create({
     color: palette.muted,
   },
   balanceCard: {
-    borderRadius: 22,
+    borderRadius: 20,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: palette.border,
-    padding: 18,
-    gap: 14,
+    borderColor: "#E4ECE7",
+    padding: 16,
+    gap: 12,
   },
   rowBetween: {
     flexDirection: "row",
@@ -690,23 +701,29 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   dashboardGrid: {
-    gap: 18,
+    gap: 14,
   },
   dashboardColumn: {
-    gap: 18,
+    gap: 14,
   },
   sectionCard: {
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    padding: 18,
-    gap: 14,
+    borderColor: "#E4ECE7",
+    backgroundColor: "#FFFFFF",
+    padding: 16,
+    gap: 10,
+    shadowColor: "#173122",
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
   },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 12,
+    minHeight: 36,
   },
   sectionIconWrap: {
     width: 34,
@@ -725,7 +742,8 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   sectionContent: {
-    gap: 14,
+    gap: 12,
+    paddingTop: 4,
   },
   signalGrid: {
     flexDirection: "row",
@@ -735,9 +753,11 @@ const styles = StyleSheet.create({
   signalCard: {
     flexGrow: 1,
     flexBasis: 140,
-    borderRadius: 18,
-    padding: 16,
-    gap: 10,
+    borderRadius: 16,
+    padding: 14,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(20,56,35,0.06)",
   },
   signalLabel: {
     color: palette.muted,
@@ -758,9 +778,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   subCard: {
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: palette.border,
+    borderColor: "#E4ECE7",
     backgroundColor: "#FFFFFF",
     padding: 12,
     gap: 6,
