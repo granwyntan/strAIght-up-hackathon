@@ -258,6 +258,10 @@ export default function OnboardingSheet({
   }
 
   function continueStep() {
+    if (mode === "setup" && isFinalStep && !activeAccount) {
+      setStepIndex(0);
+      return;
+    }
     if (isFinalStep) {
       void persist("complete");
       return;
@@ -625,7 +629,7 @@ export default function OnboardingSheet({
                 </Button>
               ) : null}
               <Button mode="contained" onPress={continueStep} loading={saving} disabled={loading} buttonColor={palette.primary}>
-                {isFinalStep ? "Finish setup" : "Continue"}
+                {isFinalStep ? (mode === "setup" && !activeAccount ? "Sign in to finish" : "Finish setup") : "Continue"}
               </Button>
             </View>
           </View>
@@ -1035,15 +1039,15 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheet: {
-    minHeight: "86%",
-    maxHeight: "98%",
+    minHeight: "91%",
+    maxHeight: "99%",
     backgroundColor: palette.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
     borderColor: palette.border,
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 8,
     paddingBottom: 20,
     gap: 14,
   },

@@ -982,7 +982,11 @@ export default function HomeDashboardPage({
                     <Text variant="labelLarge" style={styles.metricLabel}>
                       {metric.label}
                     </Text>
-                    <Text variant="titleLarge" style={styles.metricValue}>
+                    <Text
+                      variant="titleLarge"
+                      style={[styles.metricValue, !currentValue && styles.metricValueMissing]}
+                      numberOfLines={1}
+                    >
                       {currentValue || "Missing"}
                     </Text>
                     <Text variant="bodySmall" style={styles.metricDetail}>
@@ -1727,6 +1731,10 @@ const styles = StyleSheet.create({
   metricValue: {
     color: palette.text,
     fontFamily: "Poppins_700Bold",
+  },
+  metricValueMissing: {
+    fontSize: 22,
+    lineHeight: 28,
   },
   metricLabel: {
     color: palette.text,

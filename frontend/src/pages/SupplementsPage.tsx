@@ -1062,29 +1062,31 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                     </View>
                   ) : null}
 
-                  <ImageUpload
-                    selectedImageUri={selectedAsset?.uri || ""}
-                    selectedImageAspectRatio={selectedImageAspectRatio}
-                    aspectRatio={aspectRatio}
-                    conditions={conditions}
-                    onChangeConditions={setConditions}
-                    goals={goals}
-                    onChangeGoals={setGoals}
-                    loading={loading}
-                    error={error}
-                    showCameraButton={Platform.OS !== "web"}
-                    showActionButtons={false}
-                    showAnalyzeButton={false}
-                    disableImageOptions={imageOptionsDisabled}
-                    onClearImageSelection={clearImageSelection}
-                    clearImageSelectionLabel="Clear image"
-                    analyzeLabel="Analyse nutraceutical"
-                    onAspectRatioChange={setAspectRatio}
-                    onOpenCrop={() => setCropVisible(true)}
-                    onCaptureImage={captureImage}
-                    onPickImage={pickImage}
-                    onAnalyze={analyzeSupplement}
-                  />
+                  {selectedAsset?.uri ? (
+                    <ImageUpload
+                      selectedImageUri={selectedAsset?.uri || ""}
+                      selectedImageAspectRatio={selectedImageAspectRatio}
+                      aspectRatio={aspectRatio}
+                      conditions={conditions}
+                      onChangeConditions={setConditions}
+                      goals={goals}
+                      onChangeGoals={setGoals}
+                      loading={loading}
+                      error={error}
+                      showCameraButton={Platform.OS !== "web"}
+                      showActionButtons={false}
+                      showAnalyzeButton={false}
+                      disableImageOptions={imageOptionsDisabled}
+                      onClearImageSelection={clearImageSelection}
+                      clearImageSelectionLabel="Clear image"
+                      analyzeLabel="Analyse nutraceutical"
+                      onAspectRatioChange={setAspectRatio}
+                      onOpenCrop={() => setCropVisible(true)}
+                      onCaptureImage={captureImage}
+                      onPickImage={pickImage}
+                      onAnalyze={analyzeSupplement}
+                    />
+                  ) : null}
 
                   <View className="flex-row items-center justify-between gap-3 rounded-[22px] border border-line bg-card px-5 py-4 shadow-panel">
                     <View className="flex-1">
@@ -1631,4 +1633,3 @@ const styles = StyleSheet.create({
     color: palette.muted,
   },
 });
-

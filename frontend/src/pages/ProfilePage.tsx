@@ -4,9 +4,7 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Button, Card, Chip, Text, TextInput } from "react-native-paper";
 
-import AuthGate from "../components/auth/AuthGate";
 import OnboardingSheet from "../components/profile/OnboardingSheet";
-import SectionTabs from "../components/shared/SectionTabs";
 import TutorialSheet from "../components/shared/TutorialSheet";
 import { palette } from "../data";
 import {
@@ -187,12 +185,6 @@ export default function ProfilePage({ accountId, accountEmail, activeAccount, au
 
   return (
     <View style={styles.pageStack}>
-      <SectionTabs
-        value={"overview"}
-        onValueChange={() => {}}
-        tabs={[{ value: "overview", label: "Overview", icon: "account-heart-outline" }]}
-      />
-
       {
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <Card mode="contained" style={styles.heroCard}>
@@ -238,7 +230,7 @@ export default function ProfilePage({ accountId, accountEmail, activeAccount, au
             <Card key={section.title} mode="contained" style={styles.sectionCard}>
               <Card.Content style={styles.cardStack}>
                 <View style={styles.rowBetween}>
-                  <Text variant="titleMedium" style={styles.sectionTitle}>
+                  <Text variant="titleMedium" style={[styles.sectionTitle, styles.sectionTitleWrap]} numberOfLines={2}>
                     {section.title}
                   </Text>
                   {editingSectionKey === section.key ? (
@@ -273,19 +265,7 @@ export default function ProfilePage({ accountId, accountEmail, activeAccount, au
             </Card>
           ))}
 
-          {!activeAccount ? (
-            <Card mode="contained" style={styles.sectionCard}>
-              <Card.Content style={styles.cardStack}>
-                <Text variant="titleMedium" style={styles.sectionTitle}>
-                  Optional account sync
-                </Text>
-                <Text variant="bodyMedium" style={styles.bodyText}>
-                  Local saving is already active. Create or sign in only when you want synced profile/history across devices.
-                </Text>
-                <AuthGate onAuthenticate={onAuthenticate} loading={authLoading} />
-              </Card.Content>
-            </Card>
-          ) : (
+          {activeAccount ? (
             <Card mode="contained" style={styles.sectionCard}>
               <Card.Content style={styles.cardStack}>
                 <Text variant="titleMedium" style={styles.sectionTitle}>
@@ -299,7 +279,7 @@ export default function ProfilePage({ accountId, accountEmail, activeAccount, au
                 </Button>
               </Card.Content>
             </Card>
-          )}
+          ) : null}
         </ScrollView>
       }
 
@@ -426,6 +406,10 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: palette.text,
     fontFamily: "Poppins_700Bold",
+  },
+  sectionTitleWrap: {
+    flex: 1,
+    paddingRight: 10,
   },
   bodyText: {
     color: palette.muted,
