@@ -1160,13 +1160,18 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular"
   },
   calcMetaCard: {
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 10
+    borderColor: "#E3ECE6",
+    backgroundColor: "#FCFDFC",
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    gap: 12,
+    shadowColor: "#173122",
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 1
   },
   calcMetaHeader: {
     flexDirection: "row",
@@ -1214,12 +1219,12 @@ const styles = StyleSheet.create({
   calcStepRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    borderColor: "#E4ECE7",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
     gap: 10
   },
   calcStepIconWrap: {
@@ -1253,12 +1258,17 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular"
   },
   logCard: {
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
+    borderColor: "#E3ECE6",
+    backgroundColor: "#FCFDFC",
     padding: 18,
-    gap: 14
+    gap: 14,
+    shadowColor: "#173122",
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 1
   },
   logHeaderRow: {
     gap: 10
@@ -1308,10 +1318,10 @@ const styles = StyleSheet.create({
     minHeight: 46,
     minWidth: 138,
     flexGrow: 1,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
+    borderColor: "#E4ECE7",
+    backgroundColor: "#FFFFFF",
     color: palette.ink,
     paddingHorizontal: 12,
     paddingVertical: 10,
