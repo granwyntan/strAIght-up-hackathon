@@ -1,10 +1,9 @@
 Place production image assets for Expo here.
 
-Recommended filenames:
+Current linked files:
 - `app-icon.png` for the mobile app icon
-- `adaptive-icon-foreground.png` for Android adaptive icon foreground
-- `adaptive-icon-background.png` for Android adaptive icon background
 - `splash-icon.png` for the loading screen / splash artwork
 - `favicon.png` for the web favicon
+- `app-icon.svg` as an editable vector source you can replace with your own SVG
 
-Once the final images are ready, wire these paths into [app.json](/C:/Users/granw/Downloads/strAIght-up-hackathon/frontend/app.json).
+You can replace these placeholder files directly with your real exported assets. Expo is already wired to these PNG paths in [app.json](/C:/Users/granw/Downloads/strAIght-up-hackathon/frontend/app.json).

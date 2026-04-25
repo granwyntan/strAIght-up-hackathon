@@ -11,6 +11,7 @@ from ..agents.investigation_brief_agent import create_investigation_brief
 from ..agents.nlp_cloud_agent import refine_claim_with_nlp_cloud
 from ..agents.consensus_reviewer import review_consensus
 from ..agents.provider_panel import run_provider_panel
+from ..agents.profile_personalization_agent import review_profile_personalization
 from ..agents.query_planner import refine_claim_analysis
 from ..agents.quote_verifier import verify_quotes
 from ..agents.quote_sentiment_agent import analyze_quote_sentiments
@@ -47,8 +48,8 @@ _WORKER_LOCK = Lock()
 _WORKERS_STARTED = False
 DEPTH_SOURCE_WINDOWS: dict[str, tuple[int, int]] = {
     "quick": (30, 50),
-    "standard": (70, 84),
-    "deep": (100, 132),
+    "standard": (70, 90),
+    "deep": (100, 150),
 }
 
 
@@ -957,6 +958,46 @@ async def run_investigation(investigation_id: str, request: InvestigationCreateR
                 f"Uncertain quote highlights: {quote_distribution.get('uncertain', 0)}.",
             ],
             progress=84,
+        )
+
+        _set_step_state(
+            investigation_id,
+            "profile_personalization_review",
+            "running",
+            "Matching the claim and current evidence to the saved user profile before the regional review layers.",
+            progress=85,
+        )
+        profile_personalization_review = await _run_stage(
+            investigation_id,
+            "profile_personalization",
+            "Profile personalization reviewer",
+            lambda: asyncio.to_thread(
+                lambda: (
+                    review_profile_personalization(request.claim, request.profileContext, sentiment_sources),
+                    "Connected the claim and evidence to the saved user profile, including goals, conditions, allergies, and diet rules.",
+                )
+            ),
+        )
+        repository.update_state(
+            investigation_id,
+            lambda state: state.model_copy(
+                update={
+                    "profilePersonalizationReview": profile_personalization_review,
+                    "progressPercent": 85,
+                }
+            ),
+        )
+        _set_step_state(
+            investigation_id,
+            "profile_personalization_review",
+            "completed",
+            profile_personalization_review.summary or "Profile personalization review completed.",
+            details=[
+                f"Profile relevance: {profile_personalization_review.relevanceLabel}.",
+                *profile_personalization_review.keyPoints[:3],
+                *profile_personalization_review.alerts[:2],
+            ],
+            progress=85,
         )
 
         _set_step_state(

@@ -4,6 +4,7 @@
     "slug": "gramwin",
     "scheme": "gramwin",
     "version": "1.0.0",
+    "icon": "./assets/app-icons/app-icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#F4F7FB",
@@ -23,6 +24,7 @@
     },
     "ios": {
       "supportsTablet": true,
+      "icon": "./assets/app-icons/app-icon.png",
       "infoPlist": {
         "NSCameraUsageDescription": "GramWIN can use the camera for future document and source capture flows.",
         "NSPhotoLibraryUsageDescription": "GramWIN can use your photos for future source and evidence uploads.",
@@ -30,6 +32,10 @@
       }
     },
     "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app-icons/app-icon.png",
+        "backgroundColor": "#F4F7FB"
+      },
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
@@ -38,7 +44,13 @@
       "package": "com.greny.gramwin"
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/app-icons/favicon.png"
+    },
+    "splash": {
+      "image": "./assets/app-icons/splash-icon.png",
+      "backgroundColor": "#F4F7FB",
+      "resizeMode": "contain"
     },
     "extra": {
       "eas": {

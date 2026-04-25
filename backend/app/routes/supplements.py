@@ -9,9 +9,11 @@ from openai import RateLimitError
 from pydantic import BaseModel
 
 from ..services.supplement_analyzer import (
+    DrugDeepDiveResult,
     SupplementSection,
     analyze_supplement,
     analyze_supplement_by_name,
+    fetch_drug_deep_dive,
     fetch_drug_info,
 )
 
@@ -52,12 +54,19 @@ class SupplementSearchRequest(BaseModel):
 
 class SupplementDrugInfoRequest(BaseModel):
     drugName: str
+    profileContext: str = ""
 
 
 class SupplementDrugInfoResponse(BaseModel):
     drug: str
     usage: str
     sideEffects: str
+
+
+class SupplementDrugDeepDiveResponse(BaseModel):
+    analysisText: str
+    sections: list[SupplementSectionResponse]
+    structuredAnalysis: dict[str, object] | None = None
 
 
 def _to_section_payload(section: SupplementSection) -> SupplementSectionResponse:
@@ -270,3 +279,48 @@ def supplement_drug_info_endpoint(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Drug lookup failed.") from exc
 
     return SupplementDrugInfoResponse(drug=result.drug, usage=result.usage, sideEffects=result.side_effects)
+
+
+@router.post("/drug-deep-dive", response_model=SupplementDrugDeepDiveResponse)
+def supplement_drug_deep_dive_endpoint(
+    payload: SupplementDrugInfoRequest,
+    x_client_action_id: str | None = Header(default=None, alias="X-Client-Action-Id"),
+) -> SupplementDrugDeepDiveResponse:
+    endpoint_request_id = str(uuid.uuid4())
+    logger.info(
+        "ENDPOINT HIT path=%s request_id=%s client_action_id=%s ts=%s",
+        "/api/supplements/drug-deep-dive",
+        endpoint_request_id,
+        x_client_action_id or "-",
+        time.time(),
+    )
+    try:
+        result: DrugDeepDiveResult = fetch_drug_deep_dive(
+            payload.drugName,
+            profile_context=payload.profileContext,
+            request_id=endpoint_request_id,
+        )
+    except RateLimitError as exc:
+        logger.warning("OpenAI rate limit during supplement drug deep-dive: %s", exc)
+        retry_after = _retry_after_from_rate_limit(exc)
+        headers = {"Retry-After": str(retry_after)} if retry_after else None
+        detail = "OpenAI rate limit reached. Please retry in a moment."
+        if retry_after:
+            detail = f"OpenAI rate limit reached. Please retry in about {retry_after} seconds."
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=detail,
+            headers=headers,
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Drug deep-dive failed.") from exc
+
+    return SupplementDrugDeepDiveResponse(
+        analysisText=result.analysis_text,
+        sections=[_to_section_payload(item) for item in result.sections],
+        structuredAnalysis=result.structured_analysis,
+    )

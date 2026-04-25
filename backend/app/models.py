@@ -58,6 +58,7 @@ class BootstrapPayload(BaseModel):
 class InvestigationCreateRequest(BaseModel):
     claim: str = Field(min_length=5, max_length=800)
     context: str = Field(default="", max_length=2000)
+    profileContext: str = Field(default="", max_length=4000)
     sourceUrls: list[str] = Field(default_factory=list)
     mode: InvestigationMode = "auto"
     desiredDepth: DesiredDepth = "deep"
@@ -304,6 +305,13 @@ class SingaporeAuthorityReview(BaseModel):
     sourceIds: list[str] = Field(default_factory=list)
 
 
+class ProfilePersonalizationReview(BaseModel):
+    relevanceLabel: Literal["high", "medium", "low", "not_available"] = "not_available"
+    summary: str = ""
+    keyPoints: list[str] = Field(default_factory=list)
+    alerts: list[str] = Field(default_factory=list)
+
+
 class InvestigationState(BaseModel):
     claimAnalysis: ClaimAnalysis | None = None
     claimGraph: list[ClaimGraphNode] = Field(default_factory=list)
@@ -315,6 +323,7 @@ class InvestigationState(BaseModel):
     stepSummaries: list[PipelineStepSummary] = Field(default_factory=list)
     providerReviews: list[ProviderReviewSummary] = Field(default_factory=list)
     hoaxSignals: list[HoaxSignal] = Field(default_factory=list)
+    profilePersonalizationReview: ProfilePersonalizationReview | None = None
     singaporeAuthorityReview: SingaporeAuthorityReview | None = None
     sentiment: SentimentDistribution | None = None
     consensus: ConsensusBreakdown | None = None
@@ -373,6 +382,7 @@ class InvestigationDetail(InvestigationSummary):
     stepSummaries: list[PipelineStepSummary] = Field(default_factory=list)
     providerReviews: list[ProviderReviewSummary] = Field(default_factory=list)
     hoaxSignals: list[HoaxSignal] = Field(default_factory=list)
+    profilePersonalizationReview: ProfilePersonalizationReview | None = None
     singaporeAuthorityReview: SingaporeAuthorityReview | None = None
     sentiment: SentimentDistribution | None = None
     consensus: ConsensusBreakdown | None = None

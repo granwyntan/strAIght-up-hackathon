@@ -1,4 +1,4 @@
-export type AppTab = "home" | "consultant" | "nutrition" | "supplements" | "profile";
+export type AppTab = "home" | "consultant" | "diet" | "activity" | "profile";
 export type InvestigationStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type ClaimVerdict = "trustworthy" | "mixed" | "overstated" | "untrustworthy";
 export type SourceSentiment = "positive" | "neutral" | "negative";
@@ -259,6 +259,13 @@ export interface SingaporeAuthorityReview {
   sourceIds: string[];
 }
 
+export interface ProfilePersonalizationReview {
+  relevanceLabel: "high" | "medium" | "low" | "not_available";
+  summary: string;
+  keyPoints: string[];
+  alerts: string[];
+}
+
 export interface SentimentDistribution {
   positive: number;
   neutral: number;
@@ -321,6 +328,7 @@ export interface InvestigationDetail extends InvestigationSummary {
   stepSummaries: PipelineStepSummary[];
   providerReviews: ProviderReviewSummary[];
   hoaxSignals: HoaxSignal[];
+  profilePersonalizationReview: ProfilePersonalizationReview | null;
   singaporeAuthorityReview: SingaporeAuthorityReview | null;
   sentiment: SentimentDistribution | null;
   consensus: ConsensusBreakdown | null;

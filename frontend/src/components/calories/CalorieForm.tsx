@@ -1,21 +1,16 @@
 // @ts-nocheck
 import React from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { palette } from "../../data";
 
-const activityOptions = [
-  { label: "Sedentary", value: "sedentary" },
-  { label: "Light", value: "light" },
-  { label: "Moderate", value: "moderate" },
-  { label: "Active", value: "active" },
-  { label: "Very active", value: "very_active" }
+const TYPE_OPTIONS = ["Auto", "Food", "Drink", "Food and Drink"];
+const BOOLEAN_OPTIONS = [
+  { label: "Yes", value: "yes" },
+  { label: "No", value: "no" },
 ];
-
-const sexOptions = [
-  { label: "Female", value: "female" },
-  { label: "Male", value: "male" }
-];
+const HUNGER_OPTIONS = ["1", "2", "3", "4", "5"];
 
 export default function CalorieForm({
   values,
@@ -34,82 +29,143 @@ export default function CalorieForm({
   selectedImageUri,
   selectedImageAspectRatio,
   onPickImage,
-  onSubmit
+  onSubmit,
+  aspectRatio,
+  onAspectRatioChange,
+  onOpenCrop
 }) {
   return (
     <View style={styles.card}>
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <Text style={styles.label}>Age</Text>
-          <TextInput
-            style={styles.input}
-            value={values.age}
-            onChangeText={(value) => onChange("age", value)}
-            placeholder="25"
-            keyboardType="numeric"
-            editable={!loading}
-          />
-        </View>
-        <View style={styles.half}>
-          <Text style={styles.label}>BMI</Text>
-          <View style={styles.readOnlyValue}>
-            <Text style={styles.readOnlyValueText}>{values.bmi || "--"}</Text>
+      <View style={styles.heroHeader}>
+        <Text style={styles.heroEyebrow}>Analyse</Text>
+        <Text style={styles.heroTitle}>Food and drink intake</Text>
+      </View>
+
+      <View style={styles.inputBox}>
+        <Text style={styles.inputBoxTitle}>Describe</Text>
+        <TextInput
+          style={styles.descriptionInput}
+          value={values.mealDescription}
+          onChangeText={(value) => onChange("mealDescription", value)}
+          placeholder="Describe your meal or drink..."
+          placeholderTextColor={palette.muted}
+          multiline
+        />
+      </View>
+
+      <View style={styles.orRow}>
+        <View style={styles.orLine} />
+        <Text style={styles.orText}>OR</Text>
+        <View style={styles.orLine} />
+      </View>
+
+      <View style={styles.inputBox}>
+        <Text style={styles.inputBoxTitle}>Scan</Text>
+        {webcamEnabled ? (
+          <View style={styles.scanActionRow}>
+            <Pressable style={styles.scanButton} onPress={onCaptureImage} disabled={loading}>
+              <MaterialCommunityIcons name="camera-outline" size={18} color={palette.primary} />
+              <Text style={styles.scanButtonText}>Camera</Text>
+            </Pressable>
+            <Pressable style={styles.scanButton} onPress={onPickImage} disabled={loading}>
+              <MaterialCommunityIcons name="image-outline" size={18} color={palette.primary} />
+              <Text style={styles.scanButtonText}>{selectedImageUri ? "Replace image" : "Upload image"}</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.scanActionRow}>
+            <Pressable style={styles.scanButton} onPress={onCaptureImage} disabled={loading}>
+              <MaterialCommunityIcons name="camera-outline" size={18} color={palette.primary} />
+              <Text style={styles.scanButtonText}>Use camera</Text>
+            </Pressable>
+            <Pressable style={styles.scanButton} onPress={onPickImage} disabled={loading}>
+              <MaterialCommunityIcons name="image-outline" size={18} color={palette.primary} />
+              <Text style={styles.scanButtonText}>{selectedImageUri ? "Replace image" : "Upload image"}</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.profileCard}>
+        <Text style={styles.label}>Options</Text>
+        <View style={styles.optionSection}>
+          <Text style={styles.formLabel}>Type</Text>
+          <View style={styles.optionChipRow}>
+            {TYPE_OPTIONS.map((option) => {
+              const optionValue = option.toLowerCase();
+              const selected = (values.mealType || "").toLowerCase() === optionValue;
+              return (
+                <Pressable key={option} style={[styles.optionChip, selected && styles.optionChipActive]} onPress={() => onChange("mealType", optionValue)}>
+                  <Text style={[styles.optionChipText, selected && styles.optionChipTextActive]}>{option}</Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
-      </View>
-      <Text style={styles.hintText}>BMI Category: {bmiCategory}</Text>
-
-      <View style={styles.row}>
-        <View style={styles.half}>
-          <Text style={styles.label}>Weight (kg)</Text>
-          <TextInput
-            style={styles.input}
-            value={values.weightKg}
-            onChangeText={(value) => onChange("weightKg", value)}
-            placeholder="65"
-            keyboardType="decimal-pad"
-            editable={!loading}
-          />
+        <View style={styles.optionSection}>
+          <Text style={styles.formLabel}>Hunger out of 5</Text>
+          <View style={styles.optionChipRow}>
+            {HUNGER_OPTIONS.map((option) => {
+              const selected = `${values.hungerLevel || ""}` === option;
+              return (
+                <Pressable key={option} style={[styles.optionChip, styles.optionChipTight, selected && styles.optionChipActive]} onPress={() => onChange("hungerLevel", option)}>
+                  <Text style={[styles.optionChipText, selected && styles.optionChipTextActive]}>{option}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
-        <View style={styles.half}>
-          <Text style={styles.label}>Height (cm)</Text>
-          <TextInput
-            style={styles.input}
-            value={values.heightCm}
-            onChangeText={(value) => onChange("heightCm", value)}
-            placeholder="170"
-            keyboardType="decimal-pad"
-            editable={!loading}
-          />
+        <View style={styles.formGrid}>
+          <View style={styles.formField}>
+            <Text style={styles.formLabel}>Date</Text>
+            <TextInput
+              style={styles.optionInput}
+              value={values.mealDate || ""}
+              onChangeText={(value) => onChange("mealDate", value)}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={palette.muted}
+            />
+          </View>
+          <View style={styles.formField}>
+            <Text style={styles.formLabel}>Time</Text>
+            <TextInput
+              style={styles.optionInput}
+              value={values.mealTime || ""}
+              onChangeText={(value) => onChange("mealTime", value)}
+              placeholder="HH:MM"
+              placeholderTextColor={palette.muted}
+            />
+          </View>
         </View>
-      </View>
-
-      <Text style={styles.label}>Sex</Text>
-      <View style={styles.segmentRow}>
-        {sexOptions.map((option) => (
-          <Pressable
-            key={option.value}
-            style={[styles.segmentButton, values.sex === option.value && styles.segmentButtonSelected]}
-            onPress={() => onChange("sex", option.value)}
-            disabled={loading}
-          >
-            <Text style={[styles.segmentButtonText, values.sex === option.value && styles.segmentButtonTextSelected]}>{option.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.label}>Activity level</Text>
-      <View style={styles.segmentRow}>
-        {activityOptions.map((option) => (
-          <Pressable
-            key={option.value}
-            style={[styles.segmentButton, values.activityLevel === option.value && styles.segmentButtonSelected]}
-            onPress={() => onChange("activityLevel", option.value)}
-            disabled={loading}
-          >
-            <Text style={[styles.segmentButtonText, values.activityLevel === option.value && styles.segmentButtonTextSelected]}>{option.label}</Text>
-          </Pressable>
-        ))}
+        <View style={styles.formGrid}>
+          <View style={styles.formField}>
+            <Text style={styles.formLabel}>Add to logs</Text>
+            <View style={styles.inlineBooleanRow}>
+              {BOOLEAN_OPTIONS.map((option) => {
+                const selected = (values.addToLogs || "").toLowerCase() === option.value;
+                return (
+                  <Pressable key={option.value} style={[styles.optionChip, styles.optionChipHalf, selected && styles.optionChipActive]} onPress={() => onChange("addToLogs", option.value)}>
+                    <Text style={[styles.optionChipText, selected && styles.optionChipTextActive]}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+          <View style={styles.formField}>
+            <Text style={styles.formLabel}>Load from profile</Text>
+            <View style={styles.inlineBooleanRow}>
+              {BOOLEAN_OPTIONS.map((option) => {
+                const selected = (values.includeProfile || "").toLowerCase() === option.value;
+                return (
+                  <Pressable key={option.value} style={[styles.optionChip, styles.optionChipHalf, selected && styles.optionChipActive]} onPress={() => onChange("includeProfile", option.value)}>
+                    <Text style={[styles.optionChipText, selected && styles.optionChipTextActive]}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+        <Text style={styles.hintText}>Goal fit and profile context are loaded automatically from your saved profile unless you switch profile off.</Text>
       </View>
 
       {webcamEnabled ? (
@@ -136,18 +192,25 @@ export default function CalorieForm({
         </View>
       ) : null}
 
-      <Pressable style={styles.pickButton} onPress={onCaptureImage} disabled={loading}>
-        <Text style={styles.pickButtonText}>Use camera</Text>
-      </Pressable>
-
-      <Pressable style={styles.pickButton} onPress={onPickImage} disabled={loading}>
-        <Text style={styles.pickButtonText}>{selectedImageUri ? "Replace meal image" : "Choose meal image"}</Text>
-      </Pressable>
-
-      {selectedImageUri ? <Image source={{ uri: selectedImageUri }} style={[styles.previewImage, { aspectRatio: selectedImageAspectRatio || 1.4 }]} resizeMode="contain" /> : null}
+      {selectedImageUri ? (
+        <>
+          <Image source={{ uri: selectedImageUri }} style={[styles.previewImage, { aspectRatio: selectedImageAspectRatio || 1.4 }]} resizeMode="contain" />
+          <View style={styles.cropRow}>
+            {["1:1", "4:3", "3:4", "16:9"].map((ratio) => (
+              <Pressable key={ratio} style={[styles.aspectChip, aspectRatio === ratio && styles.aspectChipActive]} onPress={() => onAspectRatioChange(ratio)}>
+                <Text style={[styles.aspectChipText, aspectRatio === ratio && styles.aspectChipTextActive]}>{ratio}</Text>
+              </Pressable>
+            ))}
+            <Pressable style={styles.cropAction} onPress={onOpenCrop}>
+              <MaterialCommunityIcons name="crop" size={16} color={palette.primary} />
+              <Text style={styles.cropActionText}>Adjust crop</Text>
+            </Pressable>
+          </View>
+        </>
+      ) : null}
 
       <Pressable style={[styles.submitButton, (loading || !selectedImageUri) && styles.submitButtonDisabled]} onPress={onSubmit} disabled={loading || !selectedImageUri}>
-        {loading ? <ActivityIndicator color={palette.surface} size="small" /> : <Text style={styles.submitButtonText}>Calculate calories</Text>}
+        {loading ? <ActivityIndicator color={palette.surface} size="small" /> : <Text style={styles.submitButtonText}>Analyse diet</Text>}
       </Pressable>
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -164,74 +227,174 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 12
   },
-  row: {
-    flexDirection: "row",
+  heroCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    padding: 14,
     gap: 10
   },
-  half: {
+  heroHeader: {
+    gap: 4
+  },
+  inputBox: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    padding: 14,
+    gap: 10
+  },
+  inputBoxTitle: {
+    color: palette.ink,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 16
+  },
+  orRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  orLine: {
     flex: 1,
-    gap: 8
+    height: 1,
+    backgroundColor: palette.border
+  },
+  orText: {
+    color: palette.muted,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12
+  },
+  scanActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    flexWrap: "wrap"
+  },
+  scanButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 12
+  },
+  scanButtonText: {
+    color: palette.ink,
+    fontSize: 14,
+    fontFamily: "Poppins_600SemiBold"
+  },
+  heroEyebrow: {
+    color: palette.primary,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12,
+    textTransform: "uppercase"
+  },
+  heroTitle: {
+    color: palette.ink,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 18
+  },
+  descriptionInput: {
+    minHeight: 80,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    color: palette.ink,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontFamily: "Poppins_400Regular",
+    textAlignVertical: "top"
+  },
+  profileCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    padding: 12,
+    gap: 10
   },
   label: {
     color: palette.ink,
     fontFamily: "Poppins_600SemiBold",
     fontSize: 13
   },
-  input: {
-    minHeight: 46,
-    borderRadius: 16,
+  formGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  optionSection: {
+    gap: 6,
+  },
+  optionChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  inlineBooleanRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  formField: {
+    width: "48%",
+    gap: 4
+  },
+  formLabel: {
+    color: palette.muted,
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold"
+  },
+  optionInput: {
+    minHeight: 48,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
+    paddingHorizontal: 12,
     color: palette.ink,
+    fontFamily: "Poppins_500Medium",
+    fontSize: 14
+  },
+  optionChip: {
+    minHeight: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontFamily: "Poppins_400Regular"
+    justifyContent: "center",
+  },
+  optionChipTight: {
+    minWidth: 52,
+    alignItems: "center",
+  },
+  optionChipHalf: {
+    flex: 1,
+    alignItems: "center",
+  },
+  optionChipActive: {
+    borderColor: palette.primary,
+    backgroundColor: palette.primarySoft,
+  },
+  optionChipText: {
+    color: palette.ink,
+    fontSize: 13,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  optionChipTextActive: {
+    color: palette.primary,
   },
   hintText: {
     color: palette.muted,
     fontSize: 12,
+    lineHeight: 18,
     fontFamily: "Poppins_400Regular"
-  },
-  readOnlyValue: {
-    minHeight: 46,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    justifyContent: "center"
-  },
-  readOnlyValueText: {
-    color: palette.ink,
-    fontFamily: "Poppins_700Bold",
-    fontSize: 16
-  },
-  segmentRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
-  },
-  segmentButton: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: palette.border,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    backgroundColor: palette.surfaceSoft
-  },
-  segmentButtonSelected: {
-    borderColor: palette.primary,
-    backgroundColor: palette.primarySoft
-  },
-  segmentButtonText: {
-    color: palette.ink,
-    fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
-  },
-  segmentButtonTextSelected: {
-    color: palette.primary
   },
   pickButton: {
     borderRadius: 16,
@@ -241,6 +404,11 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 14,
     alignItems: "center"
+  },
+  pickButtonText: {
+    color: palette.ink,
+    fontSize: 14,
+    fontFamily: "Poppins_600SemiBold"
   },
   webcamPanel: {
     borderRadius: 18,
@@ -263,60 +431,97 @@ const styles = StyleSheet.create({
     gap: 8
   },
   webcamPrimaryButton: {
+    flex: 1,
     borderRadius: 14,
     backgroundColor: palette.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    alignItems: "center"
-  },
-  webcamPrimaryText: {
-    color: palette.surface,
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 11
   },
   webcamSecondaryButton: {
+    flex: 1,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    alignItems: "center"
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 11
+  },
+  webcamPrimaryText: {
+    color: palette.surface,
+    fontFamily: "Poppins_600SemiBold"
   },
   webcamSecondaryText: {
     color: palette.ink,
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12
-  },
-  pickButtonText: {
-    color: palette.primary,
     fontFamily: "Poppins_600SemiBold"
   },
   previewImage: {
     width: "100%",
-    maxHeight: 260,
     borderRadius: 18,
-    backgroundColor: palette.surfaceSoft,
     borderWidth: 1,
-    borderColor: palette.border
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    maxHeight: 280
+  },
+  cropRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center"
+  },
+  aspectChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  aspectChipActive: {
+    backgroundColor: palette.primarySoft,
+    borderColor: palette.primary
+  },
+  aspectChipText: {
+    color: palette.ink,
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold"
+  },
+  aspectChipTextActive: {
+    color: palette.primary
+  },
+  cropAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: palette.primarySoft
+  },
+  cropActionText: {
+    color: palette.primary,
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold"
   },
   submitButton: {
     borderRadius: 16,
     backgroundColor: palette.primary,
-    paddingVertical: 12,
-    alignItems: "center"
+    paddingVertical: 13,
+    alignItems: "center",
+    justifyContent: "center"
   },
   submitButtonDisabled: {
-    opacity: 0.55
+    opacity: 0.5
   },
   submitButtonText: {
     color: palette.surface,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_700Bold",
+    fontSize: 15
   },
   errorText: {
-    color: palette.red,
-    fontSize: 13,
-    lineHeight: 18,
-    fontFamily: "Poppins_400Regular"
+    color: palette.danger,
+    fontFamily: "Poppins_400Regular",
+    lineHeight: 20
   }
 });

@@ -5,8 +5,8 @@ def build_context(request: InvestigationCreateRequest) -> dict[str, str | list[s
     return {
         "claim": request.claim,
         "context": request.context,
+        "profileContext": request.profileContext,
         "sourceUrls": request.sourceUrls,
         "desiredDepth": request.desiredDepth,
         "mode": request.mode,
     }
-

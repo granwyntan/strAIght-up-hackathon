@@ -279,6 +279,7 @@ export default function AnalysisResult({ result, selectedImageUri, selectedImage
     const goalCards = parseGoalCards(sectionMap.get("quick match to user goals")?.content || "");
     const benefitCards = parseBenefitCards(sectionMap.get("benefits")?.content || "");
     const riskCards = parseRiskCards(sectionMap.get("risks and warnings")?.content || "");
+    const stackAnalysis = namedBullets(sectionMap.get("stack analysis")?.content || "");
     const personalization = namedBullets(sectionMap.get("personalization")?.content || "");
     const usage = namedBullets(sectionMap.get("usage guide")?.content || "");
     const evidence = namedBullets(sectionMap.get("evidence and transparency")?.content || "");
@@ -291,6 +292,7 @@ export default function AnalysisResult({ result, selectedImageUri, selectedImage
       "quick match to user goals",
       "plain language summary",
       "ingredient breakdown",
+      "stack analysis",
       "benefits",
       "risks and warnings",
       "personalization",
@@ -305,6 +307,7 @@ export default function AnalysisResult({ result, selectedImageUri, selectedImage
       goalCards,
       benefitCards,
       riskCards,
+      stackAnalysis,
       personalization,
       usage,
       evidence,
@@ -357,6 +360,11 @@ export default function AnalysisResult({ result, selectedImageUri, selectedImage
             </View>
           ) : null}
           {summary ? <Text style={styles.heroSummary}>{summary}</Text> : null}
+          {confidence && confidence.toLowerCase() !== "high" ? (
+            <Text style={styles.heroNuance}>
+              Supplement analysis carries more nuance than medicine review because label quality, ingredient overlap, and stack effects can vary across products.
+            </Text>
+          ) : null}
           {overallStructuredScores ? (
             <View style={styles.scoreRow}>
               <View style={styles.scoreStat}>
@@ -434,6 +442,13 @@ export default function AnalysisResult({ result, selectedImageUri, selectedImage
               );
             })}
           </View>
+        </View>
+      ) : null}
+
+      {parsed.stackAnalysis.length > 0 ? (
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Stack analysis</Text>
+          <SummaryList items={parsed.stackAnalysis} />
         </View>
       ) : null}
 
@@ -686,6 +701,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 24,
     color: palette.ink,
+  },
+  heroNuance: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 13,
+    lineHeight: 21,
+    color: palette.muted,
   },
   warningBox: {
     flexDirection: "row",

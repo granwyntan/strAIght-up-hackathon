@@ -1009,34 +1009,6 @@ export default function HomeDashboardPage({
         </Card.Content>
       </Card>
 
-      <SectionHeader eyebrow="Recent" title="Latest investigation" body="Tap back into the consultant view from your dashboard." />
-      {latest ? (
-        <TouchableRipple onPress={() => onOpenHistory(latest.id)} style={styles.recentCard}>
-          <View style={styles.cardStack}>
-            <View style={styles.rowBetweenStart}>
-              <Text variant="titleMedium" style={styles.linkTitle} numberOfLines={2} ellipsizeMode="tail">
-                {safeTrim(latest.claim) || "Untitled claim"}
-              </Text>
-              <Chip compact>{safeTrim(latest.verdict) || "mixed"}</Chip>
-            </View>
-            <Text variant="bodySmall" style={styles.sectionBody} numberOfLines={3} ellipsizeMode="tail">
-              {safeTrim(latest.summary) || "No summary available."}
-            </Text>
-            <Text variant="bodySmall" style={styles.historyMetaLine}>
-              {formatTimestamp(latest.createdAt)}
-            </Text>
-          </View>
-        </TouchableRipple>
-      ) : (
-        <Card mode="contained" style={styles.sectionCard}>
-          <Card.Content>
-            <Text variant="bodyMedium" style={styles.sectionBody}>
-              No investigations yet. Start one from 'Verify' tab.
-            </Text>
-          </Card.Content>
-        </Card>
-      )}
-
       <Modal visible={metricModalVisible} transparent animationType="fade" onRequestClose={() => setMetricModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalKeyboardWrap}>

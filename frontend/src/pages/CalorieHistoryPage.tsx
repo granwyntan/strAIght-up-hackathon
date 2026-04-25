@@ -4,7 +4,8 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 
 import { palette } from "../data";
 import WeeklyCalorieGraph from "../components/calories/WeeklyCalorieGraph";
-import { formatDisplayDate, formatDisplayDateLabel } from "../utils/dateTime";
+import SectionTabs from "../components/shared/SectionTabs";
+import { formatDisplayDate, formatDisplayDateLabel, formatDisplayDateTime, formatDisplayTime } from "../utils/dateTime";
 
 function formatRange(start, end) {
   if (!start || !end) {
@@ -17,8 +18,93 @@ function formatDayLabel(isoDate) {
   return formatDisplayDateLabel(`${isoDate}T00:00:00`) || isoDate;
 }
 
+function relativeDayLabel(isoDate) {
+  if (!isoDate) return "";
+  const today = new Date();
+  const base = new Date(`${isoDate}T00:00:00`);
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const targetMidnight = new Date(base.getFullYear(), base.getMonth(), base.getDate()).getTime();
+  const diffDays = Math.round((targetMidnight - todayMidnight) / 86400000);
+  if (diffDays === 0) return `Today • ${formatDayLabel(isoDate)}`;
+  if (diffDays === -1) return `Yesterday • ${formatDayLabel(isoDate)}`;
+  if (diffDays === 1) return `Tomorrow • ${formatDayLabel(isoDate)}`;
+  return formatDayLabel(isoDate);
+}
+
+function monthLabelFromKey(key) {
+  if (!key) return "";
+  const date = new Date(`${key}-01T00:00:00`);
+  return date.toLocaleDateString("en-GB", { month: "long" });
+}
+
+function entryTone(kind) {
+  if (kind === "hydration") {
+    return { background: `${palette.secondary}16`, color: palette.secondary, label: "Hydration" };
+  }
+  if (kind === "other") {
+    return { background: `${palette.warning}18`, color: palette.warning, label: "Other" };
+  }
+  return { background: palette.primarySoft, color: palette.primary, label: "Meal" };
+}
+
+function groupDaysIntoMonths(days) {
+  const grouped = new Map();
+  (Array.isArray(days) ? days : []).forEach((day) => {
+    const key = (day.date || "").slice(0, 7);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        date: key,
+        label: key,
+        totalCalories: 0,
+        hydrationMl: 0,
+        mealCount: 0,
+        hydrationCount: 0,
+        otherCount: 0,
+        entryCount: 0,
+      });
+    }
+    const target = grouped.get(key);
+    target.totalCalories += day.totalCalories || 0;
+    target.hydrationMl += day.hydrationMl || 0;
+    target.mealCount += day.mealCount || 0;
+    target.hydrationCount += day.hydrationCount || 0;
+    target.otherCount += day.otherCount || 0;
+    target.entryCount += day.entryCount || 0;
+  });
+  return Array.from(grouped.values());
+}
+
+function groupDaysIntoYears(days) {
+  const grouped = new Map();
+  (Array.isArray(days) ? days : []).forEach((day) => {
+    const key = (day.date || "").slice(0, 4);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        date: key,
+        label: key,
+        totalCalories: 0,
+        hydrationMl: 0,
+        mealCount: 0,
+        hydrationCount: 0,
+        otherCount: 0,
+        entryCount: 0,
+      });
+    }
+    const target = grouped.get(key);
+    target.totalCalories += day.totalCalories || 0;
+    target.hydrationMl += day.hydrationMl || 0;
+    target.mealCount += day.mealCount || 0;
+    target.hydrationCount += day.hydrationCount || 0;
+    target.otherCount += day.otherCount || 0;
+    target.entryCount += day.entryCount || 0;
+  });
+  return Array.from(grouped.values());
+}
+
 export default function CalorieHistoryPage({
   history,
+  runHistory,
+  initialMode = "logs",
   loading,
   onPrevWeek,
   onNextWeek,
@@ -26,13 +112,16 @@ export default function CalorieHistoryPage({
   onEditEntry,
   onDeleteEntry,
   onClearDayEntries,
+  onOpenRun,
+  onDeleteRun,
   actionLoading,
   trackerLoading,
-  trackerError
+  trackerError,
 }) {
   const days = history?.days || [];
   const entries = history?.entries || [];
   const totalWeekCalories = days.reduce((sum, day) => sum + (day.totalCalories || 0), 0);
+  const totalWeekHydration = days.reduce((sum, day) => sum + (day.hydrationMl || 0), 0);
 
   const entriesByDate = useMemo(() => {
     const grouped = {};
@@ -47,23 +136,112 @@ export default function CalorieHistoryPage({
   }, [entries]);
 
   const [selectedDate, setSelectedDate] = useState("");
-  const [newMealName, setNewMealName] = useState("");
+  const [historyView, setHistoryView] = useState("timeline");
+  const [newKind, setNewKind] = useState("meal");
+  const [newName, setNewName] = useState("");
   const [newCalories, setNewCalories] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+  const [newContext, setNewContext] = useState("");
+  const [newDate, setNewDate] = useState(formatDisplayDate(new Date()).split("/").reverse().join("-"));
+  const [newTime, setNewTime] = useState("12:00");
   const [dayError, setDayError] = useState("");
   const [editingId, setEditingId] = useState("");
-  const [editMealName, setEditMealName] = useState("");
+  const [editName, setEditName] = useState("");
   const [editCalories, setEditCalories] = useState("");
+  const [runSearch, setRunSearch] = useState("");
+  const [pinnedRunIds, setPinnedRunIds] = useState([]);
+  const historyKind = initialMode === "runs" ? "runs" : "logs";
+  const timeFrameLabel =
+    historyView === "timeline"
+      ? "Timeline"
+      : historyView === "day"
+        ? "Day"
+        : historyView === "week"
+          ? "Week"
+          : historyView === "month"
+            ? "Month"
+            : "Year";
+  const sortedTimelineDays = useMemo(
+    () => [...days].filter((day) => day.entryCount > 0).sort((a, b) => `${a.date || ""}`.localeCompare(`${b.date || ""}`)),
+    [days]
+  );
+  const monthGroups = useMemo(() => groupDaysIntoMonths(days), [days]);
+  const yearGroups = useMemo(() => groupDaysIntoYears(days), [days]);
+  const visibleDayLabel = useMemo(() => {
+    if (historyView === "day") {
+      const target = days[days.length - 1]?.date || "";
+      return relativeDayLabel(target);
+    }
+    if (historyView === "week") {
+      return formatRange(history?.weekStart, history?.weekEnd);
+    }
+    if (historyView === "month") {
+      return monthLabelFromKey(monthGroups[monthGroups.length - 1]?.date || "");
+    }
+    if (historyView === "year") {
+      return yearGroups[yearGroups.length - 1]?.date || "";
+    }
+    if (sortedTimelineDays.length > 0) {
+      return `${formatDayLabel(sortedTimelineDays[0].date)} → ${formatDayLabel(sortedTimelineDays[sortedTimelineDays.length - 1].date)}`;
+    }
+    return "No saved logs yet";
+  }, [days, history?.weekEnd, history?.weekStart, historyView, monthGroups, sortedTimelineDays, yearGroups]);
+  const intakeHeading =
+    historyView === "timeline"
+      ? "Intake in range"
+      : historyView === "day"
+        ? "Intake today"
+        : historyView === "week"
+          ? "Intake this week"
+          : historyView === "month"
+            ? "Intake this month"
+            : "Intake this year";
+  const hydrationHeading =
+    historyView === "timeline"
+      ? "Hydration in range"
+      : historyView === "day"
+        ? "Hydration today"
+        : historyView === "week"
+          ? "Hydration this week"
+          : historyView === "month"
+            ? "Hydration this month"
+            : "Hydration this year";
+  const filteredRuns = useMemo(() => {
+    const query = (runSearch || "").trim().toLowerCase();
+    const items = Array.isArray(runHistory) ? [...runHistory] : [];
+    const visible = !query
+      ? items
+      : items.filter((run) =>
+          `${run.title || ""} ${run.summary || ""} ${run.kind || ""}`.toLowerCase().includes(query)
+        );
+    return visible.sort((a, b) => {
+      const aPinned = pinnedRunIds.includes(a.id) ? 1 : 0;
+      const bPinned = pinnedRunIds.includes(b.id) ? 1 : 0;
+      if (aPinned !== bPinned) {
+        return bPinned - aPinned;
+      }
+      return `${b.searchedAt || ""}`.localeCompare(`${a.searchedAt || ""}`);
+    });
+  }, [pinnedRunIds, runHistory, runSearch]);
 
   const selectedDayEntries = selectedDate ? entriesByDate[selectedDate] || [] : [];
   const selectedDayTotal = selectedDayEntries.reduce((sum, entry) => sum + Number(entry.calories || 0), 0);
+  const selectedHydrationTotal = selectedDayEntries
+    .filter((entry) => entry.kind === "hydration")
+    .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
 
   const openDayDetails = (dayDate) => {
     setSelectedDate(dayDate);
     setDayError("");
-    setNewMealName("");
+    setNewKind("meal");
+    setNewName("");
     setNewCalories("");
+    setNewAmount("");
+    setNewContext("");
+    setNewDate(dayDate);
+    setNewTime("12:00");
     setEditingId("");
-    setEditMealName("");
+    setEditName("");
     setEditCalories("");
   };
 
@@ -77,43 +255,52 @@ export default function CalorieHistoryPage({
     if (!selectedDate) {
       return;
     }
-    const parsedCalories = Number(newCalories);
-    if (!Number.isFinite(parsedCalories) || parsedCalories <= 0) {
+    const parsedCalories = Number(newCalories || 0);
+    const parsedAmount = Number(newAmount || (newKind === "hydration" ? 250 : 1));
+    if (newKind !== "hydration" && (!Number.isFinite(parsedCalories) || parsedCalories < 0)) {
       setDayError("Enter valid calories before adding.");
       return;
     }
     setDayError("");
     const added = await onAddEntry?.({
-      date: selectedDate,
-      mealName: newMealName,
-      calories: parsedCalories
+      date: newDate || selectedDate,
+      mealName: newName,
+      calories: parsedCalories,
+      kind: newKind,
+      amount: parsedAmount,
+      unit: newKind === "hydration" ? "ml" : "serving",
+      servings: 1,
+      context: newContext || (newKind === "hydration" ? "Hydration" : "Meal"),
+      entryTime: newTime,
     });
     if (added) {
-      setNewMealName("");
+      setNewName("");
       setNewCalories("");
+      setNewAmount("");
+      setNewContext("");
     }
   };
 
   const beginEdit = (entry) => {
     setEditingId(entry.id);
-    setEditMealName(entry.mealName || "");
+    setEditName(entry.name || entry.mealName || "");
     setEditCalories(String(entry.calories || ""));
   };
 
   const cancelEdit = () => {
     setEditingId("");
-    setEditMealName("");
+    setEditName("");
     setEditCalories("");
   };
 
   const saveEdit = async (entryId) => {
     const parsedCalories = Number(editCalories);
-    if (!Number.isFinite(parsedCalories) || parsedCalories <= 0) {
+    if (!Number.isFinite(parsedCalories) || parsedCalories < 0) {
       setDayError("Enter valid calories before saving.");
       return;
     }
     setDayError("");
-    await onEditEntry?.(entryId, { mealName: editMealName, calories: Math.round(parsedCalories) });
+    await onEditEntry?.(entryId, { mealName: editName, calories: Math.round(parsedCalories) });
     cancelEdit();
   };
 
@@ -125,78 +312,216 @@ export default function CalorieHistoryPage({
     await onClearDayEntries?.(selectedDate);
   };
 
+  const togglePinnedRun = (runId) => {
+    setPinnedRunIds((current) => (current.includes(runId) ? current.filter((id) => id !== runId) : [runId, ...current]));
+  };
+
   return (
     <View style={styles.pageStack}>
-      <View style={styles.heroPanel}>
-        <Text style={styles.chip}>Calorie history</Text>
-        <Text style={styles.heroTitle}>Weekly intake overview</Text>
-        <Text style={styles.heroSubtitle}>Track daily totals, switch weeks, and open each day to manage entries.</Text>
+      {historyKind === "logs" ? (
+        <SectionTabs
+          value={historyView}
+          onValueChange={setHistoryView}
+          tabs={[
+            { value: "timeline", label: "Timeline", icon: "timeline-outline" },
+            { value: "day", label: "Day", icon: "calendar-today" },
+            { value: "week", label: "Week", icon: "chart-line" },
+            { value: "month", label: "Month", icon: "calendar-month" },
+            { value: "year", label: "Year", icon: "calendar-range" },
+          ]}
+        />
+      ) : null}
 
-        <View style={styles.weekNavRow}>
-          <Pressable style={styles.arrowButton} onPress={onPrevWeek}>
-            <Text style={styles.arrowText}>←</Text>
-          </Pressable>
-          <Text style={styles.weekRange}>{formatRange(history?.weekStart, history?.weekEnd)}</Text>
-          <Pressable style={styles.arrowButton} onPress={onNextWeek}>
-            <Text style={styles.arrowText}>→</Text>
-          </Pressable>
+      <View style={styles.heroPanel}>
+        <Text style={styles.chip}>{historyKind === "runs" ? "Previous runs" : "Consumable logs"}</Text>
+        <Text style={styles.heroTitle}>{historyKind === "runs" ? "Saved food and drink analyses" : "Meals, hydration, and other intake"}</Text>
+        <Text style={styles.heroSubtitle}>
+          {historyKind === "runs"
+            ? "Open a past AI analysis to review the full breakdown, score, and tailored recommendations again."
+            : "Track what you consumed, when you logged it, and how those entries connect back to your personalized diet advice."}
+        </Text>
+
+        {historyKind === "logs" ? null : null}
+      </View>
+
+      {historyKind === "logs" ? <WeeklyCalorieGraph days={days} entries={entries} mode={historyView} timeframeLabel={timeFrameLabel} /> : null}
+
+      {historyKind === "logs" ? (
+          <View style={styles.weekNavRow}>
+            <Pressable style={styles.arrowButton} onPress={onPrevWeek}>
+              <Text style={styles.arrowText}>←</Text>
+            </Pressable>
+            <Text style={styles.weekRange}>{visibleDayLabel}</Text>
+            <Pressable style={styles.arrowButton} onPress={onNextWeek}>
+              <Text style={styles.arrowText}>→</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+      {historyKind === "logs" ? (
+      <View style={styles.summaryRow}>
+        <View style={styles.statsCard}>
+          <Text style={styles.statTitle}>{intakeHeading}</Text>
+          <Text style={styles.statValue}>{totalWeekCalories} kcal</Text>
+        </View>
+        <View style={styles.statsCard}>
+          <Text style={styles.statTitle}>{hydrationHeading}</Text>
+          <Text style={styles.statValue}>{totalWeekHydration} ml</Text>
         </View>
       </View>
+      ) : null}
 
-      <WeeklyCalorieGraph days={days} />
-
-      <View style={styles.statsCard}>
-        <Text style={styles.statTitle}>Week total</Text>
-        <Text style={styles.statValue}>{totalWeekCalories} kcal</Text>
-      </View>
-
+      {historyKind === "logs" ? (
       <View style={styles.listCard}>
-        <Text style={styles.listTitle}>Daily totals</Text>
-        {days.map((day) => (
-          <Pressable key={day.date} style={styles.dayRow} onPress={() => openDayDetails(day.date)}>
-            <View style={styles.dayTextWrap}>
-              <Text style={styles.dayDate}>{formatDayLabel(day.date)}</Text>
-              <Text style={styles.entryMeta}>Tap to view day details</Text>
+        <Text style={styles.listTitle}>Daily log</Text>
+        {(historyView === "month"
+          ? monthGroups
+          : historyView === "year"
+            ? yearGroups
+            : historyView === "timeline"
+              ? sortedTimelineDays
+              : days).map((day) => (
+          <Pressable key={day.date} style={styles.dayCard} onPress={() => openDayDetails(day.date)}>
+            <View style={styles.dayHeader}>
+              <View style={styles.dayTextWrap}>
+                <Text style={styles.dayDate}>
+                  {historyView === "month"
+                    ? monthLabelFromKey(day.date)
+                    : historyView === "year"
+                      ? day.label
+                      : historyView === "day"
+                        ? relativeDayLabel(day.date)
+                        : formatDayLabel(day.date)}
+                </Text>
+                <Text style={styles.entryMeta}>{historyView === "timeline" ? "Sorted from oldest to newest." : "Tap to open the full log for this period"}</Text>
+              </View>
+              <View style={styles.dayRight}>
+                <Text style={styles.dayCalories}>{day.totalCalories} kcal</Text>
+                <Text style={styles.dayHydration}>{day.hydrationMl || 0} ml</Text>
+              </View>
             </View>
-            <View style={styles.dayRight}>
-              <Text style={styles.dayCalories}>{day.totalCalories} kcal</Text>
-              <Text style={styles.entryMeta}>{day.entryCount} entries</Text>
+            <View style={styles.dayMetricsRow}>
+              <MiniPill label={`${day.mealCount || 0} meals`} tone="primary" />
+              <MiniPill label={`${day.hydrationCount || 0} drinks`} tone="secondary" />
+              <MiniPill label={`${day.otherCount || 0} other`} tone="warning" />
+              <MiniPill label={`${day.entryCount || 0} logs`} tone="neutral" />
             </View>
           </Pressable>
         ))}
       </View>
+      ) : (
+        <View style={styles.listCard}>
+          <Text style={styles.listTitle}>Previous consumable analyses</Text>
+          <Text style={styles.entryMeta}>These are your saved food and drink analysis runs with the full breakdown preserved.</Text>
+          <TextInput
+            style={styles.input}
+            value={runSearch}
+            onChangeText={setRunSearch}
+            placeholder="Search previous runs"
+            placeholderTextColor={palette.muted}
+          />
+          {filteredRuns.length === 0 ? <Text style={styles.entryMeta}>No saved runs yet.</Text> : null}
+          {filteredRuns.map((run) => {
+            const tone = entryTone(run.kind);
+            const pinned = pinnedRunIds.includes(run.id);
+            return (
+              <Pressable key={run.id} style={styles.dayCard} onPress={() => onOpenRun?.(run)}>
+                <View style={styles.rowBetween}>
+                  <View style={styles.entryMain}>
+                    <Text style={styles.entryMeal}>{run.title || "Consumable analysis"}</Text>
+                    <Text style={styles.entryMeta}>{formatDisplayDateTime(run.searchedAt)}</Text>
+                    {run.summary ? <Text style={styles.entryMeta}>{run.summary}</Text> : null}
+                  </View>
+                  <View style={[styles.kindBadge, { backgroundColor: tone.background }]}>
+                    <Text style={[styles.kindBadgeText, { color: tone.color }]}>{tone.label}</Text>
+                  </View>
+                </View>
+                <View style={styles.entryActionRow}>
+                  <Pressable style={styles.ghostButton} onPress={() => togglePinnedRun(run.id)}>
+                    <Text style={styles.ghostButtonText}>{pinned ? "Unpin" : "Pin"}</Text>
+                  </Pressable>
+                  <Pressable style={styles.ghostButton} onPress={() => onOpenRun?.(run)}>
+                    <Text style={styles.ghostButtonText}>Open</Text>
+                  </Pressable>
+                  <Pressable style={styles.dangerButton} onPress={() => onDeleteRun?.(run.id)}>
+                    <Text style={styles.dangerButtonText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       <Modal visible={Boolean(selectedDate)} transparent animationType="slide" onRequestClose={closeDayDetails}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{selectedDate ? formatDayLabel(selectedDate) : "Day details"}</Text>
-            <Text style={styles.modalSubtitle}>{selectedDayTotal} kcal · {selectedDayEntries.length} entries</Text>
+            <Text style={styles.modalSubtitle}>{selectedDayTotal} kcal · {selectedHydrationTotal} ml · {selectedDayEntries.length} logs</Text>
 
             <View style={styles.addCard}>
-              <Text style={styles.addTitle}>Add entry</Text>
-              <TextInput
-                style={styles.input}
-                value={newMealName}
-                onChangeText={setNewMealName}
-                placeholder="Meal name (optional)"
-                editable={!trackerLoading}
-              />
-              <TextInput
-                style={styles.input}
-                value={newCalories}
-                onChangeText={setNewCalories}
-                placeholder="Calories"
-                keyboardType="numeric"
-                editable={!trackerLoading}
-              />
+              <Text style={styles.addTitle}>Quick add</Text>
+              <View style={styles.kindRow}>
+                {[
+                  ["meal", "Meal"],
+                  ["hydration", "Hydration"],
+                  ["other", "Other"],
+                ].map(([value, label]) => (
+                  <Pressable key={value} style={[styles.kindChip, newKind === value && styles.kindChipActive]} onPress={() => setNewKind(value)}>
+                    <Text style={[styles.kindChipText, newKind === value && styles.kindChipTextActive]}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.formGrid}>
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>Name</Text>
+                  <TextInput style={styles.input} value={newName} onChangeText={setNewName} placeholder="Meal or drink" editable={!trackerLoading} placeholderTextColor={palette.muted} />
+                </View>
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>Context</Text>
+                  <TextInput style={styles.input} value={newContext} onChangeText={setNewContext} placeholder="Breakfast, lunch..." editable={!trackerLoading} placeholderTextColor={palette.muted} />
+                </View>
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>Date</Text>
+                  <TextInput style={styles.input} value={newDate} onChangeText={setNewDate} placeholder="YYYY-MM-DD" editable={!trackerLoading} placeholderTextColor={palette.muted} />
+                </View>
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>Time</Text>
+                  <TextInput style={styles.input} value={newTime} onChangeText={setNewTime} placeholder="HH:MM" editable={!trackerLoading} placeholderTextColor={palette.muted} />
+                </View>
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>{newKind === "hydration" ? "Calories (optional)" : "Calories"}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newCalories}
+                    onChangeText={setNewCalories}
+                    placeholder={newKind === "hydration" ? "0" : "420"}
+                    keyboardType="numeric"
+                    editable={!trackerLoading}
+                    placeholderTextColor={palette.muted}
+                  />
+                </View>
+                <View style={styles.formField}>
+                  <Text style={styles.formLabel}>{newKind === "hydration" ? "Amount (ml)" : "Quantity"}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newAmount}
+                    onChangeText={setNewAmount}
+                    placeholder={newKind === "hydration" ? "350" : "1"}
+                    keyboardType="numeric"
+                    editable={!trackerLoading}
+                    placeholderTextColor={palette.muted}
+                  />
+                </View>
+              </View>
               <Pressable style={[styles.actionButton, trackerLoading && styles.buttonDisabled]} onPress={() => void addEntryForSelectedDay()} disabled={trackerLoading}>
-                <Text style={styles.actionButtonText}>{trackerLoading ? "Adding..." : "Add entry"}</Text>
+                <Text style={styles.actionButtonText}>{trackerLoading ? "Adding..." : "Add log item"}</Text>
               </Pressable>
             </View>
 
             <View style={styles.modalHeaderActions}>
               <Pressable style={[styles.dangerButton, actionLoading && styles.buttonDisabled]} onPress={() => void clearSelectedDay()} disabled={actionLoading}>
-                <Text style={styles.dangerButtonText}>Clear All Entries</Text>
+                <Text style={styles.dangerButtonText}>Clear day</Text>
               </Pressable>
               <Pressable style={styles.ghostButton} onPress={closeDayDetails}>
                 <Text style={styles.ghostButtonText}>Close</Text>
@@ -206,43 +531,55 @@ export default function CalorieHistoryPage({
             {dayError ? <Text style={styles.errorText}>{dayError}</Text> : null}
             {trackerError ? <Text style={styles.errorText}>{trackerError}</Text> : null}
 
-            <ScrollView style={styles.entryScroller} nestedScrollEnabled>
+            <ScrollView style={styles.entryScroller} nestedScrollEnabled contentContainerStyle={styles.entryScrollerContent}>
               {loading ? <Text style={styles.entryMeta}>Loading entries...</Text> : null}
-              {!loading && selectedDayEntries.length === 0 ? <Text style={styles.entryMeta}>No entries for this day.</Text> : null}
+              {!loading && selectedDayEntries.length === 0 ? <Text style={styles.entryMeta}>No logs for this day.</Text> : null}
               {!loading &&
-                selectedDayEntries.map((entry) => (
-                  <View key={entry.id} style={styles.entryRow}>
-                    {editingId === entry.id ? (
-                      <View style={styles.editRow}>
-                        <TextInput style={styles.input} value={editMealName} onChangeText={setEditMealName} placeholder="Meal name" />
-                        <TextInput style={styles.input} value={editCalories} onChangeText={setEditCalories} placeholder="Calories" keyboardType="numeric" />
-                        <View style={styles.entryActionRow}>
-                          <Pressable style={styles.actionButton} onPress={() => void saveEdit(entry.id)} disabled={actionLoading}>
-                            <Text style={styles.actionButtonText}>Save</Text>
-                          </Pressable>
-                          <Pressable style={styles.ghostButton} onPress={cancelEdit} disabled={actionLoading}>
-                            <Text style={styles.ghostButtonText}>Cancel</Text>
-                          </Pressable>
+                selectedDayEntries.map((entry) => {
+                  const tone = entryTone(entry.kind);
+                  return (
+                    <View key={entry.id} style={styles.entryRow}>
+                      {editingId === entry.id ? (
+                        <View style={styles.editRow}>
+                          <TextInput style={styles.input} value={editName} onChangeText={setEditName} placeholder="Name" />
+                          <TextInput style={styles.input} value={editCalories} onChangeText={setEditCalories} placeholder="Calories" keyboardType="numeric" />
+                          <View style={styles.entryActionRow}>
+                            <Pressable style={styles.actionButton} onPress={() => void saveEdit(entry.id)} disabled={actionLoading}>
+                              <Text style={styles.actionButtonText}>Save</Text>
+                            </Pressable>
+                            <Pressable style={styles.ghostButton} onPress={cancelEdit} disabled={actionLoading}>
+                              <Text style={styles.ghostButtonText}>Cancel</Text>
+                            </Pressable>
+                          </View>
                         </View>
-                      </View>
-                    ) : (
-                      <>
-                        <View style={styles.entryMain}>
-                          <Text style={styles.entryMeal}>{entry.mealName || "Meal"}</Text>
-                          <Text style={styles.entryMeta}>{entry.calories} kcal</Text>
-                        </View>
-                        <View style={styles.entryActionRow}>
-                          <Pressable style={styles.ghostButton} onPress={() => beginEdit(entry)} disabled={actionLoading}>
-                            <Text style={styles.ghostButtonText}>Edit</Text>
-                          </Pressable>
-                          <Pressable style={styles.dangerButton} onPress={() => void onDeleteEntry?.(entry.id)} disabled={actionLoading}>
-                            <Text style={styles.dangerButtonText}>Delete</Text>
-                          </Pressable>
-                        </View>
-                      </>
-                    )}
-                  </View>
-                ))}
+                      ) : (
+                        <>
+                          <View style={styles.rowBetween}>
+                            <View style={styles.entryMain}>
+                              <Text style={styles.entryMeal}>{entry.name || "Log item"}</Text>
+                              <Text style={styles.entryMeta}>
+                                {(entry.context || tone.label)}
+                                {entry.kind === "hydration" ? ` · ${entry.amount || 0} ${entry.unit || "ml"}` : ` · ${entry.calories || 0} kcal`}
+                              </Text>
+                              <Text style={styles.entryMeta}>{formatDisplayTime(entry.loggedAt || entry.createdAt)}</Text>
+                            </View>
+                            <View style={[styles.kindBadge, { backgroundColor: tone.background }]}>
+                              <Text style={[styles.kindBadgeText, { color: tone.color }]}>{tone.label}</Text>
+                            </View>
+                          </View>
+                          <View style={styles.entryActionRow}>
+                            <Pressable style={styles.ghostButton} onPress={() => beginEdit(entry)} disabled={actionLoading}>
+                              <Text style={styles.ghostButtonText}>Edit</Text>
+                            </Pressable>
+                            <Pressable style={styles.dangerButton} onPress={() => void onDeleteEntry?.(entry.id)} disabled={actionLoading}>
+                              <Text style={styles.dangerButtonText}>Delete</Text>
+                            </Pressable>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  );
+                })}
             </ScrollView>
           </View>
         </View>
@@ -251,9 +588,24 @@ export default function CalorieHistoryPage({
   );
 }
 
+function MiniPill({ label, tone }) {
+  const paletteMap = {
+    primary: { backgroundColor: palette.primarySoft, color: palette.primary },
+    secondary: { backgroundColor: `${palette.secondary}18`, color: palette.secondary },
+    warning: { backgroundColor: `${palette.warning}18`, color: palette.warning },
+    neutral: { backgroundColor: palette.surfaceSoft, color: palette.ink },
+  };
+  const colors = paletteMap[tone] || paletteMap.neutral;
+  return (
+    <View style={[styles.miniPill, { backgroundColor: colors.backgroundColor }]}>
+      <Text style={[styles.miniPillText, { color: colors.color }]}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   pageStack: {
-    gap: 14
+    gap: 14,
   },
   heroPanel: {
     borderRadius: 26,
@@ -261,7 +613,7 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     padding: 18,
     backgroundColor: palette.surface,
-    gap: 8
+    gap: 8,
   },
   chip: {
     alignSelf: "flex-start",
@@ -271,26 +623,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 5,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
   },
   heroTitle: {
     color: palette.ink,
     fontSize: 21,
     lineHeight: 28,
-    fontFamily: "Poppins_700Bold"
+    fontFamily: "Poppins_700Bold",
   },
   heroSubtitle: {
     color: palette.muted,
     fontSize: 13,
     lineHeight: 20,
-    fontFamily: "Poppins_400Regular"
+    fontFamily: "Poppins_400Regular",
   },
   weekNavRow: {
     marginTop: 4,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10
+    gap: 10,
   },
   arrowButton: {
     width: 38,
@@ -300,35 +652,42 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
   },
   arrowText: {
     color: palette.ink,
     fontSize: 18,
-    fontFamily: "Poppins_700Bold"
+    fontFamily: "Poppins_700Bold",
   },
   weekRange: {
     flex: 1,
     textAlign: "center",
     color: palette.ink,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
+  },
+  summaryRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
   },
   statsCard: {
+    flex: 1,
+    minWidth: 150,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
-    padding: 14
+    padding: 14,
   },
   statTitle: {
     color: palette.muted,
     fontSize: 12,
-    fontFamily: "Poppins_400Regular"
+    fontFamily: "Poppins_400Regular",
   },
   statValue: {
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
-    fontSize: 24
+    fontSize: 24,
   },
   listCard: {
     borderRadius: 14,
@@ -336,60 +695,84 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     backgroundColor: palette.surface,
     padding: 14,
-    gap: 8
+    gap: 10,
   },
   listTitle: {
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
-    fontSize: 14
+    fontSize: 14,
   },
-  dayRow: {
+  dayCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    padding: 12,
+    gap: 10,
+  },
+  dayHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: palette.border,
-    paddingBottom: 8,
-    paddingTop: 2
+    gap: 10,
   },
   dayTextWrap: {
-    flex: 1
+    flex: 1,
   },
   dayRight: {
-    alignItems: "flex-end"
+    alignItems: "flex-end",
+    gap: 2,
   },
   dayDate: {
     color: palette.ink,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
   },
   dayCalories: {
     color: palette.primary,
-    fontFamily: "Poppins_700Bold"
+    fontFamily: "Poppins_700Bold",
+  },
+  dayHydration: {
+    color: palette.secondary,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 12,
+  },
+  dayMetricsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  miniPill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  miniPillText: {
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold",
   },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
     justifyContent: "center",
-    padding: 16
+    padding: 16,
   },
   modalCard: {
-    maxHeight: "88%",
+    maxHeight: "90%",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
     padding: 14,
-    gap: 10
+    gap: 10,
   },
   modalTitle: {
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
-    fontSize: 16
+    fontSize: 16,
   },
   modalSubtitle: {
     color: palette.muted,
     fontSize: 13,
-    fontFamily: "Poppins_400Regular"
+    fontFamily: "Poppins_400Regular",
   },
   addCard: {
     borderRadius: 12,
@@ -397,12 +780,58 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
     padding: 10,
-    gap: 8
+    gap: 8,
   },
   addTitle: {
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
-    fontSize: 13
+    fontSize: 13,
+  },
+  kindRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  kindChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  kindChipActive: {
+    backgroundColor: palette.primarySoft,
+    borderColor: palette.primary,
+  },
+  kindChipText: {
+    color: palette.ink,
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  kindChipTextActive: {
+    color: palette.primary,
+  },
+  inlineInputs: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  inlineInput: {
+    flex: 1,
+  },
+  formGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  formField: {
+    width: "48%",
+    gap: 4,
+  },
+  formLabel: {
+    color: palette.muted,
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold",
   },
   input: {
     minHeight: 40,
@@ -412,52 +841,73 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     color: palette.ink,
     paddingHorizontal: 10,
-    fontFamily: "Poppins_400Regular"
+    fontFamily: "Poppins_400Regular",
   },
   modalHeaderActions: {
     flexDirection: "row",
     gap: 8,
-    justifyContent: "space-between"
+    justifyContent: "space-between",
   },
   entryScroller: {
-    maxHeight: 280
+    maxHeight: 320,
+  },
+  entryScrollerContent: {
+    gap: 8,
   },
   entryRow: {
-    borderBottomWidth: 1,
-    borderBottomColor: palette.border,
-    paddingVertical: 8,
-    gap: 8
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    padding: 10,
+    gap: 8,
+  },
+  rowBetween: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 10,
   },
   entryMain: {
-    gap: 2
+    flex: 1,
+    gap: 2,
   },
   entryMeal: {
     color: palette.ink,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
   },
   entryMeta: {
     color: palette.muted,
     fontSize: 12,
-    fontFamily: "Poppins_400Regular"
+    fontFamily: "Poppins_400Regular",
+  },
+  kindBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  kindBadgeText: {
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold",
   },
   entryActionRow: {
     flexDirection: "row",
     gap: 8,
-    alignSelf: "flex-end"
+    alignSelf: "flex-end",
   },
   editRow: {
-    gap: 8
+    gap: 8,
   },
   actionButton: {
     borderRadius: 8,
     backgroundColor: palette.primary,
     paddingHorizontal: 10,
-    paddingVertical: 7
+    paddingVertical: 7,
   },
   actionButtonText: {
     color: palette.surface,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
   },
   ghostButton: {
     borderRadius: 8,
@@ -465,30 +915,30 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
     paddingHorizontal: 10,
-    paddingVertical: 7
+    paddingVertical: 7,
   },
   ghostButtonText: {
     color: palette.ink,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
   },
   dangerButton: {
     borderRadius: 8,
     backgroundColor: "#d95a5a",
     paddingHorizontal: 10,
-    paddingVertical: 7
+    paddingVertical: 7,
   },
   dangerButtonText: {
     color: palette.surface,
     fontSize: 12,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
   },
   buttonDisabled: {
-    opacity: 0.5
+    opacity: 0.5,
   },
   errorText: {
     color: palette.red,
     fontSize: 12,
-    fontFamily: "Poppins_400Regular"
-  }
+    fontFamily: "Poppins_400Regular",
+  },
 });
