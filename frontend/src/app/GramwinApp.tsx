@@ -339,6 +339,14 @@ function parseCandidateEnv(value?: string) {
 }
 
 function buildApiBaseUrls(currentUrl?: string | null) {
+  const isProduction = process.env.NODE_ENV === "production";
+  const webHostname = Platform.OS === "web" ? globalThis.location?.hostname : null;
+  const isLocalHostname =
+    !webHostname ||
+    webHostname === "localhost" ||
+    webHostname === "127.0.0.1" ||
+    webHostname.endsWith(".local");
+
   const candidates: string[] = [];
   const addCandidate = (value?: string | null) => {
     if (!value) {
@@ -350,31 +358,39 @@ function buildApiBaseUrls(currentUrl?: string | null) {
     }
   };
 
-  addCandidate(currentUrl);
-  const host = metroHost();
-  if (host) {
-    addCandidate(`${host}:8000`);
-  }
-
+  // In production, only use the explicitly configured base URL (Render, HTTPS).
+  // Dev builds can fall back to Metro/localhost candidates.
   addCandidate(process.env.EXPO_PUBLIC_API_BASE_URL);
-  for (const candidate of parseCandidateEnv(process.env.EXPO_PUBLIC_API_CANDIDATES)) {
-    addCandidate(candidate);
-  }
 
-  if (Platform.OS === "web" && globalThis.location?.hostname) {
-    addCandidate(`${globalThis.location.hostname}:8000`);
-  }
+  if (!isProduction) {
+    addCandidate(currentUrl);
 
-  if (Platform.OS === "android") {
-    addCandidate("10.0.2.2:8000");
+    const host = metroHost();
+    if (host) {
+      addCandidate(`${host}:8000`);
+    }
+
+    for (const candidate of parseCandidateEnv(process.env.EXPO_PUBLIC_API_CANDIDATES)) {
+      addCandidate(candidate);
+    }
+
+    if (Platform.OS === "web" && webHostname && isLocalHostname) {
+      addCandidate(`${webHostname}:8000`);
+    }
+
+    if (Platform.OS === "android") {
+      addCandidate("10.0.2.2:8000");
+    }
+    addCandidate("127.0.0.1:8000");
+    addCandidate("localhost:8000");
   }
-  addCandidate("127.0.0.1:8000");
-  addCandidate("localhost:8000");
   return candidates;
 }
 
 function resolveApiBaseUrl() {
-  return buildApiBaseUrls()[0] || "http://127.0.0.1:8000";
+  const isProduction = process.env.NODE_ENV === "production";
+  const fallback = isProduction ? "" : "http://127.0.0.1:8000";
+  return buildApiBaseUrls()[0] || fallback;
 }
 
 async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 3500) {
