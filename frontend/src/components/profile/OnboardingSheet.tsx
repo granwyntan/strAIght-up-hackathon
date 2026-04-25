@@ -156,7 +156,7 @@ type OnboardingSheetProps = {
   activeAccount?: { id: string; email: string; createdAt?: string } | null;
   authLoading?: boolean;
   requestApi?: (path: string, init?: RequestInit, timeoutMsOverride?: number) => Promise<Response>;
-  onAuthenticate?: (email: string, password: string) => Promise<void>;
+  onAuthenticate?: (email: string, password: string) => Promise<any>;
   onClose: () => void;
   onSaved?: (profile: any) => void;
 };
@@ -177,6 +177,15 @@ export default function OnboardingSheet({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
+
+  async function refreshDraftForAccount(nextAccountId?: string, nextAccountEmail?: string) {
+    const profile = await loadProfile(nextAccountId ?? accountId, nextAccountEmail ?? accountEmail);
+    const normalized = normalizeProfile(profile);
+    setDraft({
+      ...normalized,
+      storagePreference: nextAccountEmail || activeAccount ? "Sync if signed in" : "Local",
+    });
+  }
 
   useEffect(() => {
     if (!visible) {
@@ -339,7 +348,10 @@ export default function OnboardingSheet({
                           </View>
                         ) : (
                           <AuthGate
-                            onAuthenticate={onAuthenticate}
+                            onAuthenticate={async (email, password) => {
+                              const account = await onAuthenticate?.(email, password);
+                              await refreshDraftForAccount(account?.id, account?.email);
+                            }}
                             loading={authLoading}
                             title="Create an account or sign in"
                             subtitle="Email and password only for now. You can also skip and keep everything local on this device."

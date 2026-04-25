@@ -91,7 +91,7 @@ export function BottomTabs({
   const tabs: Array<{ key: AppTab; label: string; icon: string; iconInactive?: string }> = [
     { key: "home", label: "Home", icon: "home-heart" },
     { key: "consultant", label: "Verify", icon: "stethoscope" },
-    { key: "diet", label: "Diet", icon: "food-apple-outline" },
+    { key: "diet", label: "Scanner", icon: "food-apple-outline" },
     { key: "activity", label: "Activity", icon: "run" },
     { key: "profile", label: "Profile", icon: "account-circle-outline" },
   ];

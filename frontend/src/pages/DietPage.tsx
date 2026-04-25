@@ -73,7 +73,7 @@ export default function DietPage({ requestApi, accountId, accountEmail, guideSig
 
       <TutorialSheet
         visible={guideVisible}
-        title="Consumables tutorial"
+        title="Scanner tutorial"
         pages={DIET_TUTORIAL_PAGES}
         onClose={() => setGuideVisible(false)}
       />

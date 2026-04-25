@@ -47,6 +47,17 @@ class WorkoutRoutineResponse(BaseModel):
     exercises: list[WorkoutExerciseResponse]
 
 
+class SmartActivityInputRequest(BaseModel):
+    text: str = ""
+
+
+class SmartActivityInputResponse(BaseModel):
+    title: str
+    duration: str
+    intensity: str
+    notes: str
+
+
 def _extract_json(text: str) -> dict[str, Any]:
     raw = text.strip()
     if not raw:
@@ -81,6 +92,17 @@ def _normalize_intensity(value: str) -> str:
     if candidate in {"max", "very hard"}:
         return "max effort"
     return "medium"
+
+
+def _normalize_activity_intensity(value: str) -> str:
+    candidate = (value or "").strip().lower()
+    if candidate in {"easy", "mid", "hard", "max"}:
+        return candidate
+    if candidate in {"medium", "moderate"}:
+        return "mid"
+    if candidate in {"max effort", "very hard"}:
+        return "max"
+    return "mid"
 
 
 @router.post("/suggest", response_model=WorkoutRoutineResponse)
@@ -178,3 +200,44 @@ def suggest_workout_routine(payload: WorkoutRoutineRequest) -> WorkoutRoutineRes
         trialWeeks=trial_weeks,
         exercises=exercises,
     )
+
+
+@router.post("/parse-activity-input", response_model=SmartActivityInputResponse)
+def parse_activity_input(payload: SmartActivityInputRequest) -> SmartActivityInputResponse:
+    raw_text = (payload.text or "").strip()
+    if not raw_text:
+        return SmartActivityInputResponse(title="Activity", duration="", intensity="mid", notes="")
+    if not settings.openai_api_key:
+        return SmartActivityInputResponse(title="Activity", duration="", intensity="mid", notes=raw_text)
+
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_api_base_url,
+        timeout=settings.llm_timeout_seconds,
+        max_retries=0,
+    )
+
+    prompt = (
+        "Parse this workout/activity note and return STRICT JSON only with:\n"
+        '{ "title": "string", "duration": "string", "intensity": "easy|mid|hard|max", "notes": "string" }\n'
+        "Rules:\n"
+        "- title should be a concise exercise title.\n"
+        "- duration should be estimated if absent, e.g. '30 min'.\n"
+        "- notes should keep useful details from the input and add a short plain-language summary if needed.\n"
+        f"Input: {raw_text}"
+    )
+    try:
+        logger.info("OpenAI API call: responses.create model=%s trigger=parse_activity_input", WORKOUT_MODEL)
+        response = client.responses.create(
+            model=WORKOUT_MODEL,
+            input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+        )
+        data = _extract_json((response.output_text or "").strip())
+        return SmartActivityInputResponse(
+            title=str(data.get("title", "")).strip() or "Activity",
+            duration=str(data.get("duration", "")).strip() or "30 min",
+            intensity=_normalize_activity_intensity(str(data.get("intensity", ""))),
+            notes=str(data.get("notes", "")).strip() or raw_text,
+        )
+    except Exception:
+        return SmartActivityInputResponse(title="Activity", duration="", intensity="mid", notes=raw_text)

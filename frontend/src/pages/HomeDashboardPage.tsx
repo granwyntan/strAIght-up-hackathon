@@ -11,7 +11,7 @@ import { loadProfile, saveProfile } from "../storage/profileStorage";
 import { formatLocalIsoDate, loadHomeVitals, refreshHomeVitalsFromFirestore, saveHomeVitalForDate } from "../storage/homeVitalsStorage";
 import { loadCalorieWeek } from "../storage/calorieTrackerStorage";
 import { addExerciseEntry, clearExerciseEntriesExceptDate, deleteExerciseEntry, loadExerciseEntries, updateExerciseEntry } from "../storage/exerciseStorage";
-import { loadWorkoutTasks, replaceWorkoutTasks, setWorkoutTaskCompleted } from "../storage/workoutRoutineStorage";
+import { loadWorkoutTasks, replaceWorkoutTasks, resetWorkoutTaskCompletion, setWorkoutTaskCompleted } from "../storage/workoutRoutineStorage";
 import { addMedicationEntry, deleteMedicationEntry, loadMedicationEntries, updateMedicationEntry } from "../storage/medicationStorage";
 
 const metricDefinitions = [
@@ -21,7 +21,12 @@ const metricDefinitions = [
   { key: "hydration", label: "Hydration", icon: "cup-water", placeholder: "e.g. 2.1 L" },
 ] as const;
 
-const intensityOptions = ["Easy", "Medium", "Hard", "Max effort"] as const;
+const intensityOptions = [
+  { value: "easy", label: "Easy" },
+  { value: "mid", label: "Mid" },
+  { value: "hard", label: "Hard" },
+  { value: "max", label: "Max" },
+] as const;
 const EXERCISE_GUIDE_PAGES = [
   {
     title: "Welcome to the exercise tracker",
@@ -48,7 +53,6 @@ type WorkoutTask = {
   duration: string;
   intensity: string;
   description: string;
-  dueDate: string;
   completed: boolean;
   completedAt: string;
   createdAt: string;
@@ -56,15 +60,11 @@ type WorkoutTask = {
 
 type WorkoutSuggestion = {
   routineTitle: string;
-  continuous: string;
-  trialWeeks: number;
   exercises: Array<{
     type: string;
     duration: string;
     intensity: string;
     description: string;
-    frequency: string;
-    daysOfWeek: string[];
   }>;
 };
 
@@ -78,6 +78,23 @@ function capitalizeWorkoutType(value: string) {
     return "Workout";
   }
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+}
+
+function normalizeIntensity(value: string) {
+  const v = safeTrim(value).toLowerCase();
+  if (v === "easy") return "easy";
+  if (v === "mid" || v === "medium") return "mid";
+  if (v === "hard") return "hard";
+  if (v === "max" || v === "max effort") return "max";
+  return "mid";
+}
+
+function formatIntensity(value: string) {
+  const v = normalizeIntensity(value);
+  if (v === "easy") return "Easy";
+  if (v === "hard") return "Hard";
+  if (v === "max") return "Max";
+  return "Mid";
 }
 
 function pad(value: number) {
@@ -154,16 +171,12 @@ function parseMedicationLines(value: string) {
 function normalizeSuggestion(payload: any): WorkoutSuggestion {
   return {
     routineTitle: typeof payload?.routineTitle === "string" ? payload.routineTitle : "Personal routine",
-    continuous: typeof payload?.continuous === "string" ? payload.continuous : "daily",
-    trialWeeks: Number(payload?.trialWeeks) || 2,
     exercises: Array.isArray(payload?.exercises)
       ? payload.exercises.map((item: any) => ({
           type: typeof item?.type === "string" ? item.type : "Workout",
           duration: typeof item?.duration === "string" ? item.duration : "30 min",
           intensity: typeof item?.intensity === "string" ? item.intensity : "medium",
           description: typeof item?.description === "string" ? item.description : "",
-          frequency: typeof item?.frequency === "string" ? item.frequency : "daily",
-          daysOfWeek: Array.isArray(item?.daysOfWeek) ? item.daysOfWeek.map((day: any) => String(day).toLowerCase()) : [],
         }))
       : [],
   };
@@ -396,8 +409,9 @@ export default function HomeDashboardPage({
           loadProfile(accountId, ""),
           loadMedicationEntries(accountId, ""),
         ]);
+        const localResetTasks = await resetWorkoutTaskCompletion(accountId, "");
         const localMedicationLog = await buildMedicationLog(localProfile, localMedications, false);
-        applyHydrated(localVitals, localWeekPayload, localExercises, localWorkoutTasks, localProfile, localMedicationLog);
+        applyHydrated(localVitals, localWeekPayload, localExercises, localResetTasks || localWorkoutTasks, localProfile, localMedicationLog);
         if (mounted) {
           setLoadingVitals(false);
           setLoadingMeals(false);
@@ -417,8 +431,9 @@ export default function HomeDashboardPage({
                 loadProfile(accountId, accountEmail),
                 loadMedicationEntries(accountId, accountEmail),
               ]);
+              const remoteResetTasks = await resetWorkoutTaskCompletion(accountId, accountEmail);
               const remoteMedicationLog = await buildMedicationLog(remoteProfile, remoteMedications, true);
-              applyHydrated(remoteVitals, remoteWeekPayload, remoteExercises, remoteWorkoutTasks, remoteProfile, remoteMedicationLog);
+              applyHydrated(remoteVitals, remoteWeekPayload, remoteExercises, remoteResetTasks || remoteWorkoutTasks, remoteProfile, remoteMedicationLog);
             } catch {
               // Best effort cloud refresh only.
             }
@@ -500,7 +515,7 @@ export default function HomeDashboardPage({
     setEditingExerciseId("");
     setExerciseTitle("");
     setExerciseDuration("");
-    setExerciseIntensity("");
+    setExerciseIntensity("mid");
     setExerciseNotes("");
     setExerciseError("");
     setExerciseModalVisible(true);
@@ -510,7 +525,7 @@ export default function HomeDashboardPage({
     setEditingExerciseId(entry.id);
     setExerciseTitle(entry.title || "");
     setExerciseDuration(entry.duration || "");
-    setExerciseIntensity(entry.intensity || "");
+    setExerciseIntensity(normalizeIntensity(entry.intensity || ""));
     setExerciseNotes(entry.notes || "");
     setExerciseError("");
     setExerciseModalVisible(true);
@@ -519,7 +534,7 @@ export default function HomeDashboardPage({
   const saveExercise = async () => {
     const title = safeTrim(exerciseTitle);
     const duration = safeTrim(exerciseDuration);
-    const intensity = safeTrim(exerciseIntensity);
+    const intensity = normalizeIntensity(exerciseIntensity);
     const notes = safeTrim(exerciseNotes);
     if (!title || !duration || !intensity) {
       setExerciseError("Please fill title, duration, and intensity.");
@@ -604,7 +619,7 @@ export default function HomeDashboardPage({
     setTargetRoutineTitle(safeTrim(routineTitle) || "Personal routine");
     setRoutineExerciseTitle("");
     setRoutineExerciseDuration("");
-    setRoutineExerciseIntensity("");
+    setRoutineExerciseIntensity("mid");
     setRoutineExerciseNotes("");
     setRoutineError("");
     setRoutineExerciseModalVisible(true);
@@ -657,9 +672,8 @@ export default function HomeDashboardPage({
         routineTitle: suggestedRoutine.routineTitle,
         type: capitalizeWorkoutType(exercise.type),
         duration: safeTrim(exercise.duration) || "30 min",
-        intensity: safeTrim(exercise.intensity) || "medium",
+        intensity: normalizeIntensity(exercise.intensity),
         description: safeTrim(exercise.description),
-        dueDate: todayDate,
         completed: false,
         completedAt: "",
         createdAt,
@@ -712,7 +726,7 @@ export default function HomeDashboardPage({
     setEditingRoutineId(task.id);
     setRoutineTypeDraft(task.type || "");
     setRoutineDurationDraft(task.duration || "");
-    setRoutineIntensityDraft(task.intensity || "");
+    setRoutineIntensityDraft(normalizeIntensity(task.intensity || ""));
     setRoutineDescriptionDraft(task.description || "");
     setRoutineError("");
     setRoutineEditModalVisible(true);
@@ -721,7 +735,7 @@ export default function HomeDashboardPage({
   const saveRoutineEdit = async () => {
     const type = capitalizeWorkoutType(routineTypeDraft);
     const duration = safeTrim(routineDurationDraft);
-    const intensity = safeTrim(routineIntensityDraft);
+    const intensity = normalizeIntensity(routineIntensityDraft);
     const description = safeTrim(routineDescriptionDraft);
     if (!editingRoutineId || !type || !duration || !intensity) {
       setRoutineError("Please fill title, duration, and intensity.");
@@ -826,7 +840,7 @@ export default function HomeDashboardPage({
     const routineTitle = safeTrim(targetRoutineTitle) || "Personal routine";
     const type = capitalizeWorkoutType(routineExerciseTitle);
     const duration = safeTrim(routineExerciseDuration);
-    const intensity = safeTrim(routineExerciseIntensity);
+    const intensity = normalizeIntensity(routineExerciseIntensity);
     const description = safeTrim(routineExerciseNotes);
     if (!type || !duration || !intensity) {
       setRoutineError("Please fill exercise, duration, and intensity.");
@@ -842,7 +856,6 @@ export default function HomeDashboardPage({
         duration,
         intensity,
         description,
-        dueDate: todayDate,
         completed: false,
         completedAt: "",
         createdAt: new Date().toISOString(),
@@ -1040,9 +1053,6 @@ export default function HomeDashboardPage({
 
       <SectionHeader eyebrow="Medication" title="Medication and supplement log" body="Separate medications with dosage, frequency, and time of day." />
       <View style={styles.medicationActionRow}>
-        <Button compact icon="account-circle" onPress={() => onOpenTab("profile")}>
-          Edit in Profile
-        </Button>
         <IconButton
           icon="plus"
           containerColor={palette.primarySoft}
@@ -1050,6 +1060,9 @@ export default function HomeDashboardPage({
           onPress={openMedicationCreate}
           accessibilityLabel="Add medication"
         />
+        <Button compact icon="account-circle" onPress={() => onOpenTab("profile")}>
+          Edit in Profile
+        </Button>
       </View>
       <Card mode="contained" style={styles.sectionCard}>
         <Card.Content style={styles.cardStack}>
@@ -1146,18 +1159,20 @@ export default function HomeDashboardPage({
                           {entry.title || "Exercise"}
                         </Text>
                         <Text variant="bodySmall" style={styles.sectionBody}>
-                          Duration: {entry.duration || "--"} • Intensity: {entry.intensity || "--"} • {formatTime(entry.createdAt)}
+                          Duration: {entry.duration || "--"} • Intensity: {formatIntensity(entry.intensity)} • {formatTime(entry.createdAt)}
                         </Text>
-                      </View>
-                      <View style={styles.actionRow}>
-                        <IconButton icon="pencil-outline" size={18} onPress={() => openExerciseEdit(entry)} />
-                        <IconButton icon="delete-outline" size={18} onPress={() => void removeExercise(entry.id)} />
                       </View>
                     </Pressable>
                     {expanded ? (
-                      <Text variant="bodySmall" style={styles.sectionBody}>
-                        {entry.notes || "No personal notes."}
-                      </Text>
+                      <View style={styles.cardStack}>
+                        <Text variant="bodySmall" style={styles.sectionBody}>
+                          {entry.notes || "No personal notes."}
+                        </Text>
+                        <View style={styles.routineChecklistRow}>
+                          <IconButton icon="pencil-outline" size={18} onPress={() => openExerciseEdit(entry)} />
+                          <IconButton icon="delete-outline" size={18} onPress={() => void removeExercise(entry.id)} />
+                        </View>
+                      </View>
                     ) : null}
                   </Card.Content>
                 </Card>
@@ -1201,18 +1216,10 @@ export default function HomeDashboardPage({
               <Card key={group.title} mode="contained" style={styles.logItemCard}>
                 <Card.Content style={styles.cardStack}>
                   <View style={styles.rowBetween}>
-                    <Text variant="titleMedium" style={styles.linkTitle}>
+                    <Text variant="titleMedium" style={[styles.linkTitle, styles.groupTitleWrap]}>
                       {group.title}
                     </Text>
                     <View style={styles.actionRow}>
-                      <IconButton
-                        icon="plus"
-                        size={18}
-                        containerColor={palette.primarySoft}
-                        iconColor={palette.primary}
-                        onPress={() => openRoutineExerciseCreate(group.title)}
-                        accessibilityLabel={`Add exercise to ${group.title}`}
-                      />
                       <IconButton icon="pencil-outline" size={18} onPress={() => openRoutineTitleEdit(group.title)} />
                       <IconButton icon="delete-outline" size={18} onPress={() => void deleteRoutineGroup(group.title)} />
                     </View>
@@ -1224,32 +1231,42 @@ export default function HomeDashboardPage({
                         <Card.Content style={styles.cardStack}>
                           <View style={styles.rowBetween}>
                             <Pressable style={styles.flexOne} onPress={() => setExpandedRoutineId(expanded ? "" : task.id)}>
-                              <Text variant="titleMedium" style={[styles.linkTitle, task.completed && styles.completedText]}>
+                              <Text variant="titleMedium" style={[styles.linkTitle, (task.completed || !!safeTrim(task.completedAt)) && styles.completedText]}>
                                 {capitalizeWorkoutType(task.type)}
                               </Text>
                               <Text variant="bodySmall" style={styles.sectionBody}>
-                                {task.duration || "--"} • {task.intensity || "medium"} • due {task.dueDate || todayDate}
+                                {task.duration || "--"} • {formatIntensity(task.intensity)}
                               </Text>
                             </Pressable>
-                            <View style={styles.actionRow}>
-                              <IconButton
-                                icon={task.completed ? "checkbox-marked-circle-outline" : "checkbox-blank-circle-outline"}
-                                size={20}
-                                onPress={() => void toggleRoutineCompleted(task)}
-                              />
-                              <IconButton icon="pencil-outline" size={18} onPress={() => openRoutineEdit(task)} />
-                              <IconButton icon="delete-outline" size={18} onPress={() => void deleteRoutineTask(task.id)} />
-                            </View>
                           </View>
                           {expanded ? (
-                            <Text variant="bodySmall" style={styles.sectionBody}>
-                              {safeTrim(task.description) || "No routine notes."}
-                            </Text>
+                            <View style={styles.cardStack}>
+                              <Text variant="bodySmall" style={styles.sectionBody}>
+                                {safeTrim(task.description) || "No routine notes."}
+                              </Text>
+                              <View style={styles.routineChecklistRow}>
+                                <IconButton
+                                  icon={task.completed ? "checkbox-marked-circle-outline" : "checkbox-blank-circle-outline"}
+                                  size={20}
+                                  onPress={() => void toggleRoutineCompleted(task)}
+                                />
+                                <IconButton icon="pencil-outline" size={18} onPress={() => openRoutineEdit(task)} />
+                                <IconButton icon="delete-outline" size={18} onPress={() => void deleteRoutineTask(task.id)} />
+                              </View>
+                            </View>
                           ) : null}
                         </Card.Content>
                       </Card>
                     );
                   })}
+                  <Button
+                    mode="outlined"
+                    icon="plus"
+                    onPress={() => openRoutineExerciseCreate(group.title)}
+                    accessibilityLabel={`Add exercise to ${group.title}`}
+                  >
+                    Add Exercise
+                  </Button>
                 </Card.Content>
               </Card>
             ))
@@ -1345,10 +1362,13 @@ export default function HomeDashboardPage({
                 </View>
                 <TextInput mode="outlined" label="Title" value={exerciseTitle} onChangeText={setExerciseTitle} />
                 <TextInput mode="outlined" label="Duration" value={exerciseDuration} onChangeText={setExerciseDuration} />
+                <Text variant="bodySmall" style={styles.sectionBody}>
+                  Intensity
+                </Text>
                 <SegmentedButtons
                   value={exerciseIntensity}
                   onValueChange={setExerciseIntensity}
-                  buttons={intensityOptions.map((item) => ({ value: item, label: item }))}
+                  buttons={intensityOptions.map((item) => ({ value: item.value, label: item.label }))}
                 />
                 <TextInput mode="outlined" label="Personal notes (optional)" value={exerciseNotes} onChangeText={setExerciseNotes} multiline />
                 {exerciseError ? (
@@ -1409,9 +1429,6 @@ export default function HomeDashboardPage({
                         <Text variant="titleMedium" style={styles.linkTitle}>
                           {suggestedRoutine.routineTitle}
                         </Text>
-                        <Text variant="bodySmall" style={styles.sectionBody}>
-                          Continuous: {suggestedRoutine.continuous}
-                        </Text>
                         {suggestedRoutine.exercises.map((exercise, index) => {
                           const selected = selectedRoutineIndices.includes(index);
                           return (
@@ -1421,7 +1438,7 @@ export default function HomeDashboardPage({
                                   {capitalizeWorkoutType(exercise.type)} • {exercise.duration}
                                 </Text>
                                 <Text variant="bodySmall" style={styles.sectionBody}>
-                                  {exercise.intensity} • {exercise.description || "No notes"}
+                                  {formatIntensity(exercise.intensity)} • {exercise.description || "No notes"}
                                 </Text>
                               </View>
                               <MaterialCommunityIcons
@@ -1487,10 +1504,13 @@ export default function HomeDashboardPage({
                 </View>
                 <TextInput mode="outlined" label="Exercise" value={routineTypeDraft} onChangeText={setRoutineTypeDraft} />
                 <TextInput mode="outlined" label="Duration" value={routineDurationDraft} onChangeText={setRoutineDurationDraft} />
+                <Text variant="bodySmall" style={styles.sectionBody}>
+                  Intensity
+                </Text>
                 <SegmentedButtons
                   value={routineIntensityDraft}
                   onValueChange={setRoutineIntensityDraft}
-                  buttons={intensityOptions.map((item) => ({ value: item, label: item }))}
+                  buttons={intensityOptions.map((item) => ({ value: item.value, label: item.label }))}
                 />
                 <TextInput mode="outlined" label="Description" value={routineDescriptionDraft} onChangeText={setRoutineDescriptionDraft} multiline />
                 <Button mode="contained" onPress={() => void saveRoutineEdit()} loading={routineSaving} disabled={routineSaving}>
@@ -1560,13 +1580,15 @@ export default function HomeDashboardPage({
                   </Text>
                   <IconButton icon="close" onPress={() => setRoutineExerciseModalVisible(false)} />
                 </View>
-                <TextInput mode="outlined" label="Routine title" value={targetRoutineTitle} onChangeText={setTargetRoutineTitle} />
                 <TextInput mode="outlined" label="Exercise" value={routineExerciseTitle} onChangeText={setRoutineExerciseTitle} />
                 <TextInput mode="outlined" label="Duration" value={routineExerciseDuration} onChangeText={setRoutineExerciseDuration} />
+                <Text variant="bodySmall" style={styles.sectionBody}>
+                  Intensity
+                </Text>
                 <SegmentedButtons
                   value={routineExerciseIntensity}
                   onValueChange={setRoutineExerciseIntensity}
-                  buttons={intensityOptions.map((item) => ({ value: item, label: item }))}
+                  buttons={intensityOptions.map((item) => ({ value: item.value, label: item.label }))}
                 />
                 <TextInput mode="outlined" label="Description (optional)" value={routineExerciseNotes} onChangeText={setRoutineExerciseNotes} multiline />
                 {routineError ? (
@@ -1673,7 +1695,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   todayMetricTouchable: {
-    width: "48.4%",
+    flexBasis: "48%",
+    maxWidth: "48%",
   },
   metricCard: {
     width: "48.4%",
@@ -1741,6 +1764,15 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "nowrap",
+    gap: 2,
+    marginLeft: 4,
+  },
+  routineChecklistRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "nowrap",
+    gap: 2,
   },
   flexOne: {
     flex: 1,
@@ -1769,6 +1801,11 @@ const styles = StyleSheet.create({
   linkTitle: {
     color: palette.text,
     fontFamily: "Poppins_600SemiBold",
+  },
+  groupTitleWrap: {
+    flex: 1,
+    flexShrink: 1,
+    paddingRight: 6,
   },
   historyMetaLine: {
     color: palette.muted,

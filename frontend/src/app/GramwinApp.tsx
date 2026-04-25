@@ -930,6 +930,7 @@ function GramwinApp() {
       const account = await loginOrRegisterAccount(email, password);
       setActiveAccount(account);
       setSnackbar({ visible: true, message: "Account connected" });
+      return account;
     } catch (error) {
       setSnackbar({ visible: true, message: error instanceof Error ? error.message : "Could not sign in" });
       throw error;
@@ -2033,7 +2034,7 @@ function HomeScreen({
 function QuickLinks({ onOpenTab }: { onOpenTab: (tab: AppTab) => void }) {
   const links: Array<{ tab: AppTab; icon: string; label: string; body: string }> = [
     { tab: "consultant", icon: "stethoscope", label: "Verify", body: "Investigate claims and read evidence." },
-    { tab: "diet", icon: "food-apple-outline", label: "Diet", body: "Food analysis, diet intake, and supplement checks together." },
+    { tab: "diet", icon: "food-apple-outline", label: "Scanner", body: "Food analysis, diet intake, and supplement checks together." },
     { tab: "activity", icon: "run", label: "Activity", body: "Movement, recovery, routines, and energy balance." },
     { tab: "profile", icon: "account-circle-outline", label: "Profile", body: "Health profile, goals, and context." },
   ];
