@@ -628,6 +628,7 @@ function inferMealContextFromTime(value, kind) {
       formData.append("mealDate", parseDisplayDate(values.mealDate) || formatLocalIsoDate(new Date()));
       formData.append("mealTime", parseDisplayTime(values.mealTime) || formatDisplayTime(new Date()));
       formData.append("hungerLevel", values.hungerLevel);
+      formData.append("goalContext", values.goalContext);
 
       const response = await requestApi("/api/calories/calculate", {
         method: "POST",

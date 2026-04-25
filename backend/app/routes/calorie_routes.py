@@ -151,6 +151,7 @@ async def _calculate_calories_response(
     mealDate: str | None = Form(default=None),
     mealTime: str | None = Form(default=None),
     hungerLevel: str | None = Form(default=None),
+    goalContext: str | None = Form(default=None),
 ) -> CalorieCalculationResponse:
     image_bytes = b""
     content_type = ""
@@ -182,6 +183,7 @@ async def _calculate_calories_response(
             meal_date=mealDate,
             meal_time=mealTime,
             hunger_level=hungerLevel,
+            goal_context=goalContext,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -213,6 +215,7 @@ async def calculate_calories_endpoint(
     mealDate: str | None = Form(default=None),
     mealTime: str | None = Form(default=None),
     hungerLevel: str | None = Form(default=None),
+    goalContext: str | None = Form(default=None),
 ) -> CalorieCalculationResponse:
     return await _calculate_calories_response(
         photo,
@@ -228,6 +231,7 @@ async def calculate_calories_endpoint(
         mealDate,
         mealTime,
         hungerLevel,
+        goalContext,
     )
 
 
@@ -246,6 +250,7 @@ async def calculate_calories_endpoint_legacy(
     mealDate: str | None = Form(default=None),
     mealTime: str | None = Form(default=None),
     hungerLevel: str | None = Form(default=None),
+    goalContext: str | None = Form(default=None),
 ) -> CalorieCalculationResponse:
     # Backward-compatible alias for clients calling /api/calorie/calculate
     return await _calculate_calories_response(
@@ -262,6 +267,7 @@ async def calculate_calories_endpoint_legacy(
         mealDate,
         mealTime,
         hungerLevel,
+        goalContext,
     )
 
 

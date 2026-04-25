@@ -5,6 +5,77 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { palette } from "../../data";
 
+function parseNumericValue(rawValue) {
+  const text = typeof rawValue === "string" ? rawValue : "";
+  const match = text.match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function parseLabelMap(content) {
+  const map = {};
+  const lines = (typeof content === "string" ? content : "").split("\n");
+  for (const rawLine of lines) {
+    const line = rawLine.trim().replace(/^[-*]\s*/, "");
+    const match = line.match(/^([^:=]+)\s*[:=]\s*(.+)$/);
+    if (!match) continue;
+    map[match[1].trim().toLowerCase()] = match[2].trim();
+  }
+  return map;
+}
+
+function parsePipeBullets(content) {
+  return (typeof content === "string" ? content : "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^[-*]\s*/, "").trim())
+    .filter(Boolean)
+    .map((line, index) => ({
+      id: `${index}-${line.slice(0, 24)}`,
+      parts: line.split("|").map((part) => part.trim()).filter(Boolean),
+    }));
+}
+
+function sanitizeSectionContent(content) {
+  return (typeof content === "string" ? content : "")
+    .split("\n")
+    .filter((line) => !/^\s*total estimated calories\b/i.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
+function findSection(sections, pattern) {
+  return sections.find((section) => pattern.test((section?.heading || "").trim()));
+}
+
+function pctString(value, total) {
+  if (!(value > 0) || !(total > 0)) {
+    return "0%";
+  }
+  return `${Math.round((value / total) * 100)}%`;
+}
+
+function pickTone(value) {
+  const lowered = (value || "").toLowerCase();
+  if (/(clean|supportive|good|high|ideal|best|stable|low risk|great)/.test(lowered)) {
+    return { color: palette.success, backgroundColor: palette.successSoft, icon: "check-circle-outline" };
+  }
+  if (/(ultra|high sodium|high sugar|high glycemic|watch|less ideal|poor|dense|spike|crash|low fiber|alert|not ideal)/.test(lowered)) {
+    return { color: palette.danger, backgroundColor: palette.dangerSoft, icon: "alert-circle-outline" };
+  }
+  return { color: palette.warning, backgroundColor: palette.warningSoft, icon: "information-outline" };
+}
+
+function toneForScore(score) {
+  if (score >= 80) {
+    return { color: palette.success, backgroundColor: palette.successSoft };
+  }
+  if (score >= 60) {
+    return { color: palette.warning, backgroundColor: palette.warningSoft };
+  }
+  return { color: palette.danger, backgroundColor: palette.dangerSoft };
+}
+
 function renderInlineMarkdown(text, keyPrefix) {
   const content = typeof text === "string" ? text : "";
   const chunks = content.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
@@ -57,437 +128,349 @@ function renderMarkdownBlock(content, keyPrefix) {
   );
 }
 
-function parseBulletMap(content) {
-  const result = {};
-  const lines = (typeof content === "string" ? content : "").split("\n");
-  for (const rawLine of lines) {
-    const line = rawLine.trim().replace(/^[-*=]\s*/, "");
-    const match = line.match(/^([^:=]+)\s*[:=]\s*(.+)$/);
-    if (!match) continue;
-    result[match[1].trim().toLowerCase()] = match[2].trim();
-  }
-  return result;
-}
-
-function parseNumericValue(rawValue) {
-  const text = typeof rawValue === "string" ? rawValue : "";
-  const match = text.match(/-?\d+(?:\.\d+)?/);
-  return match ? Number(match[0]) : null;
-}
-
 function sectionMeta(heading) {
   const normalized = (heading || "").trim().toLowerCase();
-  if (normalized.includes("top summary")) {
-    return { icon: "star-four-points-outline", accent: palette.primary };
-  }
-  if (normalized.includes("nutrition")) {
-    return { icon: "chart-bar-stacked", accent: palette.success };
-  }
-  if (normalized.includes("body impact")) {
-    return { icon: "heart-pulse", accent: palette.warning };
-  }
-  if (normalized.includes("quality")) {
-    return { icon: "leaf-circle-outline", accent: palette.primary };
-  }
-  if (normalized.includes("claims")) {
-    return { icon: "shield-check-outline", accent: palette.secondary };
-  }
-  if (normalized.includes("personalized")) {
-    return { icon: "account-heart-outline", accent: palette.danger };
-  }
-  if (normalized.includes("ingredient")) {
-    return { icon: "format-list-bulleted-square", accent: palette.primary };
-  }
-  if (normalized.includes("suggest")) {
-    return { icon: "lightbulb-on-outline", accent: palette.success };
-  }
+  if (normalized.includes("macro")) return { icon: "chart-box-outline", accent: palette.primary };
+  if (normalized.includes("goal")) return { icon: "bullseye-arrow", accent: palette.success };
+  if (normalized.includes("ingredient")) return { icon: "food-apple-outline", accent: palette.warning };
+  if (normalized.includes("health")) return { icon: "heart-pulse", accent: palette.danger };
+  if (normalized.includes("personal")) return { icon: "account-heart-outline", accent: palette.primary };
+  if (normalized.includes("satiety")) return { icon: "silverware-fork-knife", accent: palette.success };
+  if (normalized.includes("timing")) return { icon: "clock-outline", accent: palette.secondary };
+  if (normalized.includes("optimization")) return { icon: "swap-horizontal", accent: palette.success };
+  if (normalized.includes("micronutrient")) return { icon: "molecule", accent: palette.warning };
+  if (normalized.includes("why")) return { icon: "lightbulb-on-outline", accent: palette.primary };
   return { icon: "text-box-outline", accent: palette.primary };
 }
 
-function buildQuickTags(topSummaryMap) {
-  const tags = [];
-  const quickTags = topSummaryMap["quick tags"];
-  if (quickTags) {
-    quickTags
-      .split(/[,|]/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .slice(0, 3)
-      .forEach((item) => tags.push(item));
-  }
-  return tags;
-}
-
-function buildNutritionMetrics(nutritionMap, totalEstimatedCalories) {
-  const metrics = [];
-  const pushMetric = (label, value) => {
-    if (typeof value === "string" && value.trim()) {
-      metrics.push({ label, value: value.trim() });
-    }
-  };
-
-  pushMetric("Protein", nutritionMap["protein"]);
-  pushMetric("Carbs", nutritionMap["carbs"]);
-  pushMetric("Fat", nutritionMap["fat"]);
-  pushMetric("Sugar", nutritionMap["sugar"]);
-  pushMetric("Caffeine", nutritionMap["caffeine"]);
-  pushMetric("Alcohol", nutritionMap["alcohol"]);
-  pushMetric("Sodium", nutritionMap["sodium"]);
-  return metrics.slice(0, 6);
-}
-
-function parseStructuredBullets(content) {
-  return (typeof content === "string" ? content : "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.replace(/^[-*]\s*/, "").trim())
-    .filter(Boolean)
-    .map((line) => line.split("|").map((part) => part.trim()).filter(Boolean));
-}
-
-function parseProfileImpactCards(content) {
-  return parseStructuredBullets(content).map((parts, index) => {
-    const [label, detail = "", note = ""] = parts;
-    return {
-      id: `profile-${index}`,
-      label: label || "Profile fit",
-      detail,
-      note,
-    };
-  });
-}
-
-function sanitizeSectionContent(content) {
-  return (typeof content === "string" ? content : "")
-    .split("\n")
-    .filter((line) => !/^\s*total estimated calories\b/i.test(line.trim()))
-    .join("\n")
-    .trim();
-}
-
-function parseProsConsCards(content, kind) {
-  return parseStructuredBullets(content).map((parts, index) => {
-    const [title, detail = "", note = ""] = parts;
-    return {
-      id: `${kind}-${index}`,
-      title: title || (kind === "benefit" ? "Benefit" : "Drawback"),
-      detail,
-      note,
-    };
-  });
-}
-
-function parseClaimRealityCards(content) {
-  return parseStructuredBullets(content).map((parts, index) => {
-    const [claim, verdict = "", rationale = ""] = parts;
-    return {
-      id: `claim-${index}`,
-      claim: claim || "Claim",
-      verdict,
-      rationale,
-    };
-  });
-}
-
-function chipTone(value) {
-  const lowered = (value || "").toLowerCase();
-  if (/(support|good|stable|fit|minimal|hydrating|benefit)/.test(lowered)) {
-    return { backgroundColor: `${palette.success}16`, color: palette.success };
-  }
-  if (/(high|warning|spike|drawback|alert|weak|misleading|watch-out)/.test(lowered)) {
-    return { backgroundColor: `${palette.danger}14`, color: palette.danger };
-  }
-  return { backgroundColor: palette.primarySoft, color: palette.primary };
-}
-
-export default function CalorieResult({ result }) {
-  const sections = Array.isArray(result?.sections) ? result.sections : [];
-  const topSummarySection = sections.find((section) => /summary|top summary|meal summary/i.test(section.heading || ""));
-  const nutritionSection = sections.find((section) => /nutrition overview|itemized breakdown/i.test(section.heading || ""));
-  const ingredientsSection = sections.find((section) => /^ingredients$/i.test(section.heading || ""));
-  const bodyImpactSection = sections.find((section) => /body impact|daily intake context/i.test(section.heading || ""));
-  const claimsSection = sections.find((section) => /claims vs reality/i.test(section.heading || ""));
-  const profileSection = sections.find((section) => /personalized impact|how this affects you/i.test(section.heading || ""));
-  const benefitsSection = sections.find((section) => /^benefits$/i.test(section.heading || ""));
-  const drawbacksSection = sections.find((section) => /^drawbacks$/i.test(section.heading || ""));
-  const qualitySection = sections.find((section) => /food or drink quality|quality/i.test(section.heading || ""));
-  const suggestionsSection = sections.find((section) => /smart suggestions|suggestions/i.test(section.heading || ""));
-  const topSummaryMap = useMemo(() => parseBulletMap(topSummarySection?.content), [topSummarySection?.content]);
-  const nutritionMap = useMemo(() => parseBulletMap(nutritionSection?.content), [nutritionSection?.content]);
-  const bodyImpactMap = useMemo(() => parseBulletMap(bodyImpactSection?.content), [bodyImpactSection?.content]);
-  const quickTags = useMemo(() => buildQuickTags(topSummaryMap), [topSummaryMap]);
-  const nutritionMetrics = useMemo(() => buildNutritionMetrics(nutritionMap, result?.totalEstimatedCalories), [nutritionMap, result?.totalEstimatedCalories]);
-  const profileCards = useMemo(
-    () =>
-      parseProfileImpactCards(profileSection?.content).filter(
-        (item) =>
-          item.detail ||
-          item.note ||
-          !/(no major mismatch detected|not applicable|none noted)/i.test(`${item.label} ${item.detail} ${item.note}`)
-      ),
-    [profileSection?.content]
+function MetricTile({ label, value, muted = false }) {
+  return (
+    <View style={styles.metricTile}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={[styles.metricValue, muted && styles.metricValueMuted]}>{value || "-"}</Text>
+    </View>
   );
-  const benefitCards = useMemo(() => parseProsConsCards(benefitsSection?.content, "benefit"), [benefitsSection?.content]);
-  const drawbackCards = useMemo(() => parseProsConsCards(drawbacksSection?.content, "drawback"), [drawbacksSection?.content]);
-  const claimCards = useMemo(() => parseClaimRealityCards(claimsSection?.content), [claimsSection?.content]);
+}
 
-  if (!result) {
+function DataLine({ label, value }) {
+  if (!value) {
     return null;
   }
-
-  const healthScore = parseNumericValue(topSummaryMap["health score"]);
-  const overallRead = topSummaryMap["overall read"] || "";
-  const fitLabel = typeof healthScore === "number" ? (healthScore >= 75 ? "Supportive" : healthScore >= 50 ? "Mixed" : "Watch-outs") : overallRead || "Quick read";
-  const confidence = topSummaryMap["confidence"] || "Estimated from visible food cues";
-  const proteinValue = Math.max(0, parseNumericValue(nutritionMap["protein"]) || 0);
-  const carbsValue = Math.max(0, parseNumericValue(nutritionMap["carbs"]) || 0);
-  const fatValue = Math.max(0, parseNumericValue(nutritionMap["fat"]) || 0);
-  const macroTotal = Math.max(1, proteinValue + carbsValue + fatValue);
-  const summaryLine = topSummaryMap["item"] || result.analysisText.split("\n").find((line) => line.trim())?.replace(/^Food Name:\s*/i, "").trim() || "Consumable analysis";
-  const portionLine = topSummaryMap["portion"] || "Estimated from the uploaded image";
-  const contextLine = topSummaryMap["context"] || "General dietary review";
-  const extendedSummary = topSummaryMap["extended summary"] || topSummaryMap["overall read"] || "";
-  const topCaloriesLabel =
-    typeof result?.totalEstimatedCalories === "number" && Number.isFinite(result.totalEstimatedCalories)
-      ? `${Math.round(result.totalEstimatedCalories)} kcal`
-      : nutritionMap["calories"] || "Estimate unavailable";
-
-  const handledSectionKeys = new Set(
-    [
-      topSummarySection?.heading,
-      nutritionSection?.heading,
-      ingredientsSection?.heading,
-      bodyImpactSection?.heading,
-      profileSection?.heading,
-      benefitsSection?.heading,
-      drawbacksSection?.heading,
-      claimsSection?.heading,
-      qualitySection?.heading,
-      suggestionsSection?.heading,
-    ]
-      .filter(Boolean)
-      .map((heading) => (heading || "").trim().toLowerCase())
-  );
-
   return (
-    <View style={styles.card}>
-      <AccordionSection title="Summary" accent={palette.primary} icon="text-box-check-outline" defaultExpanded>
-      <View style={styles.heroCard}>
-        <View style={styles.heroHeaderRow}>
-          <View style={styles.heroCopy}>
-            <Text style={styles.cardTitle}>Diet analysis</Text>
-            <Text style={styles.heroTitle}>{summaryLine}</Text>
-            <Text style={styles.heroSubline}>
-              {portionLine} · {contextLine}
-            </Text>
-            {extendedSummary ? <Text style={styles.heroDetail}>{extendedSummary}</Text> : null}
-          </View>
-          <View style={styles.scoreRing}>
-            <Text style={styles.scoreValue}>{typeof healthScore === "number" ? Math.round(healthScore) : fitLabel}</Text>
-            <Text style={styles.scoreLabel}>{typeof healthScore === "number" ? fitLabel : "Overall read"}</Text>
-          </View>
-        </View>
-
-        <View style={styles.contextRow}>
-          <Metric label="Estimated calories" value={topCaloriesLabel} />
-          <Metric label="Confidence" value={confidence} wide />
-          <Metric label="Daily target" value={`${result.calorieContext.dailyTarget} kcal`} />
-          {typeof result.calorieContext.bmr === "number" ? <Metric label="BMR" value={`${result.calorieContext.bmr} kcal`} /> : null}
-        </View>
-
-        {quickTags.length > 0 ? (
-          <View style={styles.tagRow}>
-            {quickTags.map((tag) => (
-              <View key={tag} style={styles.quickTag}>
-                <Text style={styles.quickTagText}>{tag}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-
-        {(proteinValue > 0 || carbsValue > 0 || fatValue > 0) ? (
-          <View style={styles.macroBlock}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.sectionMiniTitle}>Macro balance</Text>
-              <Text style={styles.contextText}>Protein / Carbs / Fat</Text>
-            </View>
-            <View style={styles.macroTrack}>
-              <View style={[styles.macroSegment, { flex: proteinValue / macroTotal, backgroundColor: palette.success }]} />
-              <View style={[styles.macroSegment, { flex: carbsValue / macroTotal, backgroundColor: palette.warning }]} />
-              <View style={[styles.macroSegment, { flex: fatValue / macroTotal, backgroundColor: palette.primary }]} />
-            </View>
-          </View>
-        ) : null}
-      </View>
-      </AccordionSection>
-
-      {nutritionMetrics.length > 0 ? (
-        <AccordionSection title="Summary details" accent={palette.secondary} icon="chart-donut">
-        <View style={styles.metricGrid}>
-          {nutritionMetrics.map((item) => (
-            <Metric key={item.label} label={item.label} value={item.value} />
-          ))}
-        </View>
-        </AccordionSection>
-      ) : null}
-
-      {ingredientsSection ? (
-        <AccordionSection title="Ingredients" accent={palette.success} icon="format-list-bulleted-square">
-          {renderMarkdownBlock(sanitizeSectionContent(ingredientsSection.content || "-"), "ingredients")}
-        </AccordionSection>
-      ) : null}
-
-      {bodyImpactSection ? (
-        <AccordionSection title="Body impact" accent={palette.warning} icon="heart-pulse" defaultExpanded>
-          <View style={styles.impactRow}>
-          {["blood sugar impact", "energy effect", "fullness", "hydration", "stimulant effect", "alcohol effect"]
-            .filter((key) => bodyImpactMap[key])
-            .slice(0, 4)
-            .map((key) => (
-              <View key={key} style={styles.impactCard}>
-                <Text style={styles.metricLabel}>{key.replace(/\b\w/g, (char) => char.toUpperCase())}</Text>
-                <Text style={styles.impactValue}>{bodyImpactMap[key]}</Text>
-              </View>
-            ))}
-          </View>
-        </AccordionSection>
-      ) : null}
-
-      {profileCards.length > 0 ? (
-        <AccordionSection title="How this affects you" accent={palette.primary} icon="account-heart-outline" defaultExpanded>
-          <View style={styles.profileImpactStack}>
-            {profileCards.map((item) => {
-              const tone = chipTone(item.label);
-              return (
-                <View key={item.id} style={styles.profileImpactCard}>
-                  <View style={[styles.inlineChip, { backgroundColor: tone.backgroundColor }]}>
-                    <Text style={[styles.inlineChipText, { color: tone.color }]}>{item.label}</Text>
-                  </View>
-                  {item.detail ? <Text style={styles.profileImpactDetail}>{item.detail}</Text> : null}
-                  {item.note ? <Text style={styles.profileImpactNote}>{item.note}</Text> : null}
-                </View>
-              );
-            })}
-          </View>
-        </AccordionSection>
-      ) : null}
-
-      {claimCards.length > 0 ? (
-        <AccordionSection title="Claims vs reality" accent={palette.secondary} icon="shield-check-outline">
-          <View style={styles.cardStack}>
-            {claimCards.map((item) => {
-              const tone = chipTone(item.verdict);
-              return (
-                <View key={item.id} style={styles.subCard}>
-                  <View style={styles.rowBetween}>
-                    <Text style={styles.subCardTitle}>{item.claim}</Text>
-                    {item.verdict ? (
-                      <View style={[styles.inlineChip, { backgroundColor: tone.backgroundColor }]}>
-                        <Text style={[styles.inlineChipText, { color: tone.color }]}>{item.verdict}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  {item.rationale ? <Text style={styles.subCardBody}>{item.rationale}</Text> : null}
-                </View>
-              );
-            })}
-          </View>
-        </AccordionSection>
-      ) : null}
-
-      {(benefitCards.length > 0 || drawbackCards.length > 0) ? (
-        <>
-          {benefitCards.length > 0 ? (
-            <AccordionSection title="Benefits" accent={palette.success} icon="thumb-up-outline">
-              <View style={styles.cardStack}>
-                {benefitCards.map((item) => (
-                  <View key={item.id} style={styles.subCard}>
-                    <Text style={styles.subCardTitle}>{item.title}</Text>
-                    {item.detail ? <Text style={styles.subCardBody}>{item.detail}</Text> : null}
-                    {item.note ? <Text style={styles.subCardMuted}>{item.note}</Text> : null}
-                  </View>
-                ))}
-              </View>
-            </AccordionSection>
-          ) : null}
-          {drawbackCards.length > 0 ? (
-            <AccordionSection title="Drawbacks" accent={palette.danger} icon="alert-circle-outline">
-              <View style={styles.cardStack}>
-                {drawbackCards.map((item) => (
-                  <View key={item.id} style={styles.subCard}>
-                    <Text style={styles.subCardTitle}>{item.title}</Text>
-                    {item.detail ? <Text style={styles.subCardBody}>{item.detail}</Text> : null}
-                    {item.note ? <Text style={styles.subCardMuted}>{item.note}</Text> : null}
-                  </View>
-                ))}
-              </View>
-            </AccordionSection>
-          ) : null}
-        </>
-      ) : null}
-
-          {qualitySection ? (
-        <AccordionSection title="Food or drink quality" accent={palette.primary} icon="leaf-circle-outline">
-          {renderMarkdownBlock(sanitizeSectionContent(qualitySection.content || "-"), "quality")}
-        </AccordionSection>
-      ) : null}
-
-      {suggestionsSection ? (
-        <AccordionSection title="Smart suggestions" accent={palette.success} icon="lightbulb-on-outline" defaultExpanded>
-          {renderMarkdownBlock(sanitizeSectionContent(suggestionsSection.content || "-"), "suggestions")}
-        </AccordionSection>
-      ) : null}
-
-      <ScrollView style={styles.resultScroller} contentContainerStyle={styles.resultContent} nestedScrollEnabled>
-        {sections.length > 0
-          ? sections.map((section, index) => {
-              if (handledSectionKeys.has((section.heading || "").trim().toLowerCase())) {
-                return null;
-              }
-              const meta = sectionMeta(section.heading);
-                return (
-                <AccordionSection key={`${section.heading}-${index}`} title={section.heading} accent={meta.accent} icon={meta.icon}>
-                  {renderMarkdownBlock(sanitizeSectionContent(section.content || "-"), `calorie-section-${index}`)}
-                </AccordionSection>
-              );
-            })
-          : renderMarkdownBlock(sanitizeSectionContent(result.analysisText), "calorie-fallback")}
-      </ScrollView>
+    <View style={styles.dataLine}>
+      <Text style={styles.dataLabel}>{label}</Text>
+      <Text style={styles.dataValue}>{value}</Text>
     </View>
   );
 }
 
-function Metric({ label, value, wide = false }) {
+function AccentChip({ label, tone }) {
   return (
-    <View style={[styles.metricTile, wide && styles.metricTileWide]}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
+    <View style={[styles.chip, { backgroundColor: tone.backgroundColor }]}>
+      <Text style={[styles.chipText, { color: tone.color }]}>{label}</Text>
     </View>
   );
 }
 
-function AccordionSection({ title, accent, icon, children, style, defaultExpanded = false }) {
+function AccordionSection({ title, accent, icon, children, defaultExpanded = false }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   return (
-    <View style={[styles.sectionCard, style]}>
+    <View style={styles.sectionCard}>
       <Pressable style={styles.sectionHeader} onPress={() => setExpanded((value) => !value)}>
-        <View style={[styles.sectionIconWrap, { backgroundColor: `${accent}16` }]}>
+        <View style={[styles.sectionIconWrap, { backgroundColor: `${accent}18` }]}>
           <MaterialCommunityIcons name={icon} size={18} color={accent} />
         </View>
         <Text style={[styles.sectionHeading, { color: accent }]}>{title}</Text>
-        <View style={styles.sectionChevron}>
-          <MaterialCommunityIcons name={expanded ? "chevron-up" : "chevron-down"} size={18} color={accent} />
-        </View>
+        <MaterialCommunityIcons name={expanded ? "chevron-up" : "chevron-down"} size={18} color={accent} style={styles.sectionChevron} />
       </Pressable>
       {expanded ? <View style={styles.sectionContent}>{children}</View> : null}
     </View>
   );
 }
 
+export default function CalorieResult({ result }) {
+  const sections = Array.isArray(result?.sections) ? result.sections : [];
+  const overviewSection = findSection(sections, /calorie\s*&\s*macro overview|summary/i);
+  const goalSection = findSection(sections, /goal alignment score/i);
+  const ingredientSection = findSection(sections, /ingredient quality analysis|ingredients/i);
+  const healthSection = findSection(sections, /health impact layer|body impact/i);
+  const personalizationSection = findSection(sections, /personalization layer|how this affects you|personalized impact/i);
+  const satietySection = findSection(sections, /satiety\s*&\s*hunger prediction/i);
+  const timingSection = findSection(sections, /timing insight/i);
+  const optimizationSection = findSection(sections, /meal optimization suggestions|smart suggestions/i);
+  const microSection = findSection(sections, /micronutrient snapshot/i);
+  const whySection = findSection(sections, /why this matters/i);
+
+  const overviewMap = useMemo(() => parseLabelMap(overviewSection?.content), [overviewSection?.content]);
+  const goalMap = useMemo(() => parseLabelMap(goalSection?.content), [goalSection?.content]);
+  const healthMap = useMemo(() => parseLabelMap(healthSection?.content), [healthSection?.content]);
+  const satietyMap = useMemo(() => parseLabelMap(satietySection?.content), [satietySection?.content]);
+  const timingMap = useMemo(() => parseLabelMap(timingSection?.content), [timingSection?.content]);
+  const whyMap = useMemo(() => parseLabelMap(whySection?.content), [whySection?.content]);
+  const ingredientRows = useMemo(() => parsePipeBullets(ingredientSection?.content), [ingredientSection?.content]);
+  const personalizationRows = useMemo(() => parsePipeBullets(personalizationSection?.content), [personalizationSection?.content]);
+  const optimizationRows = useMemo(() => parsePipeBullets(optimizationSection?.content), [optimizationSection?.content]);
+  const micronutrientRows = useMemo(() => parsePipeBullets(microSection?.content), [microSection?.content]);
+
+  if (!result) {
+    return null;
+  }
+
+  const protein = Math.max(0, parseNumericValue(overviewMap["protein"]) || 0);
+  const carbs = Math.max(0, parseNumericValue(overviewMap["carbs"]) || 0);
+  const fats = Math.max(0, parseNumericValue(overviewMap["fats"] || overviewMap["fat"]) || 0);
+  const macroTotal = Math.max(1, protein + carbs + fats);
+  const totalCalories =
+    typeof result?.totalEstimatedCalories === "number" && Number.isFinite(result.totalEstimatedCalories)
+      ? `${Math.round(result.totalEstimatedCalories)} kcal`
+      : overviewMap["total calories"] || "Estimate unavailable";
+  const score = parseNumericValue(goalMap["score"]);
+  const scoreTone = toneForScore(score || 0);
+  const mealTitle =
+    overviewMap["item"] ||
+    result.analysisText.split("\n").find((line) => line.trim())?.replace(/^food name:\s*/i, "").trim() ||
+    "Meal analysis";
+  const handledSectionKeys = new Set(
+    [
+      overviewSection?.heading,
+      goalSection?.heading,
+      ingredientSection?.heading,
+      healthSection?.heading,
+      personalizationSection?.heading,
+      satietySection?.heading,
+      timingSection?.heading,
+      optimizationSection?.heading,
+      microSection?.heading,
+      whySection?.heading,
+    ]
+      .filter(Boolean)
+      .map((value) => value.trim().toLowerCase())
+  );
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.heroCard}>
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroCopy}>
+            <Text style={styles.eyebrow}>Nutrition snapshot</Text>
+            <Text style={styles.heroTitle}>{mealTitle}</Text>
+            <Text style={styles.heroSubtitle}>
+              {(overviewMap["portion"] || "Estimated portion")} · {(overviewMap["confidence"] || "AI estimate from visible food cues")}
+            </Text>
+            {(overviewMap["quick take"] || overviewMap["macro interpretation"]) ? (
+              <Text style={styles.heroSummary}>{overviewMap["quick take"] || overviewMap["macro interpretation"]}</Text>
+            ) : null}
+          </View>
+          <View style={[styles.scoreCard, { backgroundColor: scoreTone.backgroundColor }]}>
+            <Text style={[styles.scoreValue, { color: scoreTone.color }]}>{typeof score === "number" ? Math.round(score) : "--"}</Text>
+            <Text style={[styles.scoreLabel, { color: scoreTone.color }]}>
+              {goalMap["goal"] ? `For ${goalMap["goal"]}` : "Goal fit"}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.topMetricRow}>
+          <MetricTile label="Total calories" value={totalCalories} />
+          <MetricTile label="Protein" value={`${overviewMap["protein"] || `${protein}g`} (${overviewMap["protein share"] || pctString(protein, macroTotal)})`} />
+          <MetricTile label="Carbs" value={`${overviewMap["carbs"] || `${carbs}g`} (${overviewMap["carbs share"] || pctString(carbs, macroTotal)})`} />
+          <MetricTile label="Fats" value={`${overviewMap["fats"] || overviewMap["fat"] || `${fats}g`} (${overviewMap["fats share"] || pctString(fats, macroTotal)})`} />
+        </View>
+
+        {(protein > 0 || carbs > 0 || fats > 0) ? (
+          <View style={styles.balanceCard}>
+            <View style={styles.rowBetween}>
+              <Text style={styles.sectionTitle}>Macro balance</Text>
+              <Text style={styles.visualBalanceText}>{overviewMap["visual balance"] || "Protein / Carbs / Fats"}</Text>
+            </View>
+            <View style={styles.balanceTrack}>
+              <View style={[styles.balanceSegment, { flex: protein || 0.1, backgroundColor: palette.success }]} />
+              <View style={[styles.balanceSegment, { flex: carbs || 0.1, backgroundColor: palette.warning }]} />
+              <View style={[styles.balanceSegment, { flex: fats || 0.1, backgroundColor: palette.primary }]} />
+            </View>
+            <View style={styles.legendRow}>
+              <LegendDot color={palette.success} label={`Protein ${overviewMap["protein share"] || pctString(protein, macroTotal)}`} />
+              <LegendDot color={palette.warning} label={`Carbs ${overviewMap["carbs share"] || pctString(carbs, macroTotal)}`} />
+              <LegendDot color={palette.primary} label={`Fats ${overviewMap["fats share"] || pctString(fats, macroTotal)}`} />
+            </View>
+            {overviewMap["macro interpretation"] ? <Text style={styles.balanceInsight}>{overviewMap["macro interpretation"]}</Text> : null}
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.dashboardGrid}>
+        <View style={styles.dashboardColumn}>
+          <AccordionSection title="Goal Alignment Score" accent={palette.success} icon="bullseye-arrow" defaultExpanded>
+            <View style={styles.metricGrid}>
+              <MetricTile label="Calorie fit" value={goalMap["calorie fit"] || "-"} />
+              <MetricTile label="Macro balance" value={goalMap["macro balance"] || "-"} />
+              <MetricTile label="Satiety level" value={goalMap["satiety level"] || "-"} />
+            </View>
+            {goalMap["reason"] ? <Text style={styles.insightText}>{goalMap["reason"]}</Text> : null}
+          </AccordionSection>
+
+          <AccordionSection title="Health Impact Layer" accent={palette.danger} icon="heart-pulse" defaultExpanded>
+            <View style={styles.signalGrid}>
+              {[
+                ["Blood sugar impact", healthMap["blood sugar impact"]],
+                ["Sodium", healthMap["sodium"]],
+                ["Saturated fat", healthMap["saturated fat"]],
+                ["Fiber", healthMap["fiber"]],
+                ["Energy stability", healthMap["energy stability"]],
+              ]
+                .filter(([, value]) => value)
+                .map(([label, value]) => {
+                  const tone = pickTone(value);
+                  return (
+                    <View key={label} style={[styles.signalCard, { backgroundColor: tone.backgroundColor }]}>
+                      <MaterialCommunityIcons name={tone.icon} size={18} color={tone.color} />
+                      <Text style={styles.signalLabel}>{label}</Text>
+                      <Text style={[styles.signalValue, { color: tone.color }]}>{value}</Text>
+                    </View>
+                  );
+                })}
+            </View>
+            {healthMap["watch-outs"] ? <Text style={styles.insightText}>{healthMap["watch-outs"]}</Text> : null}
+          </AccordionSection>
+
+          <AccordionSection title="Timing Insight" accent={palette.secondary} icon="clock-outline">
+            <DataLine label="Best timing" value={timingMap["best timing"]} />
+            <DataLine label="Less ideal timing" value={timingMap["less ideal timing"]} />
+            <DataLine label="Pre-workout" value={timingMap["pre-workout"]} />
+            <DataLine label="Post-workout" value={timingMap["post-workout"]} />
+            <DataLine label="Late night" value={timingMap["late night"]} />
+            <DataLine label="Morning" value={timingMap["morning"]} />
+          </AccordionSection>
+
+          <AccordionSection title="Why This Matters" accent={palette.primary} icon="lightbulb-on-outline" defaultExpanded>
+            <DataLine label="Main insight" value={whyMap["main insight"]} />
+            <DataLine label="Short explanation" value={whyMap["short explanation"]} />
+            <DataLine label="Priority action" value={whyMap["priority action"]} />
+          </AccordionSection>
+        </View>
+
+        <View style={styles.dashboardColumn}>
+          <AccordionSection title="Ingredient Quality Analysis" accent={palette.warning} icon="food-apple-outline" defaultExpanded>
+            <View style={styles.stack}>
+              {ingredientRows.length > 0
+                ? ingredientRows.map((row) => {
+                    const [ingredient, flag = "", processing = "", additiveNote = "", whyItMatters = ""] = row.parts;
+                    const tone = pickTone(flag);
+                    return (
+                      <View key={row.id} style={styles.subCard}>
+                        <View style={styles.rowBetween}>
+                          <Text style={styles.subCardTitle}>{ingredient || "Ingredient"}</Text>
+                          {flag ? <AccentChip label={flag} tone={tone} /> : null}
+                        </View>
+                        {processing ? <Text style={styles.subCardBody}>{processing}</Text> : null}
+                        {additiveNote ? <Text style={styles.subCardMuted}>{additiveNote}</Text> : null}
+                        {whyItMatters ? <Text style={styles.subCardBody}>{whyItMatters}</Text> : null}
+                      </View>
+                    );
+                  })
+                : renderMarkdownBlock(sanitizeSectionContent(ingredientSection?.content || ""), "ingredient-fallback")}
+            </View>
+          </AccordionSection>
+
+          <AccordionSection title="Personalization Layer" accent={palette.primary} icon="account-heart-outline" defaultExpanded>
+            <View style={styles.stack}>
+              {personalizationRows.length > 0
+                ? personalizationRows.map((row) => {
+                    const [focusArea, fit = "", whyItMatters = ""] = row.parts;
+                    const tone = pickTone(fit);
+                    return (
+                      <View key={row.id} style={styles.subCard}>
+                        <View style={styles.rowBetween}>
+                          <Text style={styles.subCardTitle}>{focusArea || "Profile fit"}</Text>
+                          {fit ? <AccentChip label={fit} tone={tone} /> : null}
+                        </View>
+                        {whyItMatters ? <Text style={styles.subCardBody}>{whyItMatters}</Text> : null}
+                      </View>
+                    );
+                  })
+                : renderMarkdownBlock(sanitizeSectionContent(personalizationSection?.content || ""), "profile-fallback")}
+            </View>
+          </AccordionSection>
+
+          <AccordionSection title="Satiety & Hunger Prediction" accent={palette.success} icon="silverware-fork-knife">
+            <View style={styles.metricGrid}>
+              <MetricTile label="Satiety score" value={satietyMap["satiety score"] || "-"} />
+              <MetricTile label="Protein level" value={satietyMap["protein level"] || "-"} />
+              <MetricTile label="Fiber level" value={satietyMap["fiber level"] || "-"} />
+              <MetricTile label="Energy density" value={satietyMap["energy density"] || "-"} />
+            </View>
+            {satietyMap["hunger forecast"] ? <Text style={styles.insightText}>{satietyMap["hunger forecast"]}</Text> : null}
+          </AccordionSection>
+
+          <AccordionSection title="Meal Optimization Suggestions" accent={palette.success} icon="swap-horizontal" defaultExpanded>
+            <View style={styles.stack}>
+              {optimizationRows.length > 0
+                ? optimizationRows.map((row) => {
+                    const [suggestion, benefit = "", effect = ""] = row.parts;
+                    return (
+                      <View key={row.id} style={styles.subCard}>
+                        <Text style={styles.subCardTitle}>{suggestion || "Suggestion"}</Text>
+                        {benefit ? <Text style={styles.subCardBody}>{benefit}</Text> : null}
+                        {effect ? <Text style={styles.subCardMuted}>{effect}</Text> : null}
+                      </View>
+                    );
+                  })
+                : renderMarkdownBlock(sanitizeSectionContent(optimizationSection?.content || ""), "opt-fallback")}
+            </View>
+          </AccordionSection>
+
+          <AccordionSection title="Micronutrient Snapshot" accent={palette.warning} icon="molecule">
+            <View style={styles.stack}>
+              {micronutrientRows.length > 0
+                ? micronutrientRows.map((row) => {
+                    const [nutrient, level = "", whyItMatters = ""] = row.parts;
+                    return (
+                      <View key={row.id} style={styles.subCard}>
+                        <View style={styles.rowBetween}>
+                          <Text style={styles.subCardTitle}>{nutrient || "Nutrient"}</Text>
+                          {level ? <Text style={styles.subCardTag}>{level}</Text> : null}
+                        </View>
+                        {whyItMatters ? <Text style={styles.subCardBody}>{whyItMatters}</Text> : null}
+                      </View>
+                    );
+                  })
+                : renderMarkdownBlock(sanitizeSectionContent(microSection?.content || ""), "micro-fallback")}
+            </View>
+          </AccordionSection>
+        </View>
+      </View>
+
+      <ScrollView style={styles.resultScroller} contentContainerStyle={styles.resultContent} nestedScrollEnabled>
+        {sections.length > 0
+          ? sections.map((section, index) => {
+              const key = (section.heading || "").trim().toLowerCase();
+              if (handledSectionKeys.has(key)) {
+                return null;
+              }
+              const meta = sectionMeta(section.heading);
+              return (
+                <AccordionSection key={`${section.heading}-${index}`} title={section.heading} accent={meta.accent} icon={meta.icon}>
+                  {renderMarkdownBlock(sanitizeSectionContent(section.content || "-"), `calorie-section-${index}`)}
+                </AccordionSection>
+              );
+            })
+          : renderMarkdownBlock(sanitizeSectionContent(result.analysisText || ""), "calorie-fallback")}
+      </ScrollView>
+    </View>
+  );
+}
+
+function LegendDot({ color, label }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={styles.legendText}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surface,
@@ -495,14 +478,14 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   heroCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
-    padding: 16,
-    gap: 12,
+    padding: 18,
+    gap: 14,
   },
-  heroHeaderRow: {
+  heroTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 14,
@@ -511,112 +494,89 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 6,
   },
-  cardTitle: {
+  eyebrow: {
     color: palette.primary,
     fontFamily: "Poppins_700Bold",
-    fontSize: 13,
+    fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 0.8,
   },
   heroTitle: {
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
-    fontSize: 20,
-    lineHeight: 28,
+    fontSize: 22,
+    lineHeight: 30,
   },
-  heroSubline: {
+  heroSubtitle: {
     color: palette.muted,
-    lineHeight: 20,
     fontFamily: "Poppins_400Regular",
+    lineHeight: 20,
   },
-  heroDetail: {
+  heroSummary: {
     color: palette.ink,
-    lineHeight: 20,
-    fontFamily: "Poppins_400Regular",
+    fontFamily: "Poppins_500Medium",
+    lineHeight: 21,
   },
-  scoreRing: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    borderWidth: 6,
-    borderColor: palette.primarySoft,
+  scoreCard: {
+    minWidth: 96,
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
+    gap: 4,
   },
   scoreValue: {
-    color: palette.ink,
     fontFamily: "Poppins_700Bold",
-    fontSize: 22,
+    fontSize: 28,
   },
   scoreLabel: {
-    color: palette.muted,
-    fontFamily: "Poppins_500Medium",
-    fontSize: 10,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 11,
+    textAlign: "center",
   },
-  contextRow: {
+  topMetricRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: 10,
   },
   metricGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-  },
-  inlineChip: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  inlineChipText: {
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 11,
+    gap: 10,
   },
   metricTile: {
-    minWidth: 102,
     flexGrow: 1,
-    borderRadius: 16,
+    minWidth: 120,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: "#FFFFFF",
-    paddingVertical: 10,
     paddingHorizontal: 12,
+    paddingVertical: 12,
     gap: 4,
-  },
-  metricTileWide: {
-    minWidth: 160,
-    flexBasis: "100%",
   },
   metricLabel: {
     color: palette.muted,
-    fontSize: 11,
     fontFamily: "Poppins_500Medium",
+    fontSize: 11,
   },
   metricValue: {
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
   },
-  tagRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+  metricValueMuted: {
+    color: palette.muted,
   },
-  quickTag: {
-    borderRadius: 999,
-    backgroundColor: palette.primarySoft,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  quickTagText: {
-    color: palette.primary,
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12,
-  },
-  macroBlock: {
-    gap: 8,
+  balanceCard: {
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: palette.border,
+    padding: 14,
+    gap: 10,
   },
   rowBetween: {
     flexDirection: "row",
@@ -624,87 +584,59 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 8,
   },
-  sectionMiniTitle: {
+  sectionTitle: {
     color: palette.ink,
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 14,
   },
-  contextText: {
+  visualBalanceText: {
     color: palette.muted,
-    lineHeight: 19,
-    fontFamily: "Poppins_400Regular",
+    fontFamily: "Poppins_500Medium",
+    fontSize: 12,
   },
-  macroTrack: {
-    height: 12,
+  balanceTrack: {
+    height: 14,
     borderRadius: 999,
     overflow: "hidden",
     backgroundColor: palette.surfaceMuted,
     flexDirection: "row",
   },
-  macroSegment: {
+  balanceSegment: {
     height: "100%",
   },
-  impactRow: {
+  legendRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
   },
-  impactCard: {
-    flexGrow: 1,
-    flexBasis: 150,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 4,
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
-  impactValue: {
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  legendText: {
     color: palette.ink,
-    fontFamily: "Poppins_600SemiBold",
-    lineHeight: 19,
-  },
-  profileImpactStack: {
-    gap: 10,
-  },
-  profileImpactCard: {
-    gap: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    padding: 14,
-  },
-  profileImpactDetail: {
-    color: palette.ink,
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  profileImpactNote: {
-    color: palette.muted,
-    fontFamily: "Poppins_400Regular",
+    fontFamily: "Poppins_500Medium",
     fontSize: 12,
-    lineHeight: 18,
   },
-  prosConsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  balanceInsight: {
+    color: palette.ink,
+    fontFamily: "Poppins_500Medium",
+    lineHeight: 20,
+  },
+  dashboardGrid: {
     gap: 12,
   },
-  prosConsColumn: {
-    flex: 1,
-    minWidth: 240,
-  },
-  resultScroller: {
-    maxHeight: 560,
-  },
-  resultContent: {
+  dashboardColumn: {
     gap: 12,
   },
   sectionCard: {
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
@@ -714,12 +646,6 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-  },
-  sectionChevron: {
-    marginLeft: "auto",
-  },
-  sectionContent: {
     gap: 10,
   },
   sectionIconWrap: {
@@ -732,6 +658,101 @@ const styles = StyleSheet.create({
   sectionHeading: {
     fontFamily: "Poppins_700Bold",
     fontSize: 14,
+    flex: 1,
+  },
+  sectionChevron: {
+    marginLeft: "auto",
+  },
+  sectionContent: {
+    gap: 10,
+  },
+  signalGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  signalCard: {
+    flexGrow: 1,
+    flexBasis: 140,
+    borderRadius: 18,
+    padding: 12,
+    gap: 6,
+  },
+  signalLabel: {
+    color: palette.muted,
+    fontFamily: "Poppins_500Medium",
+    fontSize: 11,
+  },
+  signalValue: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  insightText: {
+    color: palette.ink,
+    fontFamily: "Poppins_500Medium",
+    lineHeight: 20,
+  },
+  stack: {
+    gap: 10,
+  },
+  subCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+    gap: 6,
+  },
+  subCardTitle: {
+    color: palette.ink,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 13,
+    flex: 1,
+  },
+  subCardBody: {
+    color: palette.ink,
+    fontFamily: "Poppins_500Medium",
+    lineHeight: 19,
+  },
+  subCardMuted: {
+    color: palette.muted,
+    fontFamily: "Poppins_400Regular",
+    lineHeight: 18,
+  },
+  subCardTag: {
+    color: palette.primary,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12,
+  },
+  chip: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  chipText: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 11,
+  },
+  dataLine: {
+    gap: 2,
+    paddingVertical: 2,
+  },
+  dataLabel: {
+    color: palette.muted,
+    fontFamily: "Poppins_500Medium",
+    fontSize: 11,
+  },
+  dataValue: {
+    color: palette.ink,
+    fontFamily: "Poppins_600SemiBold",
+    lineHeight: 20,
+  },
+  resultScroller: {
+    maxHeight: 420,
+  },
+  resultContent: {
+    gap: 12,
   },
   markdownBlock: {
     gap: 6,

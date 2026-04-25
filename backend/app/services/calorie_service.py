@@ -238,6 +238,7 @@ def _build_cache_key(
     meal_date: str | None,
     meal_time: str | None,
     hunger_level: str | None,
+    goal_context: str | None,
     age: float,
     bmi: float,
     activity_level: str,
@@ -250,6 +251,7 @@ def _build_cache_key(
     return (
         f"{digest}|{(meal_description or '').strip().lower()}|{(meal_type or '').strip().lower()}|"
         f"{(meal_date or '').strip()}|{(meal_time or '').strip()}|{(hunger_level or '').strip()}|"
+        f"{(goal_context or '').strip().lower()}|"
         f"{age:.2f}|{bmi:.2f}|{activity_level}|{sex or ''}|{weight_kg or ''}|{height_cm or ''}|"
         f"{(medical_history or '').strip().lower()}"
     )
@@ -333,6 +335,7 @@ def _build_prompt(
     meal_date: str | None,
     meal_time: str | None,
     hunger_level: str | None,
+    goal_context: str | None,
     has_image: bool,
 ) -> str:
     normalized_description = (meal_description or "").strip()
@@ -340,6 +343,7 @@ def _build_prompt(
     normalized_date = (meal_date or "").strip() or "unknown"
     normalized_time = (meal_time or "").strip() or "unknown"
     normalized_hunger = (hunger_level or "").strip() or "unknown"
+    normalized_goal = (goal_context or "").strip() or "general health"
     evidence_mode = (
         "Use the image as the main source of truth and use the text description only as supporting context when both are present."
         if has_image
@@ -359,21 +363,21 @@ def _build_prompt(
         "Look carefully at the image and identify whether it is a meal, snack, drink, packaged item, or supplement/consumable. "
         "Estimate realistic portion size, likely ingredients, calories, and major nutrition signals. "
         "Provide concise markdown with these exact H2 sections in this order: "
-        "Summary, Ingredients, Body Impact, How This Affects You, Claims vs Reality, Benefits, Drawbacks, Food or Drink Quality, Smart Suggestions. "
+        "Calorie & Macro Overview, Goal Alignment Score, Ingredient Quality Analysis, Health Impact Layer, Personalization Layer, Satiety & Hunger Prediction, Timing Insight, Meal Optimization Suggestions, Micronutrient Snapshot, Why This Matters. "
         "Inside sections, prefer short labeled lines using ':' or '='. Bullets are allowed, but avoid unnecessary dash-heavy filler. "
-        "In Summary, use bullet points for: Item, Portion, Context, Overall Read, Health Score, Confidence, Calories, Protein, Carbs, Fat, Sugar, Caffeine, Alcohol, Sodium, Quick Tags, Extended Summary. "
-        "Overall Read should be one of: Supportive, Mixed, or Watch-outs. "
-        "Health Score must be an integer from 0 to 100 based on the meal's likely fit for the user's goals, intake balance, and watch-outs. "
-        "Confidence should explain certainty briefly, especially when portion size or image clarity is weak. "
-        "In Ingredients, list as many meaningful ingredients or components as you can infer, one bullet per ingredient in this format: Ingredient | Type | Why it matters. "
-        "In Body Impact, use bullets for Blood Sugar Impact, Energy Effect, Fullness, and when relevant Hydration, Stimulant Effect, Alcohol Effect. "
-        "In How This Affects You, use bullets for Goal fit, Condition links, Allergy links, Eating pattern fit, Diet type fit, Food rules or dislikes, Religious or cultural fit, Daily context, and Alerts. "
-        "Only mention lines that are relevant. If nothing notable applies, use a bullet that says 'Profile fit: No major mismatch detected.' "
-        "In Claims vs Reality, detect implied claims like healthy, low fat, sugar-free, energy-boosting, high protein, recovery drink, or fat-burning and judge each as Supported, Mixed, or Weak / misleading. "
-        "In Benefits, use one bullet per benefit in this format: Benefit | Why it helps | Best for. "
-        "In Drawbacks, use one bullet per drawback in this format: Drawback | Why it matters | Watch-out. "
-        "In Food or Drink Quality, describe processing level, sugar density, additive load, ingredient quality, and whether it feels minimally processed or ultra-processed. "
-        "In Smart Suggestions, give practical next steps or swaps. Focus on information a user can actually act on next, not filler. "
+        "In Calorie & Macro Overview, include these exact labeled lines: Item, Portion, Confidence, Total Calories, Protein, Carbs, Fats, Protein Share, Carbs Share, Fats Share, Macro Interpretation, Visual Balance, Quick Take. "
+        "Macro Interpretation should mention whether protein, carbs, and fats support or work against the likely user goal. Visual Balance should be a very short text summary of macro balance, not ASCII art. "
+        "In Goal Alignment Score, include these exact labeled lines: Goal, Score, Calorie Fit, Macro Balance, Satiety Level, Reason. Score must be an integer from 0 to 100 and should evaluate this meal against the stated goal. "
+        "In Ingredient Quality Analysis, list meaningful ingredients or components using one bullet each in this format: Ingredient | Quality Flag | Whole vs processed | Additives or oil note | Why it matters. "
+        "Use Quality Flag values that clearly map to Clean, Moderate processing, or Ultra-processed. "
+        "In Health Impact Layer, include these exact labeled lines when relevant: Blood Sugar Impact, Sodium, Saturated Fat, Fiber, Energy Stability, Watch-outs. "
+        "In Personalization Layer, include bullets in this format: Focus Area | Personal Fit | Why it matters. Cover allergies, conditions, stated goal, diet pattern, food rules, or restrictions only when relevant. If there is no notable issue, use: Profile Fit | No major mismatch detected | General use looks acceptable. "
+        "In Satiety & Hunger Prediction, include these exact labeled lines: Satiety Score, Protein Level, Fiber Level, Energy Density, Hunger Forecast. Satiety Score should be Low, Medium, or High. "
+        "In Timing Insight, include these exact labeled lines: Best Timing, Less Ideal Timing, Pre-workout, Post-workout, Late Night, Morning. "
+        "In Meal Optimization Suggestions, give 3 to 5 short bullets in this format: Suggestion | Benefit | Expected effect. Focus on realistic swaps or additions. "
+        "In Micronutrient Snapshot, include 3 to 6 bullets in this format: Nutrient | Estimated intake or strength | Why it matters. Prefer Iron, Calcium, Magnesium, Vitamin D, Potassium, Fiber, B vitamins when relevant. "
+        "In Why This Matters, include these exact labeled lines: Main Insight, Short Explanation, Priority Action. "
+        "Keep the tone practical and human. Prioritize information a user can act on next. "
         "Include a final line: Total Estimated Calories.\n"
         "In that final line, write calories as digits only with NO commas or separators (for example 1000, not 1,000).\n\n"
         f"Meal description: {normalized_description or 'None provided'}\n"
@@ -381,6 +385,7 @@ def _build_prompt(
         f"Meal date: {normalized_date}\n"
         f"Meal time: {normalized_time}\n"
         f"Hunger level out of 5: {normalized_hunger}\n"
+        f"Primary user goal: {normalized_goal}\n"
         f"User age: {context.age:.0f}\n"
         f"User BMI: {context.bmi:.1f}\n"
         f"Activity level: {context.activity_level}\n"
@@ -497,6 +502,7 @@ def calculate_calories(
     meal_date: str | None = None,
     meal_time: str | None = None,
     hunger_level: str | None = None,
+    goal_context: str | None = None,
 ) -> CalorieCalculationResult:
     if not settings.openai_api_key:
         raise RuntimeError("Calorie calculator is unavailable because OPENAI_API_KEY is not configured.")
@@ -539,6 +545,7 @@ def calculate_calories(
         meal_date=meal_date,
         meal_time=meal_time,
         hunger_level=hunger_level,
+        goal_context=goal_context,
         age=context.age,
         bmi=context.bmi,
         activity_level=context.activity_level,
@@ -568,6 +575,7 @@ def calculate_calories(
                 meal_date=meal_date,
                 meal_time=meal_time,
                 hunger_level=hunger_level,
+                goal_context=goal_context,
                 has_image=has_image,
             ),
         }
