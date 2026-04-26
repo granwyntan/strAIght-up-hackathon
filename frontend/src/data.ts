@@ -380,6 +380,8 @@ export const palette = {
   text: "#101828",
   success: "#1E7A5F",
   successSoft: "#E7F5EF",
+  info: "#5E7EA7",
+  infoSoft: "#EAF2FB",
   warning: "#7B8CA4",
   warningSoft: "#EFF3F8",
   danger: "#C25747",

@@ -20,19 +20,52 @@ def _weighted_signal(sources: list[SourceAssessment], sentiment: str) -> float:
     )
 
 
+def _claim_pressure(claim_analysis: ClaimAnalysis) -> int:
+    strongest_claim = max((item.strength for item in claim_analysis.atomicClaims), default=1)
+    pressure = 0
+    if strongest_claim >= 4:
+        pressure += 1
+    if strongest_claim >= 5:
+        pressure += 1
+    if claim_analysis.languageRiskScore >= 40:
+        pressure += 1
+    if claim_analysis.languageRiskScore >= 55:
+        pressure += 1
+    if claim_analysis.redFlags:
+        pressure += 1
+    if claim_analysis.semantics and claim_analysis.semantics.impliedCausation:
+        pressure += 1
+    return pressure
+
+
 def _verdict(score: int, claim_analysis: ClaimAnalysis, sources: list[SourceAssessment]) -> ClaimVerdict:
     consensus = weighted_consensus_breakdown(sources)
     support_weight = _weighted_signal(sources, "positive")
     contradiction_weight = _weighted_signal(sources, "negative")
     strongest_claim = max((item.strength for item in claim_analysis.atomicClaims), default=1)
+    claim_pressure = _claim_pressure(claim_analysis)
 
-    if score >= 72 and support_weight >= contradiction_weight * 1.35 and consensus.supportShare >= 0.5:
+    if (
+        score >= 72
+        and support_weight >= max(1.6, contradiction_weight * 1.4)
+        and consensus.supportShare >= 0.52
+        and consensus.contradictionShare <= 0.18
+        and not (claim_pressure >= 3 and support_weight < 2.0)
+    ):
         return "trustworthy"
-    if score <= 28 or (contradiction_weight >= support_weight * 1.25 and consensus.contradictionShare >= 0.34):
+    if score <= 28 or (contradiction_weight >= max(1.25, support_weight * 1.12) and consensus.contradictionShare >= 0.3):
         return "untrustworthy"
+    if claim_pressure >= 3 and (
+        support_weight < 2.0
+        or contradiction_weight >= support_weight * 0.75
+        or consensus.contradictionShare >= 0.18
+        or consensus.supportShare < 0.55
+        or claim_analysis.languageRiskScore >= 38
+    ):
+        return "overstated"
     if strongest_claim >= 4 and (contradiction_weight >= support_weight or claim_analysis.languageRiskScore >= 42 or consensus.contradictionShare >= 0.24):
         return "overstated"
-    if score >= 64 and support_weight > contradiction_weight and consensus.contradictionShare < 0.22:
+    if score >= 64 and support_weight > contradiction_weight * 1.25 and consensus.contradictionShare < 0.2 and consensus.supportShare >= 0.5:
         return "trustworthy"
     return "mixed"
 

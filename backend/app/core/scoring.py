@@ -141,6 +141,24 @@ def language_safety_score(claim_analysis: ClaimAnalysis) -> int:
     return max(0, 100 - claim_analysis.languageRiskScore)
 
 
+def _claim_pressure(claim_analysis: ClaimAnalysis) -> int:
+    strongest_claim = max((item.strength for item in claim_analysis.atomicClaims), default=1)
+    pressure = 0
+    if strongest_claim >= 4:
+        pressure += 1
+    if strongest_claim >= 5:
+        pressure += 1
+    if claim_analysis.languageRiskScore >= 40:
+        pressure += 1
+    if claim_analysis.languageRiskScore >= 55:
+        pressure += 1
+    if claim_analysis.redFlags:
+        pressure += 1
+    if claim_analysis.semantics and claim_analysis.semantics.impliedCausation:
+        pressure += 1
+    return pressure
+
+
 def _high_quality_support(sources: list[SourceAssessment]) -> float:
     return sum(
         _effective_source_weight(source)
@@ -165,6 +183,7 @@ def claim_evidence_fit_score(claim_analysis: ClaimAnalysis, sources: list[Source
     strongest_subclaim = max((item.strength for item in claim_analysis.atomicClaims), default=1)
     support_strength = _high_quality_support(sources)
     contradiction_strength = _high_quality_contradiction(sources)
+    claim_pressure = _claim_pressure(claim_analysis)
 
     fit_score = consensus.credibilityScore
     if support_strength >= 2.6 and consensus.supportShare >= 0.58 and contradiction_strength < 1.1:
@@ -185,6 +204,10 @@ def claim_evidence_fit_score(claim_analysis: ClaimAnalysis, sources: list[Source
         fit_score += 8
     if consensus.neutralWeight / max(1.0, consensus.totalWeight) > 0.45 and support_strength < 1.7:
         fit_score -= 6
+    if claim_pressure >= 3 and support_strength < 1.9:
+        fit_score -= 10
+    if claim_pressure >= 4 and (contradiction_strength >= 1.2 or consensus.contradictionShare > 0.18):
+        fit_score -= 8
     return max(0, min(100, fit_score))
 
 
@@ -243,36 +266,43 @@ def calibrated_credibility_score(claim_analysis: ClaimAnalysis, sources: list[So
     strongest_claim = max((item.strength for item in claim_analysis.atomicClaims), default=1)
     high_quality_support = _high_quality_support(sources)
     high_quality_contradiction = _high_quality_contradiction(sources)
+    claim_pressure = _claim_pressure(claim_analysis)
     penalties: list[str] = []
     boosts: list[str] = []
 
-    if high_quality_support >= 2.6 and consensus.supportShare >= 0.58 and high_quality_contradiction < 1.1:
-        score += 16
-        boosts.append("Strong verified support with little real pushback added a 16-point boost.")
-    elif high_quality_support >= 1.9 and consensus.supportShare >= 0.5 and high_quality_contradiction < 1.4:
-        score += 10
-        boosts.append("Consistent high-quality support added a 10-point boost.")
-    elif high_quality_support >= 1.4 and consensus.supportShare >= 0.45 and consensus.contradictionShare < 0.16:
-        score += 6
-        boosts.append("Measured factual support added a 6-point boost.")
-    if strongest_claim >= 4 and high_quality_support < 1.6:
-        score -= 14
-        penalties.append("Strong claim without strong supporting evidence triggered a 14-point penalty.")
-    if strongest_claim >= 4 and claim_analysis.languageRiskScore >= 45:
-        score -= 12
-        penalties.append("Overstated wording triggered a 12-point penalty.")
-    if high_quality_contradiction >= 2.2 or consensus.contradictionShare > 0.5:
-        score -= 18
-        penalties.append("Strong contradicting evidence materially undercut the claim and triggered an 18-point penalty.")
-    elif high_quality_contradiction >= 1.5 or consensus.contradictionShare > 0.35:
-        score -= 10
-        penalties.append("Meaningful contradiction pressure triggered a 10-point penalty.")
-    elif consensus.contradictionShare < 0.15 and high_quality_support >= 1.8:
+    if high_quality_support >= 2.8 and consensus.supportShare >= 0.6 and high_quality_contradiction < 1.0:
+        score += 18
+        boosts.append("Strong verified support with little real pushback added an 18-point boost.")
+    elif high_quality_support >= 2.1 and consensus.supportShare >= 0.53 and high_quality_contradiction < 1.25:
+        score += 12
+        boosts.append("Consistent high-quality support added a 12-point boost.")
+    elif high_quality_support >= 1.6 and consensus.supportShare >= 0.48 and consensus.contradictionShare < 0.14 and claim_pressure <= 2:
         score += 8
-        boosts.append("Low contradiction pressure added an 8-point boost.")
+        boosts.append("Measured factual support added an 8-point boost.")
+    if strongest_claim >= 4 and high_quality_support < 1.6:
+        score -= 10
+        penalties.append("Strong claim without strong supporting evidence triggered a 10-point penalty.")
+    if strongest_claim >= 4 and claim_analysis.languageRiskScore >= 45:
+        score -= 8
+        penalties.append("Overstated wording triggered an 8-point penalty.")
+    if high_quality_contradiction >= 2.2 or consensus.contradictionShare > 0.5:
+        score -= 22
+        penalties.append("Strong contradicting evidence materially undercut the claim and triggered a 22-point penalty.")
+    elif high_quality_contradiction >= 1.5 or consensus.contradictionShare > 0.35:
+        score -= 14
+        penalties.append("Meaningful contradiction pressure triggered a 14-point penalty.")
+    elif consensus.contradictionShare < 0.15 and high_quality_support >= 1.8:
+        score += 10
+        boosts.append("Low contradiction pressure added a 10-point boost.")
     if consensus.neutralWeight / max(1.0, consensus.totalWeight) > 0.45 and high_quality_support < 1.7:
         score -= 6
         penalties.append("A large unsettled evidence share kept the score from moving higher.")
+    if claim_pressure >= 3 and high_quality_support < 1.9:
+        score -= 8
+        penalties.append("High-certainty wording without enough top-tier support triggered an 8-point penalty.")
+    if claim_pressure >= 4 and (high_quality_contradiction >= 1.2 or consensus.contradictionShare > 0.18):
+        score -= 10
+        penalties.append("Strong causal or absolute wording plus notable contradiction pressure triggered a 10-point penalty.")
 
     return max(0, min(100, score)), [*boosts, *penalties], consensus
 

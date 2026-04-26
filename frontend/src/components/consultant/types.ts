@@ -15,7 +15,7 @@ export type ConsultantView = "investigate" | "history";
 export type ProfileView = "overview" | "settings";
 export type MaterialIconName = string;
 export type ReviewDepth = "quick" | "standard" | "deep";
-export type SnackbarAction = "retry" | "undoDelete";
+export type SnackbarAction = "retry" | "undoDelete" | "setupProfile";
 
 export type InvestigationComparison = {
   compatible: boolean;

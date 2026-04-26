@@ -34,12 +34,12 @@ const DEFAULT_VALUES = {
   sex: "female",
   medicalHistory: "",
   mealDescription: "",
-  mealType: "food",
+  mealType: "auto",
   mealDate: formatDisplayDate(new Date()),
   mealTime: formatDisplayTime(new Date()),
   hungerLevel: "3",
   goalContext: "energy",
-  addToLogs: "no",
+  addToLogs: "yes",
   includeProfile: "yes"
 };
 const CALORIE_GUIDE_PAGES = [
@@ -939,6 +939,7 @@ function inferMealContextFromTime(value, kind) {
             <View style={styles.logCard}>
               <View style={styles.logHeaderRow}>
                 <View style={styles.flexOne}>
+                  <Text style={styles.logEyebrow}>From this analysis</Text>
                   <Text style={styles.logTitle}>Add to your log</Text>
                   <Text style={styles.logSubtitle}>Save this analysis as a meal, hydration entry, or another consumable so future advice can use the full day context.</Text>
                 </View>
@@ -965,15 +966,43 @@ function inferMealContextFromTime(value, kind) {
                   ))}
                 </View>
               </View>
+              <View style={styles.logSummaryRow}>
+                <View style={styles.logSummaryPill}>
+                  <Text style={styles.logSummaryLabel}>Name</Text>
+                  <Text style={styles.logSummaryValue}>{logName || "Untitled item"}</Text>
+                </View>
+                <View style={styles.logSummaryPill}>
+                  <Text style={styles.logSummaryLabel}>Calories</Text>
+                  <Text style={styles.logSummaryValue}>{logCalories || (logType === "hydration" ? "Optional" : "--")}</Text>
+                </View>
+                <View style={styles.logSummaryPill}>
+                  <Text style={styles.logSummaryLabel}>Context</Text>
+                  <Text style={styles.logSummaryValue}>{logContext || "Meal"}</Text>
+                </View>
+              </View>
               <View style={styles.logGrid}>
                 <TextInput style={styles.logInput} value={logName} onChangeText={setLogName} placeholder="Name" placeholderTextColor={palette.muted} />
                 <TextInput style={styles.logInput} value={logContext} onChangeText={setLogContext} placeholder="Context" placeholderTextColor={palette.muted} />
-                <DateTimePickerField mode="date" style={styles.logInput} value={logDate} onChange={setLogDate} placeholder="DD/MM/YYYY" editable={!trackerLoading} />
-                <DateTimePickerField mode="time" style={styles.logInput} value={logTime} onChange={setLogTime} placeholder="HH:MM" editable={!trackerLoading} />
                 <TextInput style={styles.logInput} value={logCalories} onChangeText={setLogCalories} placeholder={logType === "hydration" ? "Calories (optional)" : "Calories"} placeholderTextColor={palette.muted} keyboardType="numeric" />
                 <TextInput style={styles.logInput} value={logServings} onChangeText={setLogServings} placeholder="Servings" placeholderTextColor={palette.muted} keyboardType="decimal-pad" />
                 <TextInput style={styles.logInput} value={logAmount} onChangeText={setLogAmount} placeholder={logType === "hydration" ? "Amount" : "Quantity"} placeholderTextColor={palette.muted} keyboardType="numeric" />
                 <TextInput style={styles.logInput} value={logUnit} onChangeText={setLogUnit} placeholder="Unit" placeholderTextColor={palette.muted} />
+              </View>
+              <View style={styles.logDateTimePanel}>
+                <View style={styles.logDateTimeHeader}>
+                  <Text style={styles.logDateTimeTitle}>When should this be logged?</Text>
+                  <Text style={styles.logDateTimeBody}>Pick the actual intake date and time so the day summary and food timing stay accurate.</Text>
+                </View>
+                <View style={styles.logDateTimeRow}>
+                  <View style={styles.logDateTimeField}>
+                    <Text style={styles.logDateTimeLabel}>Date</Text>
+                    <DateTimePickerField mode="date" style={styles.logInput} value={logDate} onChange={setLogDate} placeholder="DD/MM/YYYY" editable={!trackerLoading} />
+                  </View>
+                  <View style={styles.logDateTimeField}>
+                    <Text style={styles.logDateTimeLabel}>Time</Text>
+                    <DateTimePickerField mode="time" style={styles.logInput} value={logTime} onChange={setLogTime} placeholder="HH:MM:SS" editable={!trackerLoading} />
+                  </View>
+                </View>
               </View>
               {trackerError ? <Text style={styles.logError}>{trackerError}</Text> : null}
               {logFeedback ? <Text style={styles.logFeedback}>{logFeedback}</Text> : null}
@@ -1263,6 +1292,17 @@ const styles = StyleSheet.create({
   logHeaderRow: {
     gap: 10
   },
+  logEyebrow: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    backgroundColor: palette.primarySoft,
+    color: palette.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    fontSize: 11,
+    fontFamily: "Poppins_700Bold",
+    textTransform: "uppercase"
+  },
   logTitle: {
     color: palette.ink,
     fontSize: 16,
@@ -1278,6 +1318,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8
+  },
+  logSummaryRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  logSummaryPill: {
+    flexGrow: 1,
+    minWidth: 118,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    gap: 4
+  },
+  logSummaryLabel: {
+    color: palette.muted,
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold",
+    textTransform: "uppercase"
+  },
+  logSummaryValue: {
+    color: palette.ink,
+    fontSize: 13,
+    fontFamily: "Poppins_600SemiBold"
   },
   logTypeChip: {
     borderRadius: 999,
@@ -1316,6 +1383,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontFamily: "Poppins_400Regular"
+  },
+  logDateTimePanel: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surfaceSoft,
+    padding: 14,
+    gap: 12
+  },
+  logDateTimeHeader: {
+    gap: 4
+  },
+  logDateTimeTitle: {
+    color: palette.ink,
+    fontSize: 14,
+    fontFamily: "Poppins_700Bold"
+  },
+  logDateTimeBody: {
+    color: palette.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: "Poppins_400Regular"
+  },
+  logDateTimeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  logDateTimeField: {
+    flexGrow: 1,
+    minWidth: 140,
+    gap: 6
+  },
+  logDateTimeLabel: {
+    color: palette.muted,
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold",
+    textTransform: "uppercase"
   },
   logActionRow: {
     flexDirection: "row",

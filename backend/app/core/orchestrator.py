@@ -417,10 +417,10 @@ def _require_sources(
 
 def _truth_classification(verdict: str | None) -> str:
     if verdict == "trustworthy":
-        return "Likely fact pattern"
+        return "Likely valid claim"
     if verdict == "untrustworthy":
-        return "Likely falsehood or hoax"
-    return "Mixed evidence"
+        return "Likely invalid claim"
+    return "Unsure or overstated claim"
 
 
 def _max_misinformation_risk(*risks: str | None) -> str | None:
@@ -435,12 +435,12 @@ def _apply_hoax_penalty(score: int, verdict: str, risk: str | None) -> tuple[int
     adjusted_score = score
     adjusted_verdict = verdict
     if risk == "high":
-        adjusted_score = max(0, score - 8)
+        adjusted_score = max(0, score - 5)
         if verdict == "trustworthy":
-            adjusted_verdict = "overstated" if adjusted_score >= 40 else "untrustworthy"
+            adjusted_verdict = "mixed" if adjusted_score >= 54 else "untrustworthy"
     elif risk == "moderate":
-        adjusted_score = max(0, score - 4)
-        if verdict == "trustworthy" and adjusted_score < 70:
+        adjusted_score = max(0, score - 2)
+        if verdict == "trustworthy" and adjusted_score < 64:
             adjusted_verdict = "mixed"
     return adjusted_score, adjusted_verdict
 

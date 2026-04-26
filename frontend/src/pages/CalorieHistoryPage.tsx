@@ -6,6 +6,7 @@ import { palette } from "../data";
 import WeeklyCalorieGraph from "../components/calories/WeeklyCalorieGraph";
 import SectionTabs from "../components/shared/SectionTabs";
 import DateTimePickerField from "../components/shared/DateTimePickerField";
+import { panelShadow, ui } from "../styles/ui";
 import { formatDisplayDate, formatDisplayDateLabel, formatDisplayDateTime, formatDisplayTime, parseDisplayDate, parseDisplayTime } from "../utils/dateTime";
 
 function formatRange(start, end) {
@@ -650,7 +651,7 @@ export default function CalorieHistoryPage({
                 </View>
                 <View style={styles.formField}>
                   <Text style={styles.formLabel}>Time</Text>
-                  <DateTimePickerField mode="time" style={styles.input} value={newTime} onChange={setNewTime} placeholder="HH:MM" editable={!trackerLoading} />
+                  <DateTimePickerField mode="time" style={styles.input} value={newTime} onChange={setNewTime} placeholder="HH:MM:SS" editable={!trackerLoading} />
                 </View>
                 <View style={styles.formField}>
                   <Text style={styles.formLabel}>{newKind === "hydration" ? "Calories (optional)" : "Calories"}</Text>
@@ -771,11 +772,10 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   heroPanel: {
+    ...panelShadow,
+    ...ui.surfaceCard,
     borderRadius: 26,
-    borderWidth: 1,
-    borderColor: palette.border,
     padding: 18,
-    backgroundColor: palette.surface,
     gap: 8,
   },
   chip: {
@@ -801,11 +801,14 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
   },
   weekNavRow: {
+    ...ui.softCard,
     marginTop: 4,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   arrowButton: {
     width: 38,
@@ -834,12 +837,11 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   statsCard: {
+    ...panelShadow,
     flex: 1,
     minWidth: 150,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
+    ...ui.surfaceCard,
+    borderRadius: 18,
     padding: 14,
   },
   statTitle: {
@@ -853,10 +855,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   listCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
+    ...panelShadow,
+    ...ui.surfaceCard,
+    borderRadius: 20,
     padding: 14,
     gap: 10,
   },
@@ -866,10 +867,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   dayCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
+    ...ui.softCard,
+    borderRadius: 18,
     padding: 12,
     gap: 10,
   },
@@ -920,10 +919,9 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     maxHeight: "90%",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
+    ...panelShadow,
+    ...ui.surfaceCard,
+    borderRadius: 22,
     padding: 14,
     gap: 10,
   },
@@ -938,10 +936,8 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
   },
   addCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
+    ...ui.softCard,
+    borderRadius: 18,
     padding: 10,
     gap: 8,
   },
@@ -997,14 +993,10 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_600SemiBold",
   },
   input: {
+    ...ui.inputShell,
     minHeight: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
-    color: palette.ink,
+    borderRadius: 14,
     paddingHorizontal: 10,
-    fontFamily: "Poppins_400Regular",
   },
   modalHeaderActions: {
     flexDirection: "row",
@@ -1018,10 +1010,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   entryRow: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
+    ...ui.softCard,
+    borderRadius: 16,
     padding: 10,
     gap: 8,
   },

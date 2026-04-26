@@ -202,9 +202,9 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
     const query = historySearch.trim().toLowerCase();
     const base = query
       ? searchHistory.filter((entry) => {
-          const summary = (entry.result as { summary?: string } | null)?.summary || (entry.drugResult as { summary?: string } | null)?.summary || "";
-          return `${entry.title || ""} ${entry.query || ""} ${summary} ${entry.analysisType || ""}`.toLowerCase().includes(query);
-        })
+        const summary = (entry.result as { summary?: string } | null)?.summary || (entry.drugResult as { summary?: string } | null)?.summary || "";
+        return `${entry.title || ""} ${entry.query || ""} ${summary} ${entry.analysisType || ""}`.toLowerCase().includes(query);
+      })
       : searchHistory;
     return [...base].sort((a, b) => {
       const aPinned = pinnedHistoryIds.includes(a.id) ? 1 : 0;
@@ -295,9 +295,7 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
     }
     const timer = setTimeout(async () => {
       try {
-        const response = await requestApi(
-          `/api/search-suggestions?q=${encodeURIComponent(trimmedDrugQuery)}&hint=${encodeURIComponent("medicine drug ingredient compound pharmacology")}&limit=8`
-        );
+        const response = await requestApi(`/api/claim-suggestions?q=${encodeURIComponent(trimmedDrugQuery)}`);
         if (!response.ok) {
           setDrugSuggestions([]);
           return;
@@ -916,80 +914,223 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16, paddingBottom: 28 }}>
-      <SectionTabs
-        value={activeSubPage}
-        onValueChange={(value) => setActiveSubPage(value as "analyzer" | "history" | "logs")}
-        tabs={[
-          { value: "analyzer", label: "Analyse", icon: "leaf-circle-outline" },
-          { value: "history", label: "History", icon: "history" },
-          { value: "logs", label: "Logs", icon: "text-box-outline" },
-        ]}
-      />
+        <SectionTabs
+          value={activeSubPage}
+          onValueChange={(value) => setActiveSubPage(value as "analyzer" | "history" | "logs")}
+          tabs={[
+            { value: "analyzer", label: "Analyse", icon: "leaf-circle-outline" },
+            { value: "history", label: "History", icon: "history" },
+            { value: "logs", label: "Logs", icon: "text-box-outline" },
+          ]}
+        />
 
-      <View style={activeSubPage === "analyzer" ? undefined : styles.hiddenSection}>
-        <>
-          <SectionTabs
-            value={analysisMode}
-            onValueChange={(value) => {
-              const nextMode = value as "supplement" | "medicine";
-              setAnalysisMode(nextMode);
-              setError("");
-              setSelectedHistoryEntryId("");
-              if (nextMode === "medicine") {
-                setSelectedAsset(null);
-                setResult(null);
-                closeWebcam();
-              } else {
-                setDrugResult(null);
-              }
-            }}
-            tabs={[
-              { value: "medicine", label: "Medicine/Drug", icon: "medical-bag" },
-              { value: "supplement", label: "Supplement", icon: "pill-multiple" },
-            ]}
-          />
-          {selectedHistoryEntryId ? (
-            <View className="gap-2 rounded-[18px] border border-line bg-soft px-4 py-4">
-              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">Viewing a saved medicine or supplement analysis inside the live analyser layout.</Text>
-              <Pressable className="self-start rounded-full border border-line bg-card px-3 py-2" onPress={exitHistoryPreviewMode}>
-                <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Start a new analysis</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <>
-              {analysisMode === "supplement" ? (
-                <>
-                  <View className="gap-3 rounded-[22px] border border-line bg-card p-5 shadow-panel">
-                      <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Medicine and supplement analysis</Text>
-                    <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Search by name or scan a label. Your saved profile is loaded automatically in the background for relevance, safety, and stack checks.</Text>
+        <View style={activeSubPage === "analyzer" ? undefined : styles.hiddenSection}>
+          <>
+            <SectionTabs
+              value={analysisMode}
+              onValueChange={(value) => {
+                const nextMode = value as "supplement" | "medicine";
+                setAnalysisMode(nextMode);
+                setError("");
+                setSelectedHistoryEntryId("");
+                if (nextMode === "medicine") {
+                  setSelectedAsset(null);
+                  setResult(null);
+                  closeWebcam();
+                } else {
+                  setDrugResult(null);
+                }
+              }}
+              tabs={[
+                { value: "medicine", label: "Medicine/Drug", icon: "medical-bag" },
+                { value: "supplement", label: "Supplement", icon: "pill-multiple" },
+              ]}
+            />
+            {selectedHistoryEntryId ? (
+              <View className="gap-2 rounded-[18px] border border-line bg-soft px-4 py-4">
+                <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">Viewing a saved medicine or supplement analysis inside the live analyser layout.</Text>
+                <Pressable className="self-start rounded-full border border-line bg-card px-3 py-2" onPress={exitHistoryPreviewMode}>
+                  <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Start a new analysis</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <>
+                {analysisMode === "supplement" ? (
+                  <>
+                    <View className="gap-3 rounded-[22px] border border-line bg-card p-5 shadow-panel">
+                      <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Individual medicine and supplement analysis</Text>
+                      <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Search by name or scan a label. Your saved profile is loaded automatically in the background for relevance, safety, and stack checks.</Text>
+                      <View className="gap-2 rounded-[18px] border border-line bg-soft p-4">
+                        <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[13px] text-ink">Search by name</Text>
+                        <View className="relative">
+                          <TextInput
+                            style={typography.regular}
+                            className={`min-h-[50px] rounded-2xl border px-4 py-3 font-['Poppins_400Regular'] text-ink ${searchOptionsDisabled ? "border-line bg-soft/60" : "border-line bg-card"}`}
+                            value={searchQuery}
+                            onChangeText={(value) => {
+                              setSearchQuery(value);
+                              setSearchMenuVisible(Boolean(value.trim()));
+                            }}
+                            onFocus={() => setSearchMenuVisible(searchSuggestions.length > 0)}
+                            placeholder="e.g. magnesium glycinate"
+                            placeholderTextColor="#8B8F99"
+                            editable={!loading && !searchOptionsDisabled}
+                            returnKeyType="search"
+                            onSubmitEditing={() => void searchSupplementByName()}
+                          />
+                          {searchMenuVisible && searchSuggestions.length > 0 ? (
+                            <View className="absolute left-0 right-0 top-[56px] z-20 rounded-[18px] border border-line bg-card shadow-panel">
+                              <ScrollView style={{ maxHeight: 220 }} keyboardShouldPersistTaps="always">
+                                {searchSuggestions.map((item) => (
+                                  <Pressable
+                                    key={`supp-${item}`}
+                                    className="border-b border-line px-4 py-3"
+                                    onPress={() => {
+                                      setSearchQuery(item);
+                                      setSearchMenuVisible(false);
+                                    }}
+                                  >
+                                    <Text style={typography.regular} className="font-['Poppins_400Regular'] text-ink">{item}</Text>
+                                  </Pressable>
+                                ))}
+                              </ScrollView>
+                            </View>
+                          ) : null}
+                        </View>
+                      </View>
+
+                      <View className="flex-row items-center gap-3">
+                        <View className="h-px flex-1 bg-line" />
+                        <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-xs text-muted">OR</Text>
+                        <View className="h-px flex-1 bg-line" />
+                      </View>
+
+                      <View className="gap-2 rounded-[18px] border border-line bg-soft p-4">
+                        <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[13px] text-ink">Scan</Text>
+                        <View className="flex-row flex-wrap gap-2">
+                          {Platform.OS !== "web" ? (
+                            <Pressable className={`flex-row items-center gap-2 rounded-2xl border border-line px-4 py-3 ${imageOptionsDisabled ? "bg-soft/60 opacity-50" : "bg-card"}`} onPress={captureImage} disabled={loading || imageOptionsDisabled}>
+                              <MaterialCommunityIcons name="camera-outline" size={18} color={palette.primary} />
+                              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Use camera</Text>
+                            </Pressable>
+                          ) : null}
+                          <Pressable className={`flex-row items-center gap-2 rounded-2xl border border-line px-4 py-3 ${imageOptionsDisabled ? "bg-soft/60 opacity-50" : "bg-card"}`} onPress={pickImage} disabled={loading || imageOptionsDisabled}>
+                            <MaterialCommunityIcons name="image-outline" size={18} color={palette.primary} />
+                            <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">{selectedAsset?.uri ? "Replace image" : "Upload image"}</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+
+                      <Pressable
+                        className={`items-center rounded-2xl px-4 py-3 ${loading || (!trimmedSearchQuery && !selectedAsset?.uri) ? "bg-sage/50" : "bg-sage"}`}
+                        onPress={() => void runSupplementAnalysisFromCurrentInput()}
+                        disabled={loading || (!trimmedSearchQuery && !selectedAsset?.uri)}
+                      >
+                        {loading ? (
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analysing...</Text>
+                        ) : (
+                          <View className="flex-row items-center gap-2">
+                            <MaterialCommunityIcons name="pill-multiple" size={18} color={palette.surface} />
+                            <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analyse supplement</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    </View>
+
+                    {Platform.OS === "web" ? (
+                      <View className="gap-2.5 rounded-[22px] border border-line bg-card p-5 shadow-panel">
+                        <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Webcam capture</Text>
+                        <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Use your browser webcam for a quick front-label scan.</Text>
+                        {webcamActive ? (
+                          <>
+                            <video ref={videoRef} autoPlay playsInline muted style={styles.webcamVideo} />
+                            <View className="flex-row gap-2.5">
+                              <Pressable className="items-center rounded-2xl bg-sage px-4 py-3" onPress={captureWebcamFrame} disabled={loading}>
+                                <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Capture frame</Text>
+                              </Pressable>
+                              <Pressable className="items-center rounded-2xl border border-line bg-soft px-4 py-3" onPress={closeWebcam} disabled={loading}>
+                                <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">Close webcam</Text>
+                              </Pressable>
+                            </View>
+                          </>
+                        ) : (
+                          <Pressable className={`items-center rounded-2xl px-4 py-3 ${imageOptionsDisabled ? "bg-soft/60 opacity-50" : "bg-sage"}`} onPress={captureImage} disabled={loading || imageOptionsDisabled}>
+                            <Text style={typography.semibold} className={`font-['Poppins_600SemiBold'] ${imageOptionsDisabled ? "text-muted" : "text-card"}`}>Open webcam</Text>
+                          </Pressable>
+                        )}
+                        {webcamError ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-danger">{webcamError}</Text> : null}
+                      </View>
+                    ) : null}
+
+                    {selectedAsset?.uri ? (
+                      <ImageUpload
+                        selectedImageUri={selectedAsset?.uri || ""}
+                        selectedImageAspectRatio={selectedImageAspectRatio}
+                        aspectRatio={aspectRatio}
+                        conditions={conditions}
+                        onChangeConditions={setConditions}
+                        goals={goals}
+                        onChangeGoals={setGoals}
+                        loading={loading}
+                        error={error}
+                        showCameraButton={Platform.OS !== "web"}
+                        showActionButtons={false}
+                        showAnalyzeButton={false}
+                        disableImageOptions={imageOptionsDisabled}
+                        onClearImageSelection={clearImageSelection}
+                        clearImageSelectionLabel="Clear image"
+                        analyzeLabel="Analyse supplement"
+                        onAspectRatioChange={setAspectRatio}
+                        onOpenCrop={() => setCropVisible(true)}
+                        onCaptureImage={captureImage}
+                        onPickImage={pickImage}
+                        onAnalyze={analyzeSupplement}
+                      />
+                    ) : null}
+
+                    <View className="flex-row items-center justify-between gap-3 rounded-[22px] border border-line bg-card px-5 py-4 shadow-panel">
+                      <View className="flex-1">
+                        <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Generate infographic</Text>
+                        <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Turn this off if you want a faster medicine or supplement analysis without the infographic pass.</Text>
+                      </View>
+                      <Switch value={infographicEnabled} onValueChange={setInfographicEnabled} disabled={loading} />
+                    </View>
+                  </>
+                ) : (
+                  <View className="gap-4 rounded-[22px] border border-line bg-card p-5 shadow-panel">
+                    <View style={styles.heroHeader}>
+                      <Text style={styles.heroEyebrow}>Analyse</Text>
+                      <Text style={styles.heroTitle}>Medicine and drug analysis</Text>
+                      <Text style={styles.heroBody}>Search a single medicine, drug, or ingredient by name.</Text>
+                    </View>
                     <View className="gap-2 rounded-[18px] border border-line bg-soft p-4">
                       <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[13px] text-ink">Search by name</Text>
                       <View className="relative">
                         <TextInput
                           style={typography.regular}
-                          className={`min-h-[50px] rounded-2xl border px-4 py-3 font-['Poppins_400Regular'] text-ink ${searchOptionsDisabled ? "border-line bg-soft/60" : "border-line bg-card"}`}
-                          value={searchQuery}
+                          className="min-h-[50px] rounded-2xl border border-line bg-card px-4 py-3 font-['Poppins_400Regular'] text-ink"
+                          value={drugQuery}
                           onChangeText={(value) => {
-                            setSearchQuery(value);
-                            setSearchMenuVisible(Boolean(value.trim()));
+                            setDrugQuery(value);
+                            setDrugMenuVisible(Boolean(value.trim()));
                           }}
-                          onFocus={() => setSearchMenuVisible(searchSuggestions.length > 0)}
-                          placeholder="e.g. magnesium glycinate"
+                          onFocus={() => setDrugMenuVisible(drugSuggestions.length > 0)}
+                          placeholder="e.g. metformin or magnesium"
                           placeholderTextColor="#8B8F99"
-                          editable={!loading && !searchOptionsDisabled}
+                          editable={!loading}
                           returnKeyType="search"
-                          onSubmitEditing={() => void searchSupplementByName()}
+                          onSubmitEditing={() => void searchDrugDeepDive()}
                         />
-                        {searchMenuVisible && searchSuggestions.length > 0 ? (
+                        {drugMenuVisible && drugSuggestions.length > 0 ? (
                           <View className="absolute left-0 right-0 top-[56px] z-20 rounded-[18px] border border-line bg-card shadow-panel">
                             <ScrollView style={{ maxHeight: 220 }} keyboardShouldPersistTaps="always">
-                              {searchSuggestions.map((item) => (
+                              {drugSuggestions.map((item) => (
                                 <Pressable
-                                  key={`supp-${item}`}
+                                  key={`drug-${item}`}
                                   className="border-b border-line px-4 py-3"
                                   onPress={() => {
-                                    setSearchQuery(item);
-                                    setSearchMenuVisible(false);
+                                    setDrugQuery(item);
+                                    setDrugMenuVisible(false);
                                   }}
                                 >
                                   <Text style={typography.regular} className="font-['Poppins_400Regular'] text-ink">{item}</Text>
@@ -1000,429 +1141,289 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
                         ) : null}
                       </View>
                     </View>
-
-                    <View className="flex-row items-center gap-3">
-                      <View className="h-px flex-1 bg-line" />
-                      <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-xs text-muted">OR</Text>
-                      <View className="h-px flex-1 bg-line" />
-                    </View>
-
-                    <View className="gap-2 rounded-[18px] border border-line bg-soft p-4">
-                      <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[13px] text-ink">Scan</Text>
-                      <View className="flex-row flex-wrap gap-2">
-                        <Pressable className={`flex-row items-center gap-2 rounded-2xl border border-line px-4 py-3 ${imageOptionsDisabled ? "bg-soft/60 opacity-50" : "bg-card"}`} onPress={captureImage} disabled={loading || imageOptionsDisabled}>
-                          <MaterialCommunityIcons name="camera-outline" size={18} color={palette.primary} />
-                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">{Platform.OS === "web" ? "Use webcam" : "Use camera"}</Text>
-                        </Pressable>
-                        <Pressable className={`flex-row items-center gap-2 rounded-2xl border border-line px-4 py-3 ${imageOptionsDisabled ? "bg-soft/60 opacity-50" : "bg-card"}`} onPress={pickImage} disabled={loading || imageOptionsDisabled}>
-                          <MaterialCommunityIcons name="image-outline" size={18} color={palette.primary} />
-                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">{selectedAsset?.uri ? "Replace image" : "Upload image"}</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-
-                    <Pressable
-                      className={`items-center rounded-2xl px-4 py-3 ${loading || (!trimmedSearchQuery && !selectedAsset?.uri) ? "bg-sage/50" : "bg-sage"}`}
-                      onPress={() => void runSupplementAnalysisFromCurrentInput()}
-                      disabled={loading || (!trimmedSearchQuery && !selectedAsset?.uri)}
-                    >
-                      {loading ? (
-                        <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analysing...</Text>
-                      ) : (
-                        <View className="flex-row items-center gap-2">
-                          <MaterialCommunityIcons name="magnify-scan" size={18} color={palette.surface} />
-                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analyse medicine</Text>
-                        </View>
-                      )}
-                    </Pressable>
-                  </View>
-
-                  {Platform.OS === "web" ? (
-                    <View className="gap-2.5 rounded-[22px] border border-line bg-card p-5 shadow-panel">
-                      <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Webcam capture</Text>
-                      <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Use your browser webcam for a quick front-label scan.</Text>
-                      {webcamActive ? (
-                        <>
-                          <video ref={videoRef} autoPlay playsInline muted style={styles.webcamVideo} />
-                          <View className="flex-row gap-2.5">
-                            <Pressable className="items-center rounded-2xl bg-sage px-4 py-3" onPress={captureWebcamFrame} disabled={loading}>
-                              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Capture frame</Text>
-                            </Pressable>
-                            <Pressable className="items-center rounded-2xl border border-line bg-soft px-4 py-3" onPress={closeWebcam} disabled={loading}>
-                              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">Close webcam</Text>
-                            </Pressable>
+                    <View className="flex-row flex-wrap items-center gap-2">
+                      <Pressable className={`rounded-2xl px-4 py-3 ${loading || !trimmedDrugQuery ? "bg-sage/50" : "bg-sage"}`} onPress={() => void searchDrugDeepDive()} disabled={loading || !trimmedDrugQuery}>
+                        {loading ? (
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analysing...</Text>
+                        ) : (
+                          <View className="flex-row items-center gap-2">
+                            <MaterialCommunityIcons name="medical-bag" size={18} color={palette.surface} />
+                            <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analyse medicine/drug</Text>
                           </View>
-                        </>
-                      ) : (
-                        <Pressable className={`items-center rounded-2xl px-4 py-3 ${imageOptionsDisabled ? "bg-soft/60 opacity-50" : "bg-sage"}`} onPress={captureImage} disabled={loading || imageOptionsDisabled}>
-                          <Text style={typography.semibold} className={`font-['Poppins_600SemiBold'] ${imageOptionsDisabled ? "text-muted" : "text-card"}`}>Open webcam</Text>
+                        )}
+                      </Pressable>
+                      {trimmedDrugQuery ? (
+                        <Pressable className="rounded-2xl border border-line bg-soft px-4 py-3" onPress={clearSearchInput} disabled={loading}>
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Clear</Text>
                         </Pressable>
-                      )}
-                      {webcamError ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-danger">{webcamError}</Text> : null}
-                    </View>
-                  ) : null}
-
-                  {selectedAsset?.uri ? (
-                    <ImageUpload
-                      selectedImageUri={selectedAsset?.uri || ""}
-                      selectedImageAspectRatio={selectedImageAspectRatio}
-                      aspectRatio={aspectRatio}
-                      conditions={conditions}
-                      onChangeConditions={setConditions}
-                      goals={goals}
-                      onChangeGoals={setGoals}
-                      loading={loading}
-                      error={error}
-                      showCameraButton={Platform.OS !== "web"}
-                      showActionButtons={false}
-                      showAnalyzeButton={false}
-                      disableImageOptions={imageOptionsDisabled}
-                      onClearImageSelection={clearImageSelection}
-                      clearImageSelectionLabel="Clear image"
-                      analyzeLabel="Analyse medicine"
-                      onAspectRatioChange={setAspectRatio}
-                      onOpenCrop={() => setCropVisible(true)}
-                      onCaptureImage={captureImage}
-                      onPickImage={pickImage}
-                      onAnalyze={analyzeSupplement}
-                    />
-                  ) : null}
-
-                  <View className="flex-row items-center justify-between gap-3 rounded-[22px] border border-line bg-card px-5 py-4 shadow-panel">
-                    <View className="flex-1">
-                      <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Generate infographic</Text>
-                      <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Turn this off if you want a faster medicine or supplement analysis without the infographic pass.</Text>
-                    </View>
-                    <Switch value={infographicEnabled} onValueChange={setInfographicEnabled} disabled={loading} />
-                  </View>
-                </>
-              ) : (
-                <View className="gap-4 rounded-[22px] border border-line bg-card p-5 shadow-panel">
-                  <View className="gap-2">
-                    <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Medicine / drug deep-dive</Text>
-                    <Text style={typography.regular} className="font-['Poppins_400Regular'] leading-5 text-muted">Review one medicine, drug, or single ingredient with a more clinical breakdown focused on safety, usefulness, dosage, and your profile fit.</Text>
-                  </View>
-                  <View className="gap-2 rounded-[18px] border border-line bg-soft p-4">
-                    <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[13px] text-ink">Search by name</Text>
-                    <View className="relative">
-                      <TextInput
-                        style={typography.regular}
-                        className="min-h-[50px] rounded-2xl border border-line bg-card px-4 py-3 font-['Poppins_400Regular'] text-ink"
-                        value={drugQuery}
-                        onChangeText={(value) => {
-                          setDrugQuery(value);
-                          setDrugMenuVisible(Boolean(value.trim()));
-                        }}
-                        onFocus={() => setDrugMenuVisible(drugSuggestions.length > 0)}
-                        placeholder="e.g. metformin or magnesium"
-                        placeholderTextColor="#8B8F99"
-                        editable={!loading}
-                        returnKeyType="search"
-                        onSubmitEditing={() => void searchDrugDeepDive()}
-                      />
-                      {drugMenuVisible && drugSuggestions.length > 0 ? (
-                        <View className="absolute left-0 right-0 top-[56px] z-20 rounded-[18px] border border-line bg-card shadow-panel">
-                          <ScrollView style={{ maxHeight: 220 }} keyboardShouldPersistTaps="always">
-                            {drugSuggestions.map((item) => (
-                              <Pressable
-                                key={`drug-${item}`}
-                                className="border-b border-line px-4 py-3"
-                                onPress={() => {
-                                  setDrugQuery(item);
-                                  setDrugMenuVisible(false);
-                                }}
-                              >
-                                <Text style={typography.regular} className="font-['Poppins_400Regular'] text-ink">{item}</Text>
-                              </Pressable>
-                            ))}
-                          </ScrollView>
-                        </View>
                       ) : null}
                     </View>
                   </View>
-                  <View className="flex-row flex-wrap items-center gap-2">
-                    <Pressable className={`rounded-2xl px-4 py-3 ${loading || !trimmedDrugQuery ? "bg-sage/50" : "bg-sage"}`} onPress={() => void searchDrugDeepDive()} disabled={loading || !trimmedDrugQuery}>
-                      {loading ? (
-                        <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analysing...</Text>
-                      ) : (
-                        <View className="flex-row items-center gap-2">
-                          <MaterialCommunityIcons name="magnify-scan" size={18} color={palette.surface} />
-                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-card">Analyse medicine/drug</Text>
-                        </View>
-                      )}
-                    </Pressable>
-                    {trimmedDrugQuery ? (
-                      <Pressable className="rounded-2xl border border-line bg-soft px-4 py-3" onPress={clearSearchInput} disabled={loading}>
-                        <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Clear</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                </View>
-              )}
+                )}
 
-              {apiCallStartedAt ? (
-                <View className="gap-3 rounded-[22px] border border-line bg-card px-5 py-4 shadow-panel">
-                  <View className="flex-row items-start justify-between gap-3">
-                    <View className="flex-1 gap-1">
-                      <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">{loading ? "Working on your report" : "Latest analysis run"}</Text>
-                      <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">
-                        Started {formatDisplayTime(apiCallStartedAt)} • {apiCallInFlight ? "Elapsed" : "Total time"} {formatElapsed(apiCallElapsedMs)}
-                      </Text>
+                {apiCallStartedAt ? (
+                  <View className="gap-3 rounded-[22px] border border-line bg-card px-5 py-4 shadow-panel">
+                    <View className="flex-row items-start justify-between gap-3">
+                      <View className="flex-1 gap-1">
+                        <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">{loading ? "Working on your report" : "Latest analysis run"}</Text>
+                        <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">
+                          Started {formatDisplayTime(apiCallStartedAt)} • {apiCallInFlight ? "Elapsed" : "Total time"} {formatElapsed(apiCallElapsedMs)}
+                        </Text>
+                      </View>
+                      <Text style={typography.semibold} className="rounded-full bg-moss px-3 py-1.5 font-['Poppins_600SemiBold'] text-xs text-sage">{Math.round(progressValue * 100)}%</Text>
                     </View>
-                    <Text style={typography.semibold} className="rounded-full bg-moss px-3 py-1.5 font-['Poppins_600SemiBold'] text-xs text-sage">{Math.round(progressValue * 100)}%</Text>
-                  </View>
-                  <View className="h-2 overflow-hidden rounded-full bg-moss">
-                    <View className="h-full rounded-full bg-sage" style={{ width: `${Math.max(8, Math.round(progressValue * 100))}%` }} />
-                  </View>
-                  <View className="gap-2">
-                    {(analysisMode === "medicine"
-                      ? [
+                    <View className="h-2 overflow-hidden rounded-full bg-moss">
+                      <View className="h-full rounded-full bg-sage" style={{ width: `${Math.max(8, Math.round(progressValue * 100))}%` }} />
+                    </View>
+                    <View className="gap-2">
+                      {(analysisMode === "medicine"
+                        ? [
                           { label: "Understanding Agent", body: "Turns the medicine name and your profile into a clean, structured clinical context.", active: progressValue >= 0.18, complete: progressValue >= 0.48 },
                           { label: "Analysis Agent", body: "Evaluates benefits, risks, dosage, contraindications, and interactions in one medical reasoning pass.", active: progressValue >= 0.48, complete: progressValue >= 0.72 },
                           { label: "Presentation Agent", body: "Formats the findings into practical sections with the most relevant warnings first.", active: progressValue >= 0.72, complete: progressValue >= 1 },
                         ]
-                      : [
+                        : [
                           { label: "Understanding Agent", body: "Resolves the supplement, your intent, and the profile context that matters for analysis.", active: progressValue >= 0.18, complete: progressValue >= 0.48 },
                           { label: "Analysis Agent", body: "Checks evidence, safety, dosage, interactions, and realistic benefit versus hype.", active: progressValue >= 0.48, complete: progressValue >= 0.72 },
                           { label: "Presentation Agent", body: "Turns the structured findings into a calmer supplement report with clear takeaways.", active: progressValue >= 0.72, complete: progressValue >= 1 },
                         ]).map((step) => (
-                      <View key={step.label} className="flex-row items-start gap-3">
-                        <View className={`mt-0.5 h-6 w-6 items-center justify-center rounded-full ${step.complete ? "bg-moss" : step.active ? "bg-soft" : "bg-shell"}`}>
-                          <MaterialCommunityIcons
-                            name={step.complete ? "check" : step.active ? "progress-clock" : "circle-outline"}
-                            size={14}
-                            color={step.complete ? palette.primary : palette.muted}
-                          />
-                        </View>
-                        <View className="flex-1 gap-0.5">
-                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[13px] text-ink">{step.label}</Text>
-                          <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[12px] leading-5 text-muted">{step.body}</Text>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                  <View className="gap-1">
-                    <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{textStatusLabel}</Text>
-                    <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{imageStatusLabel}</Text>
-                    {textDuration ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{textDuration}</Text> : null}
-                    {imageDuration ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{imageDuration}</Text> : null}
-                  </View>
-                </View>
-              ) : null}
-            </>
-          )}
-
-          {analysisMode === "medicine" ? (
-            <DrugDeepDiveResult result={drugResult} />
-          ) : (
-            <AnalysisResult result={result} selectedImageUri={selectedAsset?.uri || ""} selectedImageAspectRatio={selectedImageAspectRatio} />
-          )}
-        </>
-      </View>
-      <View style={activeSubPage === "history" ? undefined : styles.hiddenSection}>
-        <View className="gap-4 rounded-[22px] border border-line bg-card p-5 shadow-panel">
-          <View className="flex-row items-center justify-between gap-3">
-            <View className="flex-row items-center gap-2">
-              <View className="h-9 w-9 items-center justify-center rounded-[12px] bg-moss">
-                <MaterialCommunityIcons name="history" size={18} color={palette.primary} />
-              </View>
-              <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Recent medicine and supplement analyses</Text>
-            </View>
-            <Pressable className="rounded-full border border-line bg-soft px-3 py-2" onPress={() => void clearAllHistoryItems()}>
-              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Clear all</Text>
-            </Pressable>
-          </View>
-          <TextInput
-            style={typography.regular}
-            className="min-h-[50px] rounded-2xl border border-line bg-soft px-4 py-3 font-['Poppins_400Regular'] text-ink"
-            value={historySearch}
-            onChangeText={setHistorySearch}
-            placeholder="Search medicine and supplement history"
-            placeholderTextColor="#8B8F99"
-          />
-          <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] leading-5 text-muted">Saved analyses open in a sheet first, then you can pull them back into the analyser if you want to rework them.</Text>
-          {filteredHistory.length === 0 ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">No searches yet.</Text> : null}
-          {filteredHistory.map((entry) => {
-            const pinned = pinnedHistoryIds.includes(entry.id);
-            const isMedicine = entry.analysisType === "medicine";
-            const entrySummary = (entry.result as { summary?: string } | null)?.summary || (entry.drugResult as { summary?: string } | null)?.summary || "";
-            return (
-              <Pressable key={entry.id} className={`gap-3 rounded-[18px] border px-4 py-4 ${pinned ? "border-[#E2C46C] bg-[#FFFBEF]" : "border-line bg-soft"}`} onPress={() => openHistoryEntry(entry)}>
-                <View className="flex-row items-start justify-between gap-3">
-                  <View className="flex-1 gap-1">
-                    <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">{entry.title || entry.query || "Unknown analysis"}</Text>
-                    <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">
-                      {isMedicine ? "Medicine/Drug" : "Supplement"} • {entry.mode === "image" ? "Scan" : "Search"} • {formatDisplayDateTime(entry.searchedAt)}
-                    </Text>
-                    {entrySummary ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] leading-5 text-muted">{entrySummary}</Text> : null}
-                  </View>
-                  <View className="items-end gap-2">
-                    <View className={`rounded-full px-3 py-1.5 ${isMedicine ? "bg-[#FDEFD5]" : "bg-moss"}`}>
-                      <Text style={typography.semibold} className={`font-['Poppins_600SemiBold'] text-xs ${isMedicine ? "text-[#B8741A]" : "text-sage"}`}>
-                        {isMedicine ? "Medicine/Drug" : "Supplement"}
-                      </Text>
+                          <View key={step.label} className="flex-row items-start gap-3">
+                            <View className={`mt-0.5 h-6 w-6 items-center justify-center rounded-full ${step.complete ? "bg-moss" : step.active ? "bg-soft" : "bg-shell"}`}>
+                              <MaterialCommunityIcons
+                                name={step.complete ? "check" : step.active ? "progress-clock" : "circle-outline"}
+                                size={14}
+                                color={step.complete ? palette.primary : palette.muted}
+                              />
+                            </View>
+                            <View className="flex-1 gap-0.5">
+                              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[13px] text-ink">{step.label}</Text>
+                              <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[12px] leading-5 text-muted">{step.body}</Text>
+                            </View>
+                          </View>
+                        ))}
                     </View>
-                    {pinned ? (
-                      <View className="rounded-full bg-[#FFF7DB] px-3 py-1.5">
-                        <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-xs text-[#B87A18]">Pinned</Text>
-                      </View>
-                    ) : null}
+                    <View className="gap-1">
+                      <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{textStatusLabel}</Text>
+                      <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{imageStatusLabel}</Text>
+                      {textDuration ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{textDuration}</Text> : null}
+                      {imageDuration ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] text-muted">{imageDuration}</Text> : null}
+                    </View>
                   </View>
-                </View>
-                <View className="flex-row flex-wrap items-center justify-end gap-2">
-                  <Pressable
-                    className="rounded-full border border-line bg-card px-3 py-2"
-                    onPress={(event) => {
-                      event.stopPropagation();
-                      toggleHistoryPin(entry.id);
-                    }}
-                  >
-                    <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[#B87A18]">{pinned ? "Unpin" : "Pin"}</Text>
-                  </Pressable>
-                  <Pressable
-                    className="rounded-full border border-line bg-card px-3 py-2"
-                    onPress={(event) => {
-                      event.stopPropagation();
-                      openHistoryEntry(entry, { openInAnalyzer: true });
-                    }}
-                  >
-                    <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Open in analyser</Text>
-                  </Pressable>
-                  <Pressable
-                    className="rounded-full border border-line bg-card px-3 py-2"
-                    onPress={(event) => {
-                      event.stopPropagation();
-                      void clearOneHistoryItem(entry.id);
-                    }}
-                  >
-                    <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-danger">Delete</Text>
-                  </Pressable>
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
+                ) : null}
+              </>
+            )}
 
-      <View style={activeSubPage === "logs" ? undefined : styles.hiddenSection}>
-        <View className="gap-4 rounded-[22px] border border-line bg-card p-5 shadow-panel">
-          <View className="flex-row items-center gap-2">
-            <View className="h-9 w-9 items-center justify-center rounded-[12px] bg-soft">
-              <MaterialCommunityIcons name="text-box-outline" size={18} color={palette.primary} />
+            {analysisMode === "medicine" ? (
+              <DrugDeepDiveResult result={drugResult} />
+            ) : (
+              <AnalysisResult result={result} selectedImageUri={selectedAsset?.uri || ""} selectedImageAspectRatio={selectedImageAspectRatio} />
+            )}
+          </>
+        </View>
+        <View style={activeSubPage === "history" ? undefined : styles.hiddenSection}>
+          <View className="gap-4 rounded-[22px] border border-line bg-card p-5 shadow-panel">
+            <View className="flex-row items-center justify-between gap-3">
+              <View className="flex-row items-center gap-2">
+                <View className="h-9 w-9 items-center justify-center rounded-[12px] bg-moss">
+                  <MaterialCommunityIcons name="history" size={18} color={palette.primary} />
+                </View>
+                <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Recent medicine and supplement analyses</Text>
+              </View>
+              <Pressable className="rounded-full border border-line bg-soft px-3 py-2" onPress={() => void clearAllHistoryItems()}>
+                <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Clear all</Text>
+              </Pressable>
             </View>
-            <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Medicine and supplement logs</Text>
-          </View>
-          <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] leading-5 text-muted">This is the running log of medicine and supplement analyses that have been saved so you can revisit what was checked and when.</Text>
-          {groupedHistoryLogs.length === 0 ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">No logs yet.</Text> : null}
-          {groupedHistoryLogs.map(([group, entries]) => (
-            <View key={group} className="gap-3 rounded-[18px] border border-line bg-soft p-4">
-              <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">{group}</Text>
-              {entries.map((entry) => {
-                const isMedicine = entry.analysisType === "medicine";
-                return (
-                  <Pressable key={entry.id} className="rounded-[16px] border border-line bg-card px-4 py-4" onPress={() => openHistoryEntry(entry)}>
-                    <View className="flex-row items-start justify-between gap-3">
-                      <View className="flex-1 gap-1">
-                        <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">{entry.title || entry.query || "Saved analysis"}</Text>
-                        <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">
-                          {isMedicine ? "Medicine/Drug" : "Supplement"} • {entry.mode === "image" ? "Scan" : "Search"} • {formatDisplayTime(entry.searchedAt)}
+            <TextInput
+              style={typography.regular}
+              className="min-h-[50px] rounded-2xl border border-line bg-soft px-4 py-3 font-['Poppins_400Regular'] text-ink"
+              value={historySearch}
+              onChangeText={setHistorySearch}
+              placeholder="Search medicine and supplement history"
+              placeholderTextColor="#8B8F99"
+            />
+            <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] leading-5 text-muted">Saved analyses open in a sheet first, then you can pull them back into the analyser if you want to rework them.</Text>
+            {filteredHistory.length === 0 ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">No searches yet.</Text> : null}
+            {filteredHistory.map((entry) => {
+              const pinned = pinnedHistoryIds.includes(entry.id);
+              const isMedicine = entry.analysisType === "medicine";
+              const entrySummary = (entry.result as { summary?: string } | null)?.summary || (entry.drugResult as { summary?: string } | null)?.summary || "";
+              return (
+                <Pressable key={entry.id} className={`gap-3 rounded-[18px] border px-4 py-4 ${pinned ? "border-[#E2C46C] bg-[#FFFBEF]" : "border-line bg-soft"}`} onPress={() => openHistoryEntry(entry)}>
+                  <View className="flex-row items-start justify-between gap-3">
+                    <View className="flex-1 gap-1">
+                      <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">{entry.title || entry.query || "Unknown analysis"}</Text>
+                      <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">
+                        {isMedicine ? "Medicine/Drug" : "Supplement"} • {entry.mode === "image" ? "Scan" : "Search"} • {formatDisplayDateTime(entry.searchedAt)}
+                      </Text>
+                      {entrySummary ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] leading-5 text-muted">{entrySummary}</Text> : null}
+                    </View>
+                    <View className="items-end gap-2">
+                      <View className={`rounded-full px-3 py-1.5 ${isMedicine ? "bg-[#FDEFD5]" : "bg-moss"}`}>
+                        <Text style={typography.semibold} className={`font-['Poppins_600SemiBold'] text-xs ${isMedicine ? "text-[#B8741A]" : "text-sage"}`}>
+                          {isMedicine ? "Medicine/Drug" : "Supplement"}
                         </Text>
                       </View>
-                      <MaterialCommunityIcons name={isMedicine ? "medical-bag" : "pill"} size={18} color={isMedicine ? "#B8741A" : palette.primary} />
+                      {pinned ? (
+                        <View className="rounded-full bg-[#FFF7DB] px-3 py-1.5">
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-xs text-[#B87A18]">Pinned</Text>
+                        </View>
+                      ) : null}
                     </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ))}
+                  </View>
+                  <View className="flex-row flex-wrap items-center justify-end gap-2">
+                    <Pressable
+                      className="rounded-full border border-line bg-card px-3 py-2"
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        toggleHistoryPin(entry.id);
+                      }}
+                    >
+                      <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-[#B87A18]">{pinned ? "Unpin" : "Pin"}</Text>
+                    </Pressable>
+                    <Pressable
+                      className="rounded-full border border-line bg-card px-3 py-2"
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        openHistoryEntry(entry, { openInAnalyzer: true });
+                      }}
+                    >
+                      <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-sage">Open in analyser</Text>
+                    </Pressable>
+                    <Pressable
+                      className="rounded-full border border-line bg-card px-3 py-2"
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void clearOneHistoryItem(entry.id);
+                      }}
+                    >
+                      <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-danger">Delete</Text>
+                    </Pressable>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
-      </View>
 
-      <Modal visible={Boolean(historyModalEntry)} transparent animationType="slide" onRequestClose={closeHistoryModal}>
-        <View style={styles.guideBackdrop}>
-          <View style={[styles.guideCard, styles.historyModalCard]}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.historyModalHeader}>
-              <View style={styles.historyModalCopy}>
-                <Text style={styles.guideTitle}>{historyModalEntry?.analysisType === "medicine" ? "Saved medicine analysis" : "Saved supplement analysis"}</Text>
-                <Text style={styles.historyModalMeta}>
-                  {(historyModalEntry?.analysisType === "medicine" ? "Medicine deep-dive" : historyModalEntry?.mode === "image" ? "Image scan" : "Text search")} • {historyModalEntry ? formatDisplayDateTime(historyModalEntry.searchedAt) : ""}
-                </Text>
+        <View style={activeSubPage === "logs" ? undefined : styles.hiddenSection}>
+          <View className="gap-4 rounded-[22px] border border-line bg-card p-5 shadow-panel">
+            <View className="flex-row items-center gap-2">
+              <View className="h-9 w-9 items-center justify-center rounded-[12px] bg-soft">
+                <MaterialCommunityIcons name="text-box-outline" size={18} color={palette.primary} />
               </View>
-              <Pressable style={styles.guideCloseButton} onPress={closeHistoryModal}>
-                <Text style={styles.guideCloseButtonText}>×</Text>
-              </Pressable>
+              <Text style={typography.bold} className="font-['Poppins_700Bold'] text-base text-ink">Medicine and supplement logs</Text>
             </View>
-            <ScrollView contentContainerStyle={styles.historyModalScroller}>
-              {historyModalEntry?.analysisType === "medicine" ? (
-                <DrugDeepDiveResult result={historyModalEntry?.drugResult || null} />
-              ) : (
-                <AnalysisResult
-                  result={historyModalEntry?.result || null}
-                  selectedImageUri={historyModalEntry?.inputImage || ""}
-                  selectedImageAspectRatio={selectedImageAspectRatio}
-                />
-              )}
-            </ScrollView>
-            <View style={styles.historyModalActions}>
-              <Pressable
-                style={styles.historyModalPrimaryButton}
-                onPress={() => {
-                  if (historyModalEntry) {
-                    openHistoryEntry(historyModalEntry, { openInAnalyzer: true });
-                  }
-                }}
-              >
-                <Text style={styles.historyModalPrimaryText}>Open in analyzer</Text>
-              </Pressable>
-              {historyModalEntry ? (
+            <Text style={typography.regular} className="font-['Poppins_400Regular'] text-[13px] leading-5 text-muted">This is the running log of medicine and supplement analyses that have been saved so you can revisit what was checked and when.</Text>
+            {groupedHistoryLogs.length === 0 ? <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">No logs yet.</Text> : null}
+            {groupedHistoryLogs.map(([group, entries]) => (
+              <View key={group} className="gap-3 rounded-[18px] border border-line bg-soft p-4">
+                <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">{group}</Text>
+                {entries.map((entry) => {
+                  const isMedicine = entry.analysisType === "medicine";
+                  return (
+                    <Pressable key={entry.id} className="rounded-[16px] border border-line bg-card px-4 py-4" onPress={() => openHistoryEntry(entry)}>
+                      <View className="flex-row items-start justify-between gap-3">
+                        <View className="flex-1 gap-1">
+                          <Text style={typography.semibold} className="font-['Poppins_600SemiBold'] text-ink">{entry.title || entry.query || "Saved analysis"}</Text>
+                          <Text style={typography.regular} className="font-['Poppins_400Regular'] text-muted">
+                            {isMedicine ? "Medicine/Drug" : "Supplement"} • {entry.mode === "image" ? "Scan" : "Search"} • {formatDisplayTime(entry.searchedAt)}
+                          </Text>
+                        </View>
+                        <MaterialCommunityIcons name={isMedicine ? "medical-bag" : "pill"} size={18} color={isMedicine ? "#B8741A" : palette.primary} />
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ))}
+          </View>
+        </View>
+
+        <Modal visible={Boolean(historyModalEntry)} transparent animationType="slide" onRequestClose={closeHistoryModal}>
+          <View style={styles.guideBackdrop}>
+            <View style={[styles.guideCard, styles.historyModalCard]}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.historyModalHeader}>
+                <View style={styles.historyModalCopy}>
+                  <Text style={styles.guideTitle}>{historyModalEntry?.analysisType === "medicine" ? "Saved medicine analysis" : "Saved supplement analysis"}</Text>
+                  <Text style={styles.historyModalMeta}>
+                    {(historyModalEntry?.analysisType === "medicine" ? "Medicine deep-dive" : historyModalEntry?.mode === "image" ? "Image scan" : "Text search")} • {historyModalEntry ? formatDisplayDateTime(historyModalEntry.searchedAt) : ""}
+                  </Text>
+                </View>
+                <Pressable style={styles.guideCloseButton} onPress={closeHistoryModal}>
+                  <Text style={styles.guideCloseButtonText}>×</Text>
+                </Pressable>
+              </View>
+              <ScrollView contentContainerStyle={styles.historyModalScroller}>
+                {historyModalEntry?.analysisType === "medicine" ? (
+                  <DrugDeepDiveResult result={historyModalEntry?.drugResult || null} />
+                ) : (
+                  <AnalysisResult
+                    result={historyModalEntry?.result || null}
+                    selectedImageUri={historyModalEntry?.inputImage || ""}
+                    selectedImageAspectRatio={selectedImageAspectRatio}
+                  />
+                )}
+              </ScrollView>
+              <View style={styles.historyModalActions}>
                 <Pressable
-                  style={styles.historyModalSecondaryButton}
+                  style={styles.historyModalPrimaryButton}
                   onPress={() => {
-                    void clearOneHistoryItem(historyModalEntry.id);
+                    if (historyModalEntry) {
+                      openHistoryEntry(historyModalEntry, { openInAnalyzer: true });
+                    }
                   }}
                 >
-                  <Text style={styles.historyModalSecondaryText}>Delete</Text>
+                  <Text style={styles.historyModalPrimaryText}>Open in analyzer</Text>
                 </Pressable>
-              ) : null}
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={cropVisible} transparent animationType="slide" onRequestClose={() => setCropVisible(false)}>
-        <View style={styles.guideBackdrop}>
-          <View style={[styles.guideCard, styles.cropModalCard]}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.guideTitle}>Crop & framing</Text>
-            <Text style={styles.cropModalText}>Choose the framing ratio you want, then re-open the crop flow if you want a tighter image before analysis.</Text>
-            {selectedAsset?.uri ? (
-              <View style={styles.cropPreviewWrap}>
-                <View style={[styles.cropPreviewFrame, { aspectRatio: selectedImageAspectRatio || 1 }]}>
-                  <Text style={styles.cropPreviewText}>Preview frame</Text>
-                </View>
+                {historyModalEntry ? (
+                  <Pressable
+                    style={styles.historyModalSecondaryButton}
+                    onPress={() => {
+                      void clearOneHistoryItem(historyModalEntry.id);
+                    }}
+                  >
+                    <Text style={styles.historyModalSecondaryText}>Delete</Text>
+                  </Pressable>
+                ) : null}
               </View>
-            ) : null}
-            <View style={styles.cropChipRow}>
-              {["1:1", "4:3", "3:4", "16:9"].map((ratio) => (
-                <Pressable key={ratio} style={[styles.cropChip, aspectRatio === ratio && styles.cropChipActive]} onPress={() => setAspectRatio(ratio)}>
-                  <Text style={[styles.cropChipText, aspectRatio === ratio && styles.cropChipTextActive]}>{ratio}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <View style={styles.historyModalActions}>
-              <Pressable style={styles.historyModalPrimaryButton} onPress={() => void reopenCrop()}>
-                <Text style={styles.historyModalPrimaryText}>Re-open crop</Text>
-              </Pressable>
-              <Pressable style={styles.historyModalSecondaryButton} onPress={() => setCropVisible(false)}>
-                <Text style={styles.historyModalSecondaryText}>Use image</Text>
-              </Pressable>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      <TutorialSheet visible={guideVisible} title="Medicine analysis tutorial" pages={SCANNER_GUIDE_PAGES} onClose={closeGuide} />
+        <Modal visible={cropVisible} transparent animationType="slide" onRequestClose={() => setCropVisible(false)}>
+          <View style={styles.guideBackdrop}>
+            <View style={[styles.guideCard, styles.cropModalCard]}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.guideTitle}>Crop & framing</Text>
+              <Text style={styles.cropModalText}>Choose the framing ratio you want, then re-open the crop flow if you want a tighter image before analysis.</Text>
+              {selectedAsset?.uri ? (
+                <View style={styles.cropPreviewWrap}>
+                  <View style={[styles.cropPreviewFrame, { aspectRatio: selectedImageAspectRatio || 1 }]}>
+                    <Text style={styles.cropPreviewText}>Preview frame</Text>
+                  </View>
+                </View>
+              ) : null}
+              <View style={styles.cropChipRow}>
+                {["1:1", "4:3", "3:4", "16:9"].map((ratio) => (
+                  <Pressable key={ratio} style={[styles.cropChip, aspectRatio === ratio && styles.cropChipActive]} onPress={() => setAspectRatio(ratio)}>
+                    <Text style={[styles.cropChipText, aspectRatio === ratio && styles.cropChipTextActive]}>{ratio}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.historyModalActions}>
+                <Pressable style={styles.historyModalPrimaryButton} onPress={() => void reopenCrop()}>
+                  <Text style={styles.historyModalPrimaryText}>Re-open crop</Text>
+                </Pressable>
+                <Pressable style={styles.historyModalSecondaryButton} onPress={() => setCropVisible(false)}>
+                  <Text style={styles.historyModalSecondaryText}>Use image</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <TutorialSheet visible={guideVisible} title="Medicine analysis tutorial" pages={SCANNER_GUIDE_PAGES} onClose={closeGuide} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -1431,6 +1432,26 @@ export default function SupplementsPage({ requestApi, accountId, accountEmail, g
 const styles = StyleSheet.create({
   hiddenSection: {
     display: "none",
+  },
+  heroHeader: {
+    gap: 8,
+  },
+  heroEyebrow: {
+    color: palette.primary,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12,
+    textTransform: "uppercase",
+  },
+  heroTitle: {
+    color: palette.ink,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 18,
+  },
+  heroBody: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: "Poppins_400Regular",
   },
   webcamVideo: {
     width: "100%",

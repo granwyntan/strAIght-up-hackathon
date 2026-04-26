@@ -1,3 +1,26 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --ui-background: #f7f8f5;
+  --ui-surface: #ffffff;
+  --ui-surface-soft: #fbfbf8;
+  --ui-border: rgba(16, 24, 40, 0.07);
+  --ui-ink: #101828;
+  --ui-muted: #667085;
+  --ui-primary: #28554a;
+  --ui-primary-soft: #edf4f0;
+  --ui-danger: #c25747;
+}
+
+html,
+body,
+#root {
+  background: var(--ui-background);
+  color: var(--ui-ink);
+}
+
+* {
+  box-sizing: border-box;
+}

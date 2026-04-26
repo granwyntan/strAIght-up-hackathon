@@ -1,12 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import { Animated, PanResponder, Platform, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { ActivityIndicator, Avatar, Button, Card, Chip, IconButton, Searchbar, Text, TouchableRipple } from "react-native-paper";
+import { ActivityIndicator, Avatar, Button, Card, Chip, IconButton, Text, TextInput, TouchableRipple } from "react-native-paper";
 
 import { palette, type InvestigationSummary } from "../data";
 import SectionTabs from "../components/shared/SectionTabs";
 import { EmptyState, InvestigationResult, LoadingCard, ProcessingCard } from "../components/consultant/InvestigationResult";
 import type { ConsultantPageProps, ConsultantView, HistoryFilter, HistorySort, InvestigationComparison, MaterialIconName } from "../components/consultant/types";
+
+const HISTORY_SWIPE_THRESHOLD = 72;
+const HISTORY_SWIPE_LIMIT = 108;
+const MOBILE_REORDER_STEP = 76;
+
+function clampHistorySwipe(value: number) {
+  return Math.max(-HISTORY_SWIPE_LIMIT, Math.min(HISTORY_SWIPE_LIMIT, value));
+}
+
+function clampHistoryDrag(value: number) {
+  return Math.max(-160, Math.min(160, value));
+}
 
 export default function ConsultantPage(props: ConsultantPageProps) {
   const { width } = useWindowDimensions();
@@ -101,6 +113,16 @@ export default function ConsultantPage(props: ConsultantPageProps) {
       .slice(0, 5);
   }, [claimSuggestions, helpers, recentQueryMatches]);
 
+  const suggestionGroups = useMemo(
+    () =>
+      [
+        { key: "recent", title: "Recent queries", items: recentQueryMatches },
+        { key: "live", title: "Search suggestions", items: liveQueryMatches, loading: suggestionsLoading },
+      ].filter((group) => group.items.length > 0),
+    [liveQueryMatches, recentQueryMatches, suggestionsLoading]
+  );
+  const showSuggestionFlyout = healthGuard.allowed && (suggestionGroups.length > 0 || (suggestionsLoading && helpers.safeTrim(claimDraft).length >= 2));
+
   useEffect(() => {
     if ([contextDraft, claimSourceDraft, sourceUrlDraft].some((value) => helpers.safeTrim(value))) {
       setShowOptionalContext(true);
@@ -133,13 +155,51 @@ export default function ConsultantPage(props: ConsultantPageProps) {
                 <View style={styles.cardStack}>
                   <View>
                     <Text variant="labelLarge" style={styles.linkTitle}>Claim to investigate</Text>
-                    <Searchbar
-                      placeholder="Example: Magnesium glycinate cures insomnia."
-                      value={claimDraft}
-                      onChangeText={onClaimChange}
-                      style={styles.searchbar}
-                      inputStyle={styles.searchbarInput}
-                    />
+                    <View style={styles.floatingFieldWrap}>
+                      <TextInput
+                        mode="outlined"
+                        placeholder="Example: Magnesium glycinate cures insomnia."
+                        value={claimDraft}
+                        onChangeText={onClaimChange}
+                        style={styles.searchbar}
+                        outlineStyle={styles.inputOutline}
+                        contentStyle={styles.searchbarInput}
+                        activeOutlineColor={palette.primary}
+                      />
+                      {showSuggestionFlyout ? (
+                        <Card mode="contained" style={styles.suggestionFlyout}>
+                          <Card.Content style={styles.suggestionFlyoutContent}>
+                            {suggestionGroups.map((group) => (
+                              <View key={group.key} style={styles.suggestionGroup}>
+                                <View style={styles.rowBetween}>
+                                  <Text variant="bodySmall" style={styles.historyMetaLine}>
+                                    {group.title}
+                                  </Text>
+                                  {group.loading ? <ActivityIndicator size="small" color={palette.primary} /> : null}
+                                </View>
+                                {group.items.map((item, index) => (
+                                  <TouchableRipple key={item.id} style={[styles.recentQueryRow, index > 0 && styles.suggestionDivider]} onPress={() => onUseClaim(item)}>
+                                    <View style={styles.cardStack}>
+                                      <Text variant="bodyMedium" style={styles.linkTitle}>
+                                        {helpers.formatClaimForDisplay(item.claim)}
+                                      </Text>
+                                    </View>
+                                  </TouchableRipple>
+                                ))}
+                              </View>
+                            ))}
+                            {suggestionsLoading && suggestionGroups.length === 0 ? (
+                              <View style={styles.suggestionLoadingRow}>
+                                <ActivityIndicator size="small" color={palette.primary} />
+                                <Text variant="bodySmall" style={styles.historyMetaLine}>
+                                  Looking for similar claims...
+                                </Text>
+                              </View>
+                            ) : null}
+                          </Card.Content>
+                        </Card>
+                      ) : null}
+                    </View>
                   </View>
                   {!healthGuard.allowed ? (
                     <Card mode="contained" style={styles.scopeWarningCard}>
@@ -157,45 +217,6 @@ export default function ConsultantPage(props: ConsultantPageProps) {
                             </Text>
                           </View>
                         </View>
-                      </Card.Content>
-                    </Card>
-                  ) : null}
-                  {recentQueryMatches.length > 0 ? (
-                    <Card mode="contained" style={styles.recentQueryCard}>
-                      <Card.Content style={styles.cardStack}>
-                        <Text variant="labelLarge" style={styles.linkTitle}>
-                          Recent queries
-                        </Text>
-                        {recentQueryMatches.map((item) => (
-                          <TouchableRipple key={item.id} style={styles.recentQueryRow} onPress={() => onUseClaim(item)}>
-                            <View style={styles.cardStack}>
-                              <Text variant="bodyMedium" style={styles.linkTitle}>
-                                {helpers.formatClaimForDisplay(item.claim)}
-                              </Text>
-                            </View>
-                          </TouchableRipple>
-                        ))}
-                      </Card.Content>
-                    </Card>
-                  ) : null}
-                  {liveQueryMatches.length > 0 ? (
-                    <Card mode="contained" style={styles.recentQueryCard}>
-                      <Card.Content style={styles.cardStack}>
-                        <View style={styles.rowBetween}>
-                          <Text variant="labelLarge" style={styles.linkTitle}>
-                            Search suggestions
-                          </Text>
-                          {suggestionsLoading ? <ActivityIndicator size="small" color={palette.primary} /> : null}
-                        </View>
-                        {liveQueryMatches.map((item) => (
-                          <TouchableRipple key={item.id} style={styles.recentQueryRow} onPress={() => onUseClaim(item)}>
-                            <View style={styles.cardStack}>
-                              <Text variant="bodyMedium" style={styles.linkTitle}>
-                                {helpers.formatClaimForDisplay(item.claim)}
-                              </Text>
-                            </View>
-                          </TouchableRipple>
-                        ))}
                       </Card.Content>
                     </Card>
                   ) : null}
@@ -220,9 +241,36 @@ export default function ConsultantPage(props: ConsultantPageProps) {
 
                   {showOptionalContext ? (
                     <View style={styles.cardStack}>
-                      <Searchbar placeholder="What do you want checked?" value={contextDraft} onChangeText={onContextChange} style={styles.searchbar} inputStyle={styles.searchbarInput} />
-                      <Searchbar placeholder="Where did you see this?" value={claimSourceDraft} onChangeText={onClaimSourceChange} style={styles.searchbar} inputStyle={styles.searchbarInput} />
-                      <Searchbar placeholder="Links to review" value={sourceUrlDraft} onChangeText={onSourceUrlChange} style={styles.searchbar} inputStyle={styles.searchbarInput} />
+                      <TextInput
+                        mode="outlined"
+                        placeholder="What do you want checked?"
+                        value={contextDraft}
+                        onChangeText={onContextChange}
+                        style={styles.searchbar}
+                        outlineStyle={styles.inputOutline}
+                        contentStyle={styles.searchbarInput}
+                        activeOutlineColor={palette.primary}
+                      />
+                      <TextInput
+                        mode="outlined"
+                        placeholder="Where did you see this?"
+                        value={claimSourceDraft}
+                        onChangeText={onClaimSourceChange}
+                        style={styles.searchbar}
+                        outlineStyle={styles.inputOutline}
+                        contentStyle={styles.searchbarInput}
+                        activeOutlineColor={palette.primary}
+                      />
+                      <TextInput
+                        mode="outlined"
+                        placeholder="Links to review"
+                        value={sourceUrlDraft}
+                        onChangeText={onSourceUrlChange}
+                        style={styles.searchbar}
+                        outlineStyle={styles.inputOutline}
+                        contentStyle={styles.searchbarInput}
+                        activeOutlineColor={palette.primary}
+                      />
                     </View>
                   ) : null}
                 </View>
@@ -236,7 +284,7 @@ export default function ConsultantPage(props: ConsultantPageProps) {
                   {helpers.depthDescription(depth)}
                 </Text>
 
-                <Button mode="contained" icon="magnify" onPress={onSubmit} loading={submitting} disabled={submitting || !healthGuard.allowed} buttonColor={palette.primary}>
+                <Button mode="contained" onPress={onSubmit} loading={submitting} disabled={submitting || !healthGuard.allowed} buttonColor={palette.primary}>
                   Start investigation
                 </Button>
               </Card.Content>
@@ -248,7 +296,7 @@ export default function ConsultantPage(props: ConsultantPageProps) {
               <Text variant="labelLarge" style={styles.eyebrow}>LIVE REPORT</Text>
               <Text variant="headlineSmall" style={styles.sectionTitle}>Current review</Text>
               <Text variant="bodyMedium" style={styles.sectionBody}>
-                Only investigations started in this session appear here. Saved history stays separate until you run it again.
+                Current-session progress and results appear here.
               </Text>
             </View>
             {loadingSelected ? (
@@ -262,7 +310,7 @@ export default function ConsultantPage(props: ConsultantPageProps) {
             ) : !healthGuard.allowed && helpers.safeTrim(claimDraft) ? (
               <EmptyState title={healthGuard.title} body={healthGuard.body} styles={styles} />
             ) : (
-              <EmptyState title="No active investigation" body="Start a new review to populate the live report. Saved investigations stay in History until you choose to run them again." styles={styles} />
+              <EmptyState title="No active investigation" body="Start a review to see the live report here." styles={styles} />
             )}
           </View>
         </View>
@@ -349,21 +397,26 @@ function HistoryPanel({
                   <Text variant="titleSmall" style={styles.linkTitle}>
                     {helpers.historySortLabel(historySort)}
                   </Text>
-                  <Text variant="bodySmall" style={styles.sectionBody}>
-                    Dragging a card switches the list into custom order automatically.
-                  </Text>
+                  <View style={styles.rowGap}>
+                    <MaterialCommunityIcons name="dots-vertical" size={16} color={palette.muted} />
+                    <Text variant="bodySmall" style={styles.sectionBody}>
+                      Use 3 dots to move cards. Swipe right to pin and left to delete.
+                    </Text>
+                  </View>
                 </View>
                 <Button mode="text" textColor={palette.danger} onPress={onClearHistory}>
                   Clear history
                 </Button>
               </View>
-              <Searchbar
+              <TextInput
+                mode="outlined"
                 placeholder="Search claim, verdict, or summary"
                 value={historyQuery}
                 onChangeText={onHistoryQueryChange}
                 style={styles.searchbar}
-                inputStyle={styles.searchbarInput}
-                iconColor={palette.primary}
+                outlineStyle={styles.inputOutline}
+                contentStyle={styles.searchbarInput}
+                activeOutlineColor={palette.primary}
               />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
                 {([
@@ -400,7 +453,7 @@ function HistoryPanel({
           {loadingHistory ? (
             <LoadingCard text="Loading investigation history..." styles={styles} />
           ) : history.length === 0 ? (
-            <EmptyState title="No saved investigations yet" body="Completed runs will appear here so you can review, pin, compare, or rerun them later." styles={styles} />
+            <EmptyState title="No saved investigations yet" body="Completed runs appear here for review, pinning, comparison, or reruns." styles={styles} />
           ) : (
             <View style={styles.cardStack}>
               {history.map((item: InvestigationSummary) => (
@@ -430,43 +483,226 @@ function HistoryPanel({
 
 function HistoryItem({ item, pinned, compared, onOpen, onDelete, onCancel, onPin, onCompare, onMoveUp, onMoveDown, styles, helpers }: any) {
   const meta = helpers.verdictMeta(item.verdict);
+  const scoreMeta = helpers.scoreTone(item.overallScore, item.verdict);
   const dragY = useRef(new Animated.Value(0)).current;
+  const swipeX = useRef(new Animated.Value(0)).current;
+  const [reorderMode, setReorderMode] = useState(false);
+  const reorderModeRef = useRef(false);
+  const swipeLockedRef = useRef(false);
+  const dragStepsRef = useRef(0);
+  const panActiveRef = useRef(false);
+  const isWeb = Platform.OS === "web";
+
+  const setReorderState = (nextValue: boolean) => {
+    reorderModeRef.current = nextValue;
+    if (!nextValue) {
+      panActiveRef.current = false;
+    }
+    setReorderMode(nextValue);
+  };
+
+  const resetSwipe = useMemo(
+    () => () =>
+      Animated.spring(swipeX, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 120,
+        friction: 12,
+      }).start(),
+    [swipeX]
+  );
+
+  const resetDrag = useMemo(
+    () => () =>
+      Animated.spring(dragY, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 120,
+        friction: 12,
+      }).start(),
+    [dragY]
+  );
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onStartShouldSetPanResponderCapture: () => false,
+        onMoveShouldSetPanResponder: (_event, gesture) =>
+          reorderModeRef.current && !isWeb
+            ? Math.abs(gesture.dy) > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx)
+            : Math.abs(gesture.dx) > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2,
+        onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+          reorderModeRef.current && !isWeb
+            ? Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) >= Math.abs(gesture.dx)
+            : false,
+        onPanResponderGrant: () => {
+          panActiveRef.current = true;
+          if (reorderModeRef.current && !isWeb) {
+            dragY.stopAnimation();
+            swipeX.stopAnimation();
+            return;
+          }
+          swipeLockedRef.current = false;
+          swipeX.stopAnimation();
+        },
+        onPanResponderMove: (_event, gesture) => {
+          if (reorderModeRef.current && !isWeb) {
+            dragY.setValue(clampHistoryDrag(gesture.dy));
+            return;
+          }
+          if (swipeLockedRef.current) return;
+          swipeX.setValue(clampHistorySwipe(gesture.dx));
+        },
+        onPanResponderTerminationRequest: () => true,
+        onPanResponderRelease: (_event, gesture) => {
+          panActiveRef.current = false;
+          if (reorderModeRef.current && !isWeb) {
+            const steps = Math.min(3, Math.floor(Math.abs(gesture.dy) / MOBILE_REORDER_STEP));
+            dragStepsRef.current = steps;
+            if (steps > 0) {
+              for (let index = 0; index < steps; index += 1) {
+                if (gesture.dy < 0) {
+                  onMoveUp();
+                } else {
+                  onMoveDown();
+                }
+              }
+            }
+            resetDrag();
+            setReorderState(false);
+            return;
+          }
+
+          if (gesture.dx <= -HISTORY_SWIPE_THRESHOLD) {
+            swipeLockedRef.current = true;
+            Animated.timing(swipeX, {
+              toValue: -HISTORY_SWIPE_LIMIT,
+              duration: 120,
+              useNativeDriver: true,
+            }).start(() => {
+              swipeX.setValue(0);
+              onDelete();
+            });
+            return;
+          }
+
+          if (gesture.dx >= HISTORY_SWIPE_THRESHOLD) {
+            swipeLockedRef.current = true;
+            Animated.timing(swipeX, {
+              toValue: HISTORY_SWIPE_LIMIT,
+              duration: 120,
+              useNativeDriver: true,
+            }).start(() => {
+              swipeX.setValue(0);
+              onPin();
+            });
+            return;
+          }
+
+          resetSwipe();
+        },
+        onPanResponderTerminate: () => {
+          panActiveRef.current = false;
+          if (reorderModeRef.current && !isWeb) {
+            setReorderState(false);
+            resetDrag();
+            return;
+          }
+          resetSwipe();
+        },
+      }),
+    [dragY, isWeb, onDelete, onMoveDown, onMoveUp, onPin, resetDrag, resetSwipe, swipeX]
+  );
 
   return (
     <Animated.View style={{ transform: [{ translateY: dragY }] }}>
-      <TouchableRipple onPress={onOpen} style={[styles.historyCard, pinned && styles.historyCardPinned]}>
-        <View style={styles.cardStack}>
-          <View style={styles.rowBetween}>
-            <View style={styles.rowGap}>
-              <HistoryVerdictMark verdict={item.verdict} styles={styles} helpers={helpers} />
-              <View style={styles.flexOne}>
-                <Text variant="titleMedium" style={styles.historyClaim}>{helpers.formatClaimForDisplay(item.claim)}</Text>
-                <Text variant="bodySmall" style={styles.historySummary}>{item.summary}</Text>
-              </View>
-            </View>
-            <Chip compact style={{ backgroundColor: meta.background }} textStyle={{ color: meta.color, fontFamily: "Poppins_600SemiBold" }}>
-              {item.overallScore ?? "--"}/100
-            </Chip>
+      <View style={styles.historySwipeShell}>
+        <View pointerEvents="none" style={styles.historyRails}>
+          <View style={styles.pinRail}>
+            <Avatar.Icon size={34} icon={pinned ? "pin-off-outline" : "pin-outline"} color={palette.pin} style={styles.pinRailAvatar} />
           </View>
-          <View style={styles.historyMetaRow}>
-            <Chip compact style={styles.segmentChip}>{meta.label}</Chip>
-            <Chip compact style={styles.segmentChip}>{helpers.depthLabel(item.desiredDepth)}</Chip>
-            <Chip compact style={styles.segmentChip}>{helpers.safeUpper(item.confidenceLevel || "unknown")}</Chip>
-            {compared ? <Chip compact style={styles.segmentChip}>Comparing</Chip> : null}
-          </View>
-          <Text variant="bodySmall" style={styles.historyMetaLine}>Updated {helpers.formatTimestamp(item.updatedAt)}</Text>
-          <View style={styles.historyHeaderActions}>
-            {helpers.isRunning(item.status) ? (
-              <Button mode="outlined" compact icon="stop-circle-outline" onPress={onCancel} textColor={palette.warning}>Stop</Button>
-            ) : null}
-            <Button mode="outlined" compact icon="compare-horizontal" onPress={onCompare} textColor={palette.primary}>Compare</Button>
-            <IconButton icon="arrow-up" size={16} onPress={onMoveUp} style={styles.webActionButton} />
-            <IconButton icon="arrow-down" size={16} onPress={onMoveDown} style={styles.webActionButton} />
-            <IconButton icon={pinned ? "pin-off-outline" : "pin-outline"} size={16} iconColor={palette.pin} style={[styles.webActionButton, styles.webPinButton]} onPress={onPin} />
-            <IconButton icon="delete-outline" size={16} iconColor={palette.danger} style={[styles.webActionButton, styles.webDeleteButton]} onPress={onDelete} />
+          <View style={styles.deleteRail}>
+            <Avatar.Icon size={34} icon="delete-outline" color={palette.danger} style={styles.deleteRailAvatar} />
           </View>
         </View>
-      </TouchableRipple>
+        <Animated.View style={{ transform: [{ translateX: swipeX }] }} {...panResponder.panHandlers}>
+          <TouchableRipple
+            onPress={reorderMode && !isWeb ? undefined : onOpen}
+            onLongPress={() => {
+              if (isWeb) return;
+              dragStepsRef.current = 0;
+              dragY.setValue(0);
+              swipeX.setValue(0);
+              setReorderState(true);
+            }}
+            delayLongPress={220}
+            style={[styles.historyCard, pinned && styles.historyCardPinned, reorderMode && styles.historyCardDragging]}
+          >
+            <View style={styles.cardStack}>
+              <View style={styles.rowBetween}>
+                <View style={styles.rowGap}>
+                  <HistoryVerdictMark verdict={item.verdict} styles={styles} helpers={helpers} />
+                  <View style={styles.flexOne}>
+                    <Text variant="titleMedium" style={styles.historyClaim}>{helpers.formatClaimForDisplay(item.claim)}</Text>
+                    <Text variant="bodySmall" style={styles.historySummary}>{item.summary}</Text>
+                    {helpers.safeTrim(item.context) ? (
+                      <Text variant="bodySmall" style={styles.historyMetaLine} numberOfLines={2}>
+                        {`Context: ${helpers.safeTrim(item.context)}`}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+                <Chip compact style={{ backgroundColor: scoreMeta.background }} textStyle={{ color: scoreMeta.color, fontFamily: "Poppins_600SemiBold" }}>
+                  {item.overallScore ?? "--"}/100
+                </Chip>
+              </View>
+              <View style={styles.historyMetaRow}>
+                <Chip compact style={styles.segmentChip}>{meta.label}</Chip>
+                <Chip compact style={styles.segmentChip}>{helpers.depthLabel(item.desiredDepth)}</Chip>
+                <Chip compact style={styles.segmentChip}>{helpers.safeUpper(item.confidenceLevel || "unknown")}</Chip>
+                {pinned ? <Chip compact style={styles.segmentChip}>Pinned</Chip> : null}
+                {compared ? <Chip compact style={styles.segmentChip}>Comparing</Chip> : null}
+              </View>
+              <Text variant="bodySmall" style={styles.historyMetaLine}>Updated {helpers.formatTimestamp(item.updatedAt)}</Text>
+              {!isWeb ? (
+                <Text variant="bodySmall" style={styles.dragModeHint}>
+                  {reorderMode ? "Drag anywhere on the card to reorder, or tap the dots again to cancel." : "Touch and hold to turn on drag."}
+                </Text>
+              ) : null}
+              <View style={styles.historyHeaderActions}>
+                {helpers.isRunning(item.status) ? (
+                  <Button mode="outlined" compact icon="stop-circle-outline" onPress={onCancel} textColor={palette.warning}>Stop</Button>
+                ) : null}
+                <Button mode="outlined" compact icon={compared ? "check-circle-outline" : "compare-horizontal"} onPress={onCompare} textColor={palette.primary}>
+                  {compared ? "Selected" : "Compare"}
+                </Button>
+                <IconButton
+                  icon={reorderMode ? "drag" : "dots-vertical"}
+                  size={16}
+                  onPress={() => {
+                    dragY.setValue(0);
+                    swipeX.setValue(0);
+                    setReorderState(!reorderModeRef.current);
+                  }}
+                  style={[styles.webActionButton, reorderMode && styles.dragButtonActive]}
+                />
+                {reorderMode && isWeb ? <IconButton icon="arrow-up" size={16} onPress={onMoveUp} style={styles.webActionButton} /> : null}
+                {reorderMode && isWeb ? <IconButton icon="arrow-down" size={16} onPress={onMoveDown} style={styles.webActionButton} /> : null}
+                {reorderMode && !isWeb ? (
+                  <>
+                    <Chip compact style={styles.segmentChip} icon="drag-vertical">
+                      Drag card
+                    </Chip>
+                    <IconButton icon="arrow-up" size={16} onPress={onMoveUp} style={styles.webActionButton} />
+                    <IconButton icon="arrow-down" size={16} onPress={onMoveDown} style={styles.webActionButton} />
+                  </>
+                ) : null}
+              </View>
+            </View>
+          </TouchableRipple>
+        </Animated.View>
+      </View>
     </Animated.View>
   );
 }
@@ -504,7 +740,7 @@ function ComparisonBoard({ items, result, loading, onRunComparison, onOpenHistor
         <View style={[styles.comparisonCardGrid, stackedCards && styles.comparisonCardGridStacked]}>
           {items.map((item) => {
             const meta = helpers.verdictMeta(item.verdict);
-            const tone = helpers.scoreTone(item.overallScore);
+            const tone = helpers.scoreTone(item.overallScore, item.verdict);
             return (
               <Pressable
                 key={item.id}

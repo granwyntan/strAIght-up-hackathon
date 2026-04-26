@@ -23,6 +23,8 @@ export function ProcessingCard({
   const compact = width < 760;
   const steps = investigation.stepSummaries.length > 0 ? investigation.stepSummaries : [];
   const recentEvents = investigation.progressEvents.slice(-5).reverse();
+  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
+  const activeStepKey = steps.find((step) => step.status === "running")?.key || steps[0]?.key || "";
   return (
     <Card mode="contained" style={styles.processingCard}>
       <Card.Content style={styles.cardStack}>
@@ -52,30 +54,45 @@ export function ProcessingCard({
             {steps.map((step: PipelineStepSummary) => {
               const indicator = helpers.statusIcon(step.status);
               const stepTitle = helpers.splitWorkflowTitle(step.title);
+              const expanded = Boolean(expandedSteps[step.key]) || step.key === activeStepKey;
               return (
                 <View key={step.key} style={styles.stepRow}>
                   <Avatar.Icon size={40} icon={helpers.stageIcon(step)} color={palette.primary} style={styles.stepAvatar} />
                   <View style={styles.flexOne}>
-                    <View style={[styles.rowBetween, compact && styles.stepHeaderCompact]}>
-                      <View style={styles.flexOne}>
-                        <Text variant="titleSmall" style={styles.stepTitle}>
-                          {stepTitle.purpose}
-                        </Text>
-                        {stepTitle.role ? (
-                          <Text variant="bodySmall" style={styles.stepRoleLine}>
-                            {stepTitle.role}
+                    <TouchableRipple
+                      onPress={() => setExpandedSteps((current) => ({ ...current, [step.key]: !Boolean(current[step.key]) }))}
+                    >
+                      <View style={[styles.rowBetween, compact && styles.stepHeaderCompact]}>
+                        <View style={styles.flexOne}>
+                          <Text variant="titleSmall" style={styles.stepTitle}>
+                            {stepTitle.purpose}
                           </Text>
-                        ) : null}
+                          {stepTitle.role ? (
+                            <Text variant="bodySmall" style={styles.stepRoleLine}>
+                              {stepTitle.role}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <View style={styles.rowGap}>
+                          <Chip
+                            compact
+                            icon={indicator.icon}
+                            style={compact ? styles.statusChipCompact : undefined}
+                            textStyle={[styles.miniChipText, { color: indicator.color }]}
+                          >
+                            {helpers.statusLabel(step.status)}
+                          </Chip>
+                          <IconButton icon={expanded ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={styles.dragButton} />
+                        </View>
                       </View>
-                      <Chip compact icon={indicator.icon} style={compact ? styles.statusChipCompact : undefined} textStyle={[styles.miniChipText, { color: indicator.color }]}>
-                        {helpers.statusLabel(step.status)}
-                      </Chip>
-                    </View>
-                    <View style={styles.stepDivider} />
-                    <Text variant="bodySmall" style={styles.stepBody}>
-                      {step.summary}
-                    </Text>
-                    {helpers.safeTrim(step.goal) ? (
+                    </TouchableRipple>
+                    {expanded ? <View style={styles.stepDivider} /> : null}
+                    {expanded ? (
+                      <Text variant="bodySmall" style={styles.stepBody}>
+                        {step.summary}
+                      </Text>
+                    ) : null}
+                    {expanded && helpers.safeTrim(step.goal) ? (
                       <Text variant="bodySmall" style={styles.historyMetaLine}>
                         {helpers.safeTrim(step.goal)}
                       </Text>
@@ -126,7 +143,7 @@ export function InvestigationResult({
   const compactSignals = width < 760;
   const compactLayout = width < 760;
   const verdict = helpers.verdictMeta(investigation.verdict);
-  const scoreMeta = helpers.scoreTone(investigation.overallScore);
+  const scoreMeta = helpers.scoreTone(investigation.overallScore, investigation.verdict);
   const groupedSources = investigation.sourceGroups.filter((group) => group.sources.length > 0);
   const sourceDeckGroups = useMemo(() => {
     if (groupedSources.length > 0) {
@@ -218,11 +235,8 @@ export function InvestigationResult({
           <Text variant="headlineSmall" style={styles.resultTitle}>
             {helpers.formatClaimForDisplay(investigation.claim)}
           </Text>
-          <Text key={`hero-${explanationMode}`} variant="bodyMedium" style={styles.resultBody}>
-            {explanationText}
-          </Text>
           <View style={[styles.resultMetaRow, styles.resultMetaColumn]}>
-            <MiniStat label="Assessment" value={investigation.truthClassification || helpers.scoreBandLabel(investigation.overallScore)} style={styles.miniStatFullWidth} styles={styles} />
+            <MiniStat label="Assessment" value={investigation.truthClassification || helpers.scoreBandLabel(investigation.overallScore, investigation.verdict)} style={styles.miniStatFullWidth} styles={styles} />
             <MiniStat label="Confidence" value={helpers.safeUpper(investigation.confidenceLevel ?? "unknown")} style={styles.miniStatFullWidth} styles={styles} />
             <MiniStat label="Review Type" value={helpers.depthLabel(investigation.desiredDepth)} style={styles.miniStatFullWidth} styles={styles} />
           </View>
@@ -246,7 +260,13 @@ export function InvestigationResult({
         </Card.Content>
       </Card>
 
-      <ExpandableResultSection title="Conclusion and findings" body={explanationText} icon="text-box-check-outline" bodyKey={explanationMode} defaultExpanded styles={styles}>
+      <ExpandableResultSection
+        title="Conclusion and findings"
+        body={explanationMode === "detailed" ? "Open the full reasoning and expanded narrative." : "Open the concise verdict summary and reasoning."}
+        icon="text-box-check-outline"
+        bodyKey={explanationMode}
+        styles={styles}
+      >
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
           {([
             ["summary", "Summary"],
@@ -364,7 +384,7 @@ export function InvestigationResult({
       {investigation.hoaxSignals.length > 0 && (
         <ExpandableResultSection
           title="Misinformation pattern scan"
-          body={`Risk currently sits in the ${riskMeta.label.toLowerCase()} band.`}
+          body={`Risk currently sits in the ${helpers.safeLower(riskMeta.label)} band.`}
           icon="shield-check-outline"
           styles={styles}
         >
@@ -415,7 +435,7 @@ export function InvestigationResult({
       {investigation.providerReviews.length > 0 && (
         <ExpandableResultSection
           title="Cross-model review"
-          body={`${investigation.providerReviews.length} model reviewers checked the evidence set, and the panel landed around ${investigation.llmAgreementScore ?? 0}% agreement after audit.`}
+          body={`${investigation.providerReviews.length} reviewers checked this claim with about ${investigation.llmAgreementScore ?? 0}% agreement.`}
           icon="account-group-outline"
           styles={styles}
         >
@@ -449,38 +469,15 @@ export function InvestigationResult({
       )}
 
       {investigation.stepSummaries.length > 0 && (
-        <ExpandableResultSection title="Workflow behind the scenes" body="Open this when you want to see how the investigation was parsed, searched, checked, and reconciled." icon="timeline-outline" styles={styles}>
-          {investigation.stepSummaries.map((step: PipelineStepSummary) => {
-            const indicator = helpers.statusIcon(step.status);
-            const stepTitle = helpers.splitWorkflowTitle(step.title);
-            return (
-              <View key={step.key} style={styles.stepRow}>
-                <Avatar.Icon size={38} icon={helpers.stageIcon(step)} color={palette.primary} style={styles.stepAvatar} />
-                <View style={styles.flexOne}>
-                  <View style={[styles.rowBetween, compactLayout && styles.stepHeaderCompact]}>
-                    <View style={styles.flexOne}>
-                      <Text variant="titleSmall" style={styles.stepTitle}>
-                        {stepTitle.purpose}
-                      </Text>
-                      {stepTitle.role ? <Text variant="bodySmall" style={styles.stepRoleLine}>{stepTitle.role}</Text> : null}
-                    </View>
-                    <Chip compact icon={indicator.icon} style={compactLayout ? styles.statusChipCompact : undefined} textStyle={[styles.miniChipText, { color: indicator.color }]}>
-                      {helpers.statusLabel(step.status)}
-                    </Chip>
-                  </View>
-                  <View style={styles.stepDivider} />
-                  <Text variant="bodySmall" style={styles.stepBody}>
-                    {step.summary}
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
+        <ExpandableResultSection title="Workflow behind the scenes" body="Open the pipeline steps for search, checking, and synthesis." icon="timeline-outline" styles={styles}>
+          {investigation.stepSummaries.map((step: PipelineStepSummary) => (
+            <WorkflowStepCard key={step.key} step={step} compactLayout={compactLayout} styles={styles} helpers={helpers} />
+          ))}
         </ExpandableResultSection>
       )}
 
       {fullSourceLog.length > 0 && (
-        <ExpandableResultSection title="Full source log" body={`All ${investigation.sources.length} analyzed sources are preserved for this saved investigation, not just the streamlined evidence deck.`} icon="database-outline" styles={styles}>
+        <ExpandableResultSection title="Full source log" body={`${investigation.sources.length} analyzed sources are preserved here, including lower-priority items outside the main deck.`} icon="database-outline" styles={styles}>
           {fullSourceLog.map((source) => (
             <EvidenceBlock key={`full-log-${source.id}`} source={source} styles={styles} helpers={helpers} />
           ))}
@@ -494,10 +491,21 @@ export function LoadingCard({ text, styles }: { text: string; styles: any }) {
   return (
     <Card mode="contained" style={styles.loadingCard}>
       <Card.Content style={styles.loadingCardContent}>
+        <View style={styles.loadingBadge}>
+          <Text style={styles.loadingBadgeText}>Claim review</Text>
+        </View>
         <ActivityIndicator size="large" color={palette.primary} />
-        <Text variant="bodyMedium" style={styles.sectionBody}>
+        <Text variant="titleMedium" style={styles.loadingTitle}>
           {text}
         </Text>
+        <Text variant="bodyMedium" style={styles.sectionBody}>
+          The evidence deck, score, and verdict cards will expand in place as soon as the pipeline returns the first structured updates.
+        </Text>
+        <View style={styles.cardStack}>
+          <View style={[styles.loadingSkeleton, styles.loadingSkeletonShort]} />
+          <View style={[styles.loadingSkeleton, styles.loadingSkeletonLong]} />
+          <View style={[styles.loadingSkeleton, styles.loadingSkeletonMedium]} />
+        </View>
       </Card.Content>
     </Card>
   );
@@ -617,6 +625,42 @@ function EvidenceBlock({ source, styles, helpers }: { source: SourceAssessment; 
         </View>
       </Card.Content>
     </Card>
+  );
+}
+
+function WorkflowStepCard({ step, compactLayout, styles, helpers }: { step: PipelineStepSummary; compactLayout: boolean; styles: any; helpers: any }) {
+  const [expanded, setExpanded] = useState(false);
+  const indicator = helpers.statusIcon(step.status);
+  const stepTitle = helpers.splitWorkflowTitle(step.title);
+
+  return (
+    <View style={styles.stepRow}>
+      <Avatar.Icon size={38} icon={helpers.stageIcon(step)} color={palette.primary} style={styles.stepAvatar} />
+      <View style={styles.flexOne}>
+        <TouchableRipple onPress={() => setExpanded((current) => !current)}>
+          <View style={[styles.rowBetween, compactLayout && styles.stepHeaderCompact]}>
+            <View style={styles.flexOne}>
+              <Text variant="titleSmall" style={styles.stepTitle}>
+                {stepTitle.purpose}
+              </Text>
+              {stepTitle.role ? <Text variant="bodySmall" style={styles.stepRoleLine}>{stepTitle.role}</Text> : null}
+            </View>
+            <View style={styles.rowGap}>
+              <Chip compact icon={indicator.icon} style={compactLayout ? styles.statusChipCompact : undefined} textStyle={[styles.miniChipText, { color: indicator.color }]}>
+                {helpers.statusLabel(step.status)}
+              </Chip>
+              <IconButton icon={expanded ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={styles.dragButton} />
+            </View>
+          </View>
+        </TouchableRipple>
+        {expanded ? <View style={styles.stepDivider} /> : null}
+        {expanded ? (
+          <Text variant="bodySmall" style={styles.stepBody}>
+            {step.summary}
+          </Text>
+        ) : null}
+      </View>
+    </View>
   );
 }
 

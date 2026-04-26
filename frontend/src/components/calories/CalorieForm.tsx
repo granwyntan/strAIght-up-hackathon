@@ -1,12 +1,12 @@
 // @ts-nocheck
 import React from "react";
-import { ActivityIndicator, Image, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, PanResponder, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { palette } from "../../data";
+import { ui } from "../../styles/ui";
 import DateTimePickerField from "../shared/DateTimePickerField";
 
-const TYPE_OPTIONS = ["Auto", "Food", "Drink", "Food and Drink"];
 const HUNGER_OPTIONS = [1, 2, 3, 4, 5];
 
 function ToggleRow({ label, body, value, onValueChange, disabled = false }) {
@@ -27,10 +27,75 @@ function ToggleRow({ label, body, value, onValueChange, disabled = false }) {
   );
 }
 
+function HungerSlider({ value, onChange, disabled = false }) {
+  const trackWidthRef = React.useRef(0);
+  const numericValue = Math.min(5, Math.max(1, Number(value) || 3));
+
+  const updateFromPosition = React.useCallback(
+    (positionX) => {
+      if (disabled || trackWidthRef.current <= 0) {
+        return;
+      }
+      const clamped = Math.max(0, Math.min(trackWidthRef.current, positionX));
+      const ratio = clamped / trackWidthRef.current;
+      const nextValue = Math.min(5, Math.max(1, Math.round(ratio * 4) + 1));
+      onChange(String(nextValue));
+    },
+    [disabled, onChange]
+  );
+
+  const panResponder = React.useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: () => !disabled,
+        onPanResponderGrant: (event) => updateFromPosition(event.nativeEvent.locationX),
+        onPanResponderMove: (event) => updateFromPosition(event.nativeEvent.locationX),
+      }),
+    [disabled, updateFromPosition]
+  );
+
+  return (
+    <View style={styles.sliderBlock}>
+      <View style={styles.sliderHeader}>
+        <Text style={styles.sliderTitle}>Hunger level</Text>
+        <Text style={styles.sliderValue}>{numericValue}/5</Text>
+      </View>
+      <Text style={styles.sliderBody}>Slide to describe how hungry you were before this intake.</Text>
+      <View
+        style={styles.sliderTrackWrap}
+        onLayout={(event) => {
+          trackWidthRef.current = event.nativeEvent.layout.width;
+        }}
+        {...panResponder.panHandlers}
+      >
+        <Pressable style={styles.sliderTrack} onPress={(event) => updateFromPosition(event.nativeEvent.locationX)} disabled={disabled}>
+          <View style={[styles.sliderFill, { width: `${((numericValue - 1) / 4) * 100}%` }]} />
+          <View style={[styles.sliderThumb, { left: `${((numericValue - 1) / 4) * 100}%` }]} />
+          <View style={styles.sliderTicksRow} pointerEvents="none">
+            {HUNGER_OPTIONS.map((option) => (
+              <View key={option} style={[styles.sliderTick, option <= numericValue && styles.sliderTickActive]} />
+            ))}
+          </View>
+        </Pressable>
+      </View>
+      <View style={styles.sliderLabelsRow}>
+        <Text style={styles.sliderHintLabel}>1 Light</Text>
+        <Text style={styles.sliderHintLabel}>5 Very hungry</Text>
+      </View>
+      <View style={styles.sliderNumberRow}>
+        {HUNGER_OPTIONS.map((option) => (
+          <Pressable key={option} style={styles.sliderNumberButton} onPress={() => onChange(String(option))} disabled={disabled}>
+            <Text style={[styles.sliderNumberText, numericValue === option && styles.sliderNumberTextActive]}>{option}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export default function CalorieForm({
   values,
   onChange,
-  bmiCategory,
   loading,
   error,
   webcamEnabled,
@@ -48,22 +113,29 @@ export default function CalorieForm({
   aspectRatio,
   onAspectRatioChange,
   onOpenCrop,
-  canSubmit
+  canSubmit,
 }) {
   return (
     <View style={styles.card}>
       <View style={styles.heroHeader}>
         <Text style={styles.heroEyebrow}>Analyse</Text>
         <Text style={styles.heroTitle}>Food and drink intake</Text>
+        <Text style={styles.heroBody}>Describe it or scan it.</Text>
+      </View>
+      <View style={[ui.softCard, styles.autoDetectCard]}>
+        <MaterialCommunityIcons name="creation-outline" size={18} color={palette.primary} />
+        <View style={styles.autoDetectCopy}>
+          <Text style={styles.autoDetectTitle}>Auto-detection for food or drinks</Text>
+        </View>
       </View>
 
-      <View style={styles.inputBox}>
+      <View style={[ui.softCard, styles.inputBox]}>
         <Text style={styles.inputBoxTitle}>Describe</Text>
         <TextInput
-          style={styles.descriptionInput}
+          style={[ui.inputShell, styles.descriptionInput]}
           value={values.mealDescription}
           onChangeText={(value) => onChange("mealDescription", value)}
-          placeholder="Describe your meal or drink."
+          placeholder="Describe your food or drink."
           placeholderTextColor={palette.muted}
           multiline
         />
@@ -75,109 +147,74 @@ export default function CalorieForm({
         <View style={styles.orLine} />
       </View>
 
-      <View style={styles.inputBox}>
+      <View style={[ui.softCard, styles.inputBox]}>
         <Text style={styles.inputBoxTitle}>Scan</Text>
-        {webcamEnabled ? (
-          <View style={styles.scanActionRow}>
-            <Pressable style={styles.scanButton} onPress={onCaptureImage} disabled={loading}>
-              <MaterialCommunityIcons name="camera-outline" size={18} color={palette.primary} />
-              <Text style={styles.scanButtonText}>Camera</Text>
-            </Pressable>
-            <Pressable style={styles.scanButton} onPress={onPickImage} disabled={loading}>
-              <MaterialCommunityIcons name="image-outline" size={18} color={palette.primary} />
-              <Text style={styles.scanButtonText}>{selectedImageUri ? "Replace image" : "Upload image"}</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.scanActionRow}>
-            <Pressable style={styles.scanButton} onPress={onCaptureImage} disabled={loading}>
-              <MaterialCommunityIcons name="camera-outline" size={18} color={palette.primary} />
-              <Text style={styles.scanButtonText}>Use camera</Text>
-            </Pressable>
-            <Pressable style={styles.scanButton} onPress={onPickImage} disabled={loading}>
-              <MaterialCommunityIcons name="image-outline" size={18} color={palette.primary} />
-              <Text style={styles.scanButtonText}>{selectedImageUri ? "Replace image" : "Upload image"}</Text>
-            </Pressable>
-          </View>
-        )}
+        <View style={styles.scanActionRow}>
+          <Pressable style={[ui.secondaryButton, styles.scanButton]} onPress={onCaptureImage} disabled={loading}>
+            <MaterialCommunityIcons name="camera-outline" size={18} color={palette.primary} />
+            <Text style={styles.scanButtonText}>{webcamEnabled ? "Camera" : "Use camera"}</Text>
+          </Pressable>
+          <Pressable style={[ui.secondaryButton, styles.scanButton]} onPress={onPickImage} disabled={loading}>
+            <MaterialCommunityIcons name="image-outline" size={18} color={palette.primary} />
+            <Text style={styles.scanButtonText}>{selectedImageUri ? "Replace image" : "Upload image"}</Text>
+          </Pressable>
+        </View>
       </View>
 
-      <View style={styles.profileCard}>
-        <Text style={styles.label}>Options</Text>
-        <View style={styles.optionSection}>
-          <Text style={styles.formLabel}>Type</Text>
-          <View style={styles.optionChipRow}>
-            {TYPE_OPTIONS.map((option) => {
-              const optionValue = option.toLowerCase();
-              const selected = (values.mealType || "").toLowerCase() === optionValue;
-              return (
-                <Pressable key={option} style={[styles.optionChip, selected && styles.optionChipActive]} onPress={() => onChange("mealType", optionValue)}>
-                  <Text style={[styles.optionChipText, selected && styles.optionChipTextActive]}>{option}</Text>
-                </Pressable>
-              );
-            })}
+      <View style={[ui.softCard, styles.profileCard]}>
+        <Text style={styles.label}>Intake details</Text>
+        <HungerSlider value={values.hungerLevel || "3"} onChange={(nextValue) => onChange("hungerLevel", nextValue)} disabled={loading} />
+        <View style={[ui.surfaceCard, styles.timingPanel]}>
+          <View style={styles.timingHeader}>
+            <Text style={styles.timingTitle}>Date and time</Text>
+            <Text style={styles.timingBody}>These start at now. Change them with the date-time picker only if this intake happened at a different time.</Text>
           </View>
-        </View>
-        <View style={styles.optionSection}>
-          <Text style={styles.formLabel}>Hunger Level</Text>
-          <View style={styles.scaleRow}>
-            {HUNGER_OPTIONS.map((option) => {
-              const selected = `${values.hungerLevel || ""}` === String(option);
-              return (
-                <Pressable key={option} style={styles.scaleStep} onPress={() => onChange("hungerLevel", String(option))}>
-                  <View style={[styles.scaleDot, selected && styles.scaleDotActive]} />
-                  <Text style={[styles.scaleLabel, selected && styles.scaleLabelActive]}>{option}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-        <View style={styles.formGrid}>
-          <View style={styles.formField}>
-            <Text style={styles.formLabel}>Date</Text>
-            <DateTimePickerField mode="date" style={styles.optionInput} value={values.mealDate || ""} onChange={(value) => onChange("mealDate", value)} placeholder="DD/MM/YYYY" editable={!loading} />
-          </View>
-          <View style={styles.formField}>
-            <Text style={styles.formLabel}>Time</Text>
-            <DateTimePickerField mode="time" style={styles.optionInput} value={values.mealTime || ""} onChange={(value) => onChange("mealTime", value)} placeholder="HH:MM" editable={!loading} />
+          <View style={styles.formGrid}>
+            <View style={styles.formField}>
+              <Text style={styles.formLabel}>Date</Text>
+              <DateTimePickerField mode="date" style={styles.optionInput} value={values.mealDate || ""} onChange={(value) => onChange("mealDate", value)} placeholder="DD/MM/YYYY" editable={!loading} />
+            </View>
+            <View style={styles.formField}>
+              <Text style={styles.formLabel}>Time</Text>
+              <DateTimePickerField mode="time" style={styles.optionInput} value={values.mealTime || ""} onChange={(value) => onChange("mealTime", value)} placeholder="HH:MM:SS" editable={!loading} />
+            </View>
           </View>
         </View>
         <View style={styles.toggleStack}>
           <ToggleRow
             label="Auto-save to log"
-            body="Save the finished analysis to your food log right after the scan."
+            body="On by default. Turn off if you do not want the finished analysis added automatically."
             value={(values.addToLogs || "").toLowerCase() === "yes"}
             onValueChange={(nextValue) => onChange("addToLogs", nextValue ? "yes" : "no")}
             disabled={loading}
           />
           <ToggleRow
             label="Load from profile"
-            body="Use your saved conditions, goals, and diet context during analysis."
+            body="On by default. Turn off if you want analysis without your saved profile context."
             value={(values.includeProfile || "").toLowerCase() === "yes"}
             onValueChange={(nextValue) => onChange("includeProfile", nextValue ? "yes" : "no")}
             disabled={loading}
           />
         </View>
-        <Text style={styles.hintText}>Goal fit and profile context are loaded automatically from your saved profile unless you switch profile off. If your note includes "add to log", the finished result will also auto-save.</Text>
       </View>
 
       {webcamEnabled ? (
-        <View style={styles.webcamPanel}>
+        <View style={[ui.softCard, styles.webcamPanel]}>
           <Text style={styles.label}>Camera</Text>
           {webcamActive ? (
             <>
               <video ref={webcamVideoRef} autoPlay playsInline muted style={StyleSheet.flatten(styles.webcamVideo)} />
               <View style={styles.webcamButtons}>
-                <Pressable style={styles.webcamPrimaryButton} onPress={onCaptureWebcam} disabled={loading}>
+                <Pressable style={[ui.primaryButton, styles.webcamPrimaryButton]} onPress={onCaptureWebcam} disabled={loading}>
                   <Text style={styles.webcamPrimaryText}>Capture</Text>
                 </Pressable>
-                <Pressable style={styles.webcamSecondaryButton} onPress={onCloseWebcam} disabled={loading}>
+                <Pressable style={[ui.secondaryButton, styles.webcamSecondaryButton]} onPress={onCloseWebcam} disabled={loading}>
                   <Text style={styles.webcamSecondaryText}>Close</Text>
                 </Pressable>
               </View>
             </>
           ) : (
-            <Pressable style={styles.webcamPrimaryButton} onPress={onOpenWebcam} disabled={loading}>
+            <Pressable style={[ui.primaryButton, styles.webcamPrimaryButton]} onPress={onOpenWebcam} disabled={loading}>
               <Text style={styles.webcamPrimaryText}>Open webcam</Text>
             </Pressable>
           )}
@@ -202,13 +239,13 @@ export default function CalorieForm({
         </>
       ) : null}
 
-      <Pressable style={[styles.submitButton, (loading || !canSubmit) && styles.submitButtonDisabled]} onPress={onSubmit} disabled={loading || !canSubmit}>
+      <Pressable style={[ui.primaryButton, styles.submitButton, (loading || !canSubmit) && styles.submitButtonDisabled]} onPress={onSubmit} disabled={loading || !canSubmit}>
         {loading ? (
           <ActivityIndicator color={palette.surface} size="small" />
         ) : (
           <View style={styles.submitButtonInner}>
-            <MaterialCommunityIcons name="magnify-scan" size={18} color={palette.surface} />
-            <Text style={styles.submitButtonText}>Analyse food</Text>
+            <MaterialCommunityIcons name="food-apple" size={18} color={palette.surface} />
+            <Text style={styles.submitButtonText}>Analyse intake</Text>
           </View>
         )}
       </Pressable>
@@ -225,78 +262,58 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     backgroundColor: palette.surface,
     padding: 22,
-    gap: 16
-  },
-  heroCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    padding: 18,
-    gap: 12
+    gap: 16,
   },
   heroHeader: {
-    gap: 4
-  },
-  inputBox: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    padding: 16,
-    gap: 12
-  },
-  inputBoxTitle: {
-    color: palette.ink,
-    fontFamily: "Poppins_700Bold",
-    fontSize: 16
-  },
-  orRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10
-  },
-  orLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: palette.border
-  },
-  orText: {
-    color: palette.muted,
-    fontFamily: "Poppins_600SemiBold",
-    fontSize: 12
-  },
-  scanActionRow: {
-    flexDirection: "row",
-    gap: 10,
-    flexWrap: "wrap"
-  },
-  scanButton: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: 8,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
-    paddingHorizontal: 14,
-    paddingVertical: 12
-  },
-  scanButtonText: {
-    color: palette.ink,
-    fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
   },
   heroEyebrow: {
     color: palette.primary,
     fontFamily: "Poppins_600SemiBold",
     fontSize: 12,
-    textTransform: "uppercase"
+    textTransform: "uppercase",
   },
   heroTitle: {
     color: palette.ink,
     fontFamily: "Poppins_700Bold",
-    fontSize: 18
+    fontSize: 18,
+  },
+  heroBody: {
+    color: palette.muted,
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: "Poppins_400Regular",
+  },
+  autoDetectCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  autoDetectCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  autoDetectTitle: {
+    color: palette.ink,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 13,
+  },
+  autoDetectBody: {
+    color: palette.muted,
+    fontFamily: "Poppins_400Regular",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  inputBox: {
+    padding: 16,
+    gap: 12,
+  },
+  inputBoxTitle: {
+    color: palette.ink,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 16,
   },
   descriptionInput: {
     minHeight: 80,
@@ -308,69 +325,202 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontFamily: "Poppins_400Regular",
-    textAlignVertical: "top"
+    textAlignVertical: "top",
   },
-  profileCard: {
-    borderRadius: 18,
+  orRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: palette.border,
+  },
+  orText: {
+    color: palette.muted,
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 12,
+  },
+  scanActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  scanButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
+    backgroundColor: palette.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  scanButtonText: {
+    color: palette.ink,
+    fontSize: 14,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  profileCard: {
     padding: 16,
-    gap: 12
+    gap: 14,
   },
   label: {
     color: palette.ink,
     fontFamily: "Poppins_600SemiBold",
-    fontSize: 13
+    fontSize: 13,
+  },
+  sliderBlock: {
+    gap: 10,
+  },
+  sliderHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  sliderTitle: {
+    color: palette.ink,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 15,
+  },
+  sliderValue: {
+    color: palette.primary,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 14,
+  },
+  sliderBody: {
+    color: palette.muted,
+    fontFamily: "Poppins_400Regular",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  sliderTrackWrap: {
+    paddingVertical: 6,
+  },
+  sliderTrack: {
+    position: "relative",
+    height: 18,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    justifyContent: "center",
+  },
+  sliderFill: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 999,
+    backgroundColor: palette.primary,
+  },
+  sliderThumb: {
+    position: "absolute",
+    top: "50%",
+    width: 24,
+    height: 24,
+    marginTop: -12,
+    marginLeft: -12,
+    borderRadius: 999,
+    backgroundColor: palette.surface,
+    borderWidth: 3,
+    borderColor: palette.primary,
+  },
+  sliderTicksRow: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    top: 0,
+    bottom: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sliderTick: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.border,
+  },
+  sliderTickActive: {
+    backgroundColor: palette.primary,
+    borderColor: palette.primary,
+  },
+  sliderLabelsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  sliderHintLabel: {
+    color: palette.muted,
+    fontSize: 11,
+    fontFamily: "Poppins_500Medium",
+  },
+  sliderNumberRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  sliderNumberButton: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 2,
+  },
+  sliderNumberText: {
+    color: palette.muted,
+    fontSize: 12,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  sliderNumberTextActive: {
+    color: palette.primary,
+  },
+  timingPanel: {
+    padding: 14,
+    gap: 12,
+  },
+  timingHeader: {
+    gap: 4,
+  },
+  timingTitle: {
+    color: palette.ink,
+    fontFamily: "Poppins_700Bold",
+    fontSize: 15,
+  },
+  timingBody: {
+    color: palette.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: "Poppins_400Regular",
   },
   formGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12
+    gap: 12,
   },
-  optionSection: {
+  formField: {
+    width: "48%",
     gap: 6,
   },
-  optionChipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+  formLabel: {
+    color: palette.muted,
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold",
   },
-  scaleRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  scaleStep: {
-    flex: 1,
-    alignItems: "center",
-    gap: 6,
-  },
-  scaleDot: {
-    width: "100%",
-    minHeight: 14,
-    borderRadius: 999,
+  optionInput: {
+    minHeight: 48,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-  },
-  scaleDotActive: {
-    backgroundColor: palette.primary,
-    borderColor: palette.primary,
-  },
-  scaleLabel: {
-    color: palette.muted,
+    backgroundColor: palette.surface,
+    paddingHorizontal: 12,
+    color: palette.ink,
     fontFamily: "Poppins_500Medium",
-    fontSize: 11,
-  },
-  scaleLabelActive: {
-    color: palette.primary,
-    fontFamily: "Poppins_700Bold",
-  },
-  inlineBooleanRow: {
-    flexDirection: "row",
-    gap: 8,
+    fontSize: 14,
   },
   toggleStack: {
     gap: 12,
@@ -397,83 +547,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontFamily: "Poppins_400Regular",
   },
-  formField: {
-    width: "48%",
-    gap: 4
-  },
-  formLabel: {
-    color: palette.muted,
-    fontSize: 11,
-    fontFamily: "Poppins_600SemiBold"
-  },
-  optionInput: {
-    minHeight: 48,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
-    paddingHorizontal: 12,
-    color: palette.ink,
-    fontFamily: "Poppins_500Medium",
-    fontSize: 14
-  },
-  optionChip: {
-    minHeight: 42,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    justifyContent: "center",
-  },
-  optionChipTight: {
-    minWidth: 52,
-    alignItems: "center",
-  },
-  optionChipHalf: {
-    flex: 1,
-    alignItems: "center",
-  },
-  optionChipActive: {
-    borderColor: palette.primary,
-    backgroundColor: palette.primarySoft,
-  },
-  optionChipText: {
-    color: palette.ink,
-    fontSize: 13,
-    fontFamily: "Poppins_600SemiBold",
-  },
-  optionChipTextActive: {
-    color: palette.primary,
-  },
-  hintText: {
-    color: palette.muted,
-    fontSize: 12,
-    lineHeight: 18,
-    fontFamily: "Poppins_400Regular"
-  },
-  pickButton: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-    alignItems: "center"
-  },
-  pickButtonText: {
-    color: palette.ink,
-    fontSize: 14,
-    fontFamily: "Poppins_600SemiBold"
-  },
   webcamPanel: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
     padding: 12,
-    gap: 10
+    gap: 10,
   },
   webcamVideo: {
     width: "100%",
@@ -481,11 +557,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: palette.border,
-    backgroundColor: "#000"
+    backgroundColor: "#000",
   },
   webcamButtons: {
     flexDirection: "row",
-    gap: 8
+    gap: 8,
   },
   webcamPrimaryButton: {
     flex: 1,
@@ -493,7 +569,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.primary,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 11
+    paddingVertical: 11,
   },
   webcamSecondaryButton: {
     flex: 1,
@@ -503,15 +579,15 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 11
+    paddingVertical: 11,
   },
   webcamPrimaryText: {
     color: palette.surface,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
   },
   webcamSecondaryText: {
     color: palette.ink,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
   },
   previewImage: {
     width: "100%",
@@ -519,13 +595,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
-    maxHeight: 280
+    maxHeight: 280,
   },
   cropRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    alignItems: "center"
+    alignItems: "center",
   },
   aspectChip: {
     borderRadius: 999,
@@ -533,19 +609,19 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     backgroundColor: palette.surfaceSoft,
     paddingHorizontal: 10,
-    paddingVertical: 6
+    paddingVertical: 6,
   },
   aspectChipActive: {
     backgroundColor: palette.primarySoft,
-    borderColor: palette.primary
+    borderColor: palette.primary,
   },
   aspectChipText: {
     color: palette.ink,
     fontSize: 11,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
   },
   aspectChipTextActive: {
-    color: palette.primary
+    color: palette.primary,
   },
   cropAction: {
     flexDirection: "row",
@@ -554,19 +630,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: palette.primarySoft
+    backgroundColor: palette.primarySoft,
   },
   cropActionText: {
     color: palette.primary,
     fontSize: 11,
-    fontFamily: "Poppins_600SemiBold"
+    fontFamily: "Poppins_600SemiBold",
   },
   submitButton: {
     borderRadius: 16,
     backgroundColor: palette.primary,
     paddingVertical: 14,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
   },
   submitButtonInner: {
     flexDirection: "row",
@@ -574,16 +650,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   submitButtonDisabled: {
-    opacity: 0.5
+    opacity: 0.5,
   },
   submitButtonText: {
     color: palette.surface,
     fontFamily: "Poppins_700Bold",
-    fontSize: 15
+    fontSize: 15,
   },
   errorText: {
     color: palette.danger,
     fontFamily: "Poppins_400Regular",
-    lineHeight: 20
-  }
+    lineHeight: 20,
+  },
 });

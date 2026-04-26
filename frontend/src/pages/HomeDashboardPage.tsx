@@ -5,7 +5,6 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Avatar, Button, Card, Chip, IconButton, SegmentedButtons, Text, TextInput, TouchableRipple } from "react-native-paper";
 
 import { palette, type AppTab, type InvestigationSummary } from "../data";
-import ToolHeader from "../components/shared/ToolHeader";
 import TutorialSheet from "../components/shared/TutorialSheet";
 import { loadProfile, saveProfile } from "../storage/profileStorage";
 import { formatLocalIsoDate, loadHomeVitals, refreshHomeVitalsFromFirestore, saveHomeVitalForDate } from "../storage/homeVitalsStorage";
@@ -955,20 +954,35 @@ export default function HomeDashboardPage({
 
   return (
     <View style={styles.screenStack}>
-      <ToolHeader
-        title={safeTrim(welcomeName) ? `Welcome ${welcomeName}` : "A cleaner health dashboard with daily logs"}
-        subtitle="Keep health data, meals, medications, exercise, routines, and investigations in one place."
-      />
+      <Card mode="contained" style={styles.heroCard}>
+        <Card.Content style={styles.heroContent}>
+          <View style={styles.rowBetween}>
+            <View style={styles.flexOne}>
+              <Text variant="headlineSmall" style={styles.heroTitle}>
+                {safeTrim(welcomeName) ? `Welcome, ${safeTrim(welcomeName)}` : "Today"}
+              </Text>
+              <Text variant="bodyMedium" style={styles.heroSubtitle}>
+                Log meals, medications, exercise, and vitals — then run a new evidence check when you need it.
+              </Text>
+            </View>
+            <Avatar.Icon size={46} icon="home-heart" color={palette.primary} style={styles.heroAvatar} />
+          </View>
+          <View style={styles.heroActions}>
+            <Button mode="contained" icon="stethoscope" onPress={onOpenInvestigate} buttonColor={palette.primary}>
+              New investigation
+            </Button>
+            <Button mode="outlined" icon="history" onPress={() => setHistoryModalVisible(true)} textColor={palette.primary}>
+              History
+            </Button>
+          </View>
+        </Card.Content>
+      </Card>
 
       <SectionHeader
         eyebrow="Dashboard"
         title="Today at a glance"
         body="Tap any card to update today's value. Missing values prompt you to fill them."
-        trailing={
-          <Button compact icon="history" onPress={() => setHistoryModalVisible(true)}>
-            History
-          </Button>
-        }
+        trailing={null}
       />
       <View style={styles.todayMetricsRow}>
         {metricDefinitions.map((metric) => {
@@ -1628,6 +1642,11 @@ function SectionHeader({
   return (
     <View style={styles.sectionHeader}>
       <View style={styles.flexOne}>
+        {eyebrow ? (
+          <Text variant="labelSmall" style={styles.eyebrow}>
+            {eyebrow}
+          </Text>
+        ) : null}
         <Text variant="headlineSmall" style={styles.sectionTitle}>
           {title}
         </Text>
@@ -1645,6 +1664,35 @@ const softBorderWidth = StyleSheet.hairlineWidth;
 const styles = StyleSheet.create({
   screenStack: {
     gap: 22,
+  },
+  heroCard: {
+    borderRadius: 18,
+    borderWidth: softBorderWidth,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    overflow: "hidden",
+  },
+  heroContent: {
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    gap: 14,
+  },
+  heroTitle: {
+    color: palette.text,
+    fontFamily: "Poppins_700Bold",
+  },
+  heroSubtitle: {
+    color: palette.muted,
+    lineHeight: 20,
+  },
+  heroAvatar: {
+    backgroundColor: palette.primarySoft,
+  },
+  heroActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    alignItems: "center",
   },
   segmentRow: {
     flexDirection: "row",
@@ -1690,7 +1738,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   metricTouchable: {
-    width: "48.4%",
+    flexGrow: 1,
+    flexBasis: "48%",
+    maxWidth: "49%",
     borderRadius: 14,
   },
   todayMetricsRow: {
@@ -1703,7 +1753,7 @@ const styles = StyleSheet.create({
     maxWidth: "48%",
   },
   metricCard: {
-    width: "48.4%",
+    flexGrow: 1,
     borderRadius: 14,
     borderWidth: softBorderWidth,
     borderColor: palette.border,

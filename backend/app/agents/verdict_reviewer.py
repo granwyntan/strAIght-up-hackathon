@@ -60,6 +60,7 @@ def review_verdict(
             "sources": _source_snapshot(sources),
             "instructions": [
                 "Prefer contradictory or mixed conclusions when evidence quality is modest or citations are weak.",
+                "Treat cure, prevent, reverse, guaranteed, or broad causal wording as a high bar that usually needs unusually strong support.",
                 "Do not invent studies or source details.",
                 "Keep strengths and concerns concise and evidence-focused.",
             ],

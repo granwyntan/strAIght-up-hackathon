@@ -37,7 +37,6 @@ import {
   MD3LightTheme,
   PaperProvider,
   ProgressBar,
-  Searchbar,
   SegmentedButtons,
   Snackbar,
   Surface,
@@ -46,7 +45,6 @@ import {
   TouchableRipple,
 } from "react-native-paper";
 import "./global.css";
-import AppBootScreen, { AppStartupCard } from "./src/components/shared/AppBootScreen";
 
 import {
   defaultBootstrap,
@@ -63,16 +61,20 @@ import {
   type SourceQualityLabel,
   type SingaporeAuthorityReview,
 } from "./src/data";
+import AppBootScreen, { AppStartupCard } from "./src/components/shared/AppBootScreen";
 import { addNotificationResponseListener, getLastNotificationResponseUrl, notificationsSupportedInCurrentShell, parseInvestigationUrl, registerForPushNotificationsAsync } from "./src/notifications";
 import DietPage from "./src/pages/DietPage";
 import ActivityPage from "./src/pages/ActivityPage";
 import ProfilePage from "./src/pages/ProfilePage";
 import HomeDashboardPage from "./src/pages/HomeDashboardPage";
+import ConsultantPage from "./src/pages/ConsultantPage";
 import TutorialSheet from "./src/components/shared/TutorialSheet";
 import OnboardingSheet from "./src/components/profile/OnboardingSheet";
-import SectionTabs from "./src/components/shared/SectionTabs";
+import { BottomTabs, Header, ToolHeader } from "./src/components/app/AppChrome";
+import HistorySheet from "./src/components/consultant/HistorySheet";
+import type { ClaimSuggestionCollection, ConsultantView, HistoryFilter, HistorySort, InvestigationComparison, LocalHealthGuard, MaterialIconName, ProfileView, ReviewDepth, SnackbarAction } from "./src/components/consultant/types";
 import { getActiveSessionAccount, loginOrRegisterAccount, logoutActiveSession, signInWithGoogleAccount, subscribeToActiveSession } from "./src/storage/accountStorage";
-import { buildVerificationProfileContext, loadProfile, profileNeedsOnboarding } from "./src/storage/profileStorage";
+import { loadProfile, profileNeedsOnboarding } from "./src/storage/profileStorage";
 import { formatDisplayDateTime } from "./src/utils/dateTime";
 
 const BASE_SCREEN_WIDTH = 390;
@@ -94,47 +96,6 @@ const CONSULTANT_TUTORIAL_PAGES = [
     body: "Start with the conclusion and key details, then open the evidence, workflow, and full source log only when you want the deeper trail.",
   },
 ];
-
-type HistorySort = "manual" | "recent" | "oldest" | "score" | "lowestScore";
-type HistoryFilter =
-  | "all"
-  | "trustworthy"
-  | "uncertain"
-  | "untrustworthy"
-  | "pinned"
-  | "running"
-  | "completed"
-  | "deep"
-  | "highConfidence";
-type ConsultantView = "investigate" | "history";
-type ProfileView = "overview" | "settings";
-type MaterialIconName = string;
-type ReviewDepth = "quick" | "standard" | "deep";
-type SnackbarAction = "retry" | "undoDelete";
-
-type InvestigationComparison = {
-  compatible: boolean;
-  similarityScore: number;
-  sameClaim: boolean;
-  summary: string;
-  shortSnippet: string;
-  detail: string;
-  notableDifferences: string[];
-  axes: Array<{
-    label: string;
-    summary: string;
-  }>;
-};
-
-type LocalHealthGuard = {
-  allowed: boolean;
-  title: string;
-  body: string;
-};
-
-type ClaimSuggestionCollection = {
-  items: string[];
-};
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -287,7 +248,7 @@ function depthDescription(depth: ReviewDepth) {
   if (depth === "deep") {
     return "Most thorough pass with wider retrieval, more contradiction hunting, and the deepest AI cross-checking, usually keeping 100+ analyzed sources.";
   }
-  return "Balanced coverage with broader retrieval plus fuller AI checking, usually landing around 70 to 90 analyzed sources.";
+  return "Balanced coverage with broader retrieval plus fuller AI checking, usually landing around 70 to 84 analyzed sources.";
 }
 
 function depthTargetWindow(depth: ReviewDepth) {
@@ -297,33 +258,54 @@ function depthTargetWindow(depth: ReviewDepth) {
   if (depth === "deep") {
     return "100+";
   }
-  return "70 to 90";
+  return "70 to 84";
 }
 
-function scoreBandLabel(score: number | null | undefined) {
+function scoreBandLabel(score: number | null | undefined, verdict?: InvestigationSummary["verdict"] | InvestigationDetail["verdict"] | null) {
+  if (verdict === "trustworthy") {
+    return "Valid claim";
+  }
+  if (verdict === "untrustworthy") {
+    return "Invalid claim";
+  }
+  if (verdict === "mixed" || verdict === "overstated") {
+    return "Unsure claim";
+  }
   if (typeof score !== "number") {
     return "Pending";
   }
-  if (score >= 80) {
-    return "Trustworthy";
+  if (score >= 74) {
+    return "Valid claim";
   }
-  if (score < 40) {
-    return "Untrustworthy";
+  if (score <= 34) {
+    return "Invalid claim";
   }
-  return "Mixed evidence";
+  return "Unsure claim";
 }
 
-function scoreTone(score: number | null | undefined) {
+function scoreTone(
+  score: number | null | undefined,
+  verdict?: InvestigationSummary["verdict"] | InvestigationDetail["verdict"] | null
+) {
+  if (verdict === "trustworthy") {
+    return { color: palette.success, background: palette.successSoft };
+  }
+  if (verdict === "untrustworthy") {
+    return { color: palette.danger, background: palette.dangerSoft };
+  }
+  if (verdict === "mixed" || verdict === "overstated") {
+    return { color: palette.info, background: palette.infoSoft };
+  }
   if (typeof score !== "number") {
     return { color: palette.muted, background: palette.surfaceSoft };
   }
-  if (score >= 80) {
+  if (score >= 74) {
     return { color: palette.success, background: palette.successSoft };
   }
-  if (score < 40) {
+  if (score <= 34) {
     return { color: palette.danger, background: palette.dangerSoft };
   }
-  return { color: palette.warning, background: palette.warningSoft };
+  return { color: palette.info, background: palette.infoSoft };
 }
 
 function composeInvestigationContext(parts: {
@@ -473,12 +455,15 @@ function isRunning(status: InvestigationStatus) {
 
 function verdictMeta(verdict: InvestigationSummary["verdict"] | InvestigationDetail["verdict"]) {
   if (verdict === "trustworthy") {
-    return { label: "Trustworthy", icon: "check-circle", color: palette.success, background: palette.successSoft };
+    return { label: "Valid claim", icon: "check-circle", color: palette.success, background: palette.successSoft };
   }
   if (verdict === "untrustworthy") {
-    return { label: "Untrustworthy", icon: "close-circle", color: palette.danger, background: palette.dangerSoft };
+    return { label: "Invalid claim", icon: "close-circle", color: palette.danger, background: palette.dangerSoft };
   }
-  return { label: "Mixed evidence", icon: "help-circle", color: palette.warning, background: palette.warningSoft };
+  if (verdict === "overstated") {
+    return { label: "Needs nuance", icon: "alert-circle", color: palette.info, background: palette.infoSoft };
+  }
+  return { label: "Unsure", icon: "help-circle", color: palette.info, background: palette.infoSoft };
 }
 
 function sourceTone(source: SourceAssessment) {
@@ -502,7 +487,7 @@ function sourceSentimentLabel(source: SourceAssessment) {
 }
 
 function stageIcon(step: PipelineStepSummary) {
-  const key = step.key.toLowerCase();
+  const key = safeLower(step?.key);
   if (key.includes("brief")) return "shield-star-outline";
   if (key.includes("nlp")) return "brain";
   if (key.includes("claim")) return "stethoscope";
@@ -649,29 +634,6 @@ const HEALTH_KEYWORDS = [
   "brain",
   "skin",
   "weight",
-  "food",
-  "drink",
-  "meal",
-  "nutrition",
-  "fitness",
-  "exercise",
-  "workout",
-  "biohacking",
-  "body",
-  "human",
-  "hydration",
-  "protein",
-  "creatine",
-  "caffeine",
-  "alcohol",
-  "sugar",
-  "sodium",
-  "allergy",
-  "medication",
-  "drug",
-  "recovery",
-  "muscle",
-  "gut",
 ];
 
 const NON_HEALTH_KEYWORDS = [
@@ -710,6 +672,16 @@ function assessHealthClaimLocally(claim: string, context = ""): LocalHealthGuard
       allowed: false,
       title: "English claims only for now",
       body: "GramWIN is temporarily limited to English health claims while the multilingual pipeline is being tightened. The run is paused and no evidence APIs will be called for this query.",
+    };
+  }
+  if (HEALTH_KEYWORDS.some((keyword) => haystack.includes(keyword))) {
+    return { allowed: true, title: "", body: "" };
+  }
+  if (NON_HEALTH_KEYWORDS.some((keyword) => haystack.includes(keyword))) {
+    return {
+      allowed: false,
+      title: "This looks outside GramWIN's scope",
+      body: "GramWIN only runs health, medicine, wellness, clinical, and research-related investigations. The run is paused and no evidence APIs will be called for this query.",
     };
   }
   return { allowed: true, title: "", body: "" };
@@ -957,9 +929,11 @@ function GramwinApp() {
       try {
         const profile = await loadProfile(activeAccount?.id, activeAccount?.email);
         if (profileNeedsOnboarding(profile)) {
-          setActiveTab("profile");
-          setOnboardingVisible(true);
-          setSnackbar({ visible: true, message: "Set up your profile to personalise diet, supplements, and activity insights." });
+          setSnackbar({
+            visible: true,
+            message: "Set up your profile to personalise diet, supplements, and activity insights.",
+            action: "setupProfile",
+          });
         }
       } catch {
         // Ignore onboarding prompt failures.
@@ -968,26 +942,6 @@ function GramwinApp() {
       }
     })();
   }, [activeAccount]);
-
-  useEffect(() => {
-    if (activeTab !== "profile" || onboardingVisible) {
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const profile = await loadProfile(activeAccount?.id, activeAccount?.email);
-        if (!cancelled && profileNeedsOnboarding(profile)) {
-          setOnboardingVisible(true);
-        }
-      } catch {
-        // Ignore profile refresh failures here.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeAccount, activeTab, onboardingVisible]);
 
   useEffect(() => {
     if (!liveInvestigation || !isRunning(liveInvestigation.status)) {
@@ -1006,6 +960,7 @@ function GramwinApp() {
       const account = await loginOrRegisterAccount(email, password);
       setActiveAccount(account);
       setSnackbar({ visible: true, message: "Account connected" });
+      return account;
     } catch (error) {
       setSnackbar({ visible: true, message: error instanceof Error ? error.message : "Could not sign in" });
       throw error;
@@ -1033,7 +988,7 @@ function GramwinApp() {
     try {
       await logoutActiveSession();
       setActiveAccount(null);
-      setSnackbar({ visible: true, message: "Signed out. Cloud-synced profile data will clear from this device and reload when you sign back in." });
+      setSnackbar({ visible: true, message: "Signed out" });
     } catch (error) {
       setSnackbar({ visible: true, message: error instanceof Error ? error.message : "Could not sign out" });
     } finally {
@@ -1147,7 +1102,7 @@ function GramwinApp() {
       setSuggestionsLoading(true);
       void (async () => {
         try {
-          const response = await requestApi(`/api/claim-suggestions?q=${encodeURIComponent(query)}&limit=16`, undefined, 3500);
+          const response = await requestApi(`/api/claim-suggestions?q=${encodeURIComponent(query)}`, undefined, 3500);
           if (!response.ok) {
             throw new Error("Suggestion request failed");
           }
@@ -1325,15 +1280,12 @@ function GramwinApp() {
       setLiveInvestigation(null);
       setConsultantView("investigate");
       setActiveTab("consultant");
-      const savedProfile = await loadProfile(activeAccount?.id, activeAccount?.email);
-      const profileContext = buildVerificationProfileContext(savedProfile);
       const response = await requestApi("/api/investigations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           claim: next.claim,
           context: next.context,
-          profileContext,
           sourceUrls: next.sourceUrls,
           mode: "auto",
           desiredDepth: next.desiredDepth,
@@ -1727,166 +1679,168 @@ function GramwinApp() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         >
-          {activeTab === "home" ? (
-            <Header brand={bootstrap.brand.name} tagline={bootstrap.brand.tagline} onRetry={retryBackendConnection} apiError={apiError} styles={styles} />
-          ) : (
-            <ToolHeader
-              title={
-                activeTab === "consultant"
-                  ? consultantView === "history"
-                    ? "Saved investigations"
-                    : "Claim consultant"
-                  : activeTab === "diet"
-                    ? "Scanner"
-                    : activeTab === "activity"
-                      ? "Activity monitor"
-                      : "Profile and settings"
-              }
-              body={
-                activeTab === "consultant"
-                  ? consultantView === "history"
-                    ? "Review saved reports, compare close reruns, and keep the history list tidy."
-                    : "Check health claims with cleaner evidence summaries, stronger source integrity, and calmer presentation."
-                  : activeTab === "diet"
-                    ? "Diet, drinks, medications, and supplement analysis now live in one calmer scanner workspace with a shared visual language."
-                    : activeTab === "activity"
-                      ? "Log movement, recovery, and activity load with clearer balance and recovery insights."
-                      : "Manage your health context, saved presets, and investigation preferences."
-              }
-              apiError={apiError}
-              onRetry={retryBackendConnection}
-              onPressHelp={
-                activeTab === "consultant" && consultantView !== "history"
-                  ? () => setConsultantTutorialVisible(true)
-                  : activeTab === "diet"
-                    ? () => setDietGuideSignal((current) => current + 1)
-                    : activeTab === "activity"
-                      ? () => setActivityGuideSignal((current) => current + 1)
-                      : undefined
-              }
-              styles={styles}
-            />
-          )}
+          <View style={styles.pageContainer}>
+            {activeTab === "home" ? (
+              <Header brand={bootstrap.brand.name} tagline={bootstrap.brand.tagline} onRetry={retryBackendConnection} apiError={apiError} styles={styles} />
+            ) : (
+              <ToolHeader
+                title={
+                  activeTab === "consultant"
+                    ? consultantView === "history"
+                      ? "Saved investigations"
+                      : "Claim consultant"
+                    : activeTab === "diet"
+                      ? "Scanner"
+                      : activeTab === "activity"
+                        ? "Activity monitor"
+                        : "Profile and settings"
+                }
+                body={
+                  activeTab === "consultant"
+                    ? consultantView === "history"
+                      ? "Review saved runs, compare reruns, and manage pinned history."
+                      : "Run a claim check, then review the evidence, workflow, and saved history."
+                    : activeTab === "diet"
+                      ? "Food, drink, and supplement analysis now live in one calmer workspace with a shared visual language."
+                      : activeTab === "activity"
+                        ? "Log movement, recovery, and activity load with clearer balance and recovery insights."
+                        : "Manage your health context, saved presets, and investigation preferences."
+                }
+                apiError={apiError}
+                onRetry={retryBackendConnection}
+                onPressHelp={
+                  activeTab === "consultant" && consultantView !== "history"
+                    ? () => setConsultantTutorialVisible(true)
+                    : activeTab === "diet"
+                      ? () => setDietGuideSignal((current) => current + 1)
+                      : activeTab === "activity"
+                        ? () => setActivityGuideSignal((current) => current + 1)
+                        : undefined
+                }
+                styles={styles}
+              />
+            )}
 
-          {activeTab === "home" && (
-            <HomeDashboardPage
-              history={history}
-              accountId={activeAccount?.id}
-              accountEmail={activeAccount?.email}
-              onOpenInvestigate={() => {
-                setConsultantView("investigate");
-                setActiveTab("consultant");
-              }}
-              onOpenHistory={(id) => void openHistorySheet(id)}
-              onOpenTab={setActiveTab}
-              requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000)}
-            />
-          )}
+            {activeTab === "home" && (
+              <HomeDashboardPage
+                history={history}
+                accountId={activeAccount?.id}
+                accountEmail={activeAccount?.email}
+                onOpenInvestigate={() => {
+                  setConsultantView("investigate");
+                  setActiveTab("consultant");
+                }}
+                onOpenHistory={(id) => void openHistorySheet(id)}
+                onOpenTab={setActiveTab}
+                requestApi={(path: string, init?: RequestInit) => requestApi(path, init, 120000)}
+              />
+            )}
 
-          {activeTab === "consultant" && (
-            <ConsultantPage
-              bootstrap={bootstrap}
-              consultantView={consultantView}
-              claimDraft={claimDraft}
-              contextDraft={contextDraft}
-              claimSourceDraft={claimSourceDraft}
-              populationDraft={populationDraft}
-              focusDraft={focusDraft}
-              sourceUrlDraft={sourceUrlDraft}
-              depth={depth}
-              claimSuggestions={claimSuggestions}
-              suggestionsLoading={suggestionsLoading}
-              healthGuard={localHealthGuard}
-              submitting={submitting}
-              loadingHistory={loadingHistory}
-              loadingSelected={loadingSelected}
-              history={visibleHistory}
-              pinnedIds={pinnedIds}
-              historySort={historySort}
-              historyFilter={historyFilter}
-              historyQuery={historyQuery}
-              comparisonIds={comparisonIds}
-              comparisonItems={comparisonItems}
-              comparisonResult={comparisonResult}
-              comparisonLoading={comparisonLoading}
-              cancellingIds={cancellingIds}
-              liveInvestigation={liveInvestigation}
-              onClaimChange={setClaimDraft}
-              onContextChange={setContextDraft}
-              onClaimSourceChange={setClaimSourceDraft}
-              onPopulationChange={setPopulationDraft}
-              onFocusChange={setFocusDraft}
-              onSourceUrlChange={setSourceUrlDraft}
-              onDepthChange={setDepth}
-              onSubmit={() => void submitInvestigation()}
-              onOpenHistory={(id) => void openHistorySheet(id)}
-              onDeleteHistory={(id) => void deleteHistoryItem(id)}
-              onCancelInvestigation={(id) => void cancelInvestigation(id)}
-              onTogglePin={togglePinHistory}
-              onToggleCompare={toggleCompareHistory}
-              onRunComparison={() => void runComparison()}
-              onMoveUp={(id) => moveHistoryItem(id, -1)}
-              onMoveDown={(id) => moveHistoryItem(id, 1)}
-              onSortChange={setHistorySort}
-              onFilterChange={setHistoryFilter}
-              onHistoryQueryChange={setHistoryQuery}
-              onConsultantViewChange={setConsultantView}
-              onUseClaim={applyFeaturedClaim}
-              onClearHistory={() => void clearAllHistory()}
-              styles={styles}
-              helpers={{
-                safeTrim,
-                safeLower,
-                safeUpper,
-                formatTimestamp,
-                depthLabel,
-                depthDescription,
-                depthTargetWindow,
-                scoreBandLabel,
-                scoreTone,
-                verdictMeta,
-                sourceTone,
-                sourceSentimentLabel,
-                stageIcon,
-                splitWorkflowTitle,
-                sourceQualityMeta,
-                sourceAccessMeta,
-                sourceDisplayUrl,
-                riskTone,
-                singaporeAgreementMeta,
-                quoteStanceMeta,
-                providerLabel,
-                historySortLabel,
-                formatClaimForDisplay,
-                recencyBucket,
-                evidenceTierLabel,
-                normalizedClaimKey,
-                canCompareClaims,
-                statusIcon,
-                statusLabel,
-                highlightedQuoteUrl,
-                isRunning,
-                palettePrimary: palette.primary,
-                paletteDanger: palette.danger,
-                paletteWarning: palette.warning,
-                paletteText: palette.text,
-              }}
-            />
-          )}
+            {activeTab === "consultant" && (
+              <ConsultantPage
+                bootstrap={bootstrap}
+                consultantView={consultantView}
+                claimDraft={claimDraft}
+                contextDraft={contextDraft}
+                claimSourceDraft={claimSourceDraft}
+                populationDraft={populationDraft}
+                focusDraft={focusDraft}
+                sourceUrlDraft={sourceUrlDraft}
+                depth={depth}
+                claimSuggestions={claimSuggestions}
+                suggestionsLoading={suggestionsLoading}
+                healthGuard={localHealthGuard}
+                submitting={submitting}
+                loadingHistory={loadingHistory}
+                loadingSelected={loadingSelected}
+                history={visibleHistory}
+                pinnedIds={pinnedIds}
+                historySort={historySort}
+                historyFilter={historyFilter}
+                historyQuery={historyQuery}
+                comparisonIds={comparisonIds}
+                comparisonItems={comparisonItems}
+                comparisonResult={comparisonResult}
+                comparisonLoading={comparisonLoading}
+                cancellingIds={cancellingIds}
+                liveInvestigation={liveInvestigation}
+                onClaimChange={setClaimDraft}
+                onContextChange={setContextDraft}
+                onClaimSourceChange={setClaimSourceDraft}
+                onPopulationChange={setPopulationDraft}
+                onFocusChange={setFocusDraft}
+                onSourceUrlChange={setSourceUrlDraft}
+                onDepthChange={setDepth}
+                onSubmit={() => void submitInvestigation()}
+                onOpenHistory={(id) => void openHistorySheet(id)}
+                onDeleteHistory={(id) => void deleteHistoryItem(id)}
+                onCancelInvestigation={(id) => void cancelInvestigation(id)}
+                onTogglePin={togglePinHistory}
+                onToggleCompare={toggleCompareHistory}
+                onRunComparison={() => void runComparison()}
+                onMoveUp={(id) => moveHistoryItem(id, -1)}
+                onMoveDown={(id) => moveHistoryItem(id, 1)}
+                onSortChange={setHistorySort}
+                onFilterChange={setHistoryFilter}
+                onHistoryQueryChange={setHistoryQuery}
+                onConsultantViewChange={setConsultantView}
+                onUseClaim={applyFeaturedClaim}
+                onClearHistory={() => void clearAllHistory()}
+                styles={styles}
+                helpers={{
+                  safeTrim,
+                  safeLower,
+                  safeUpper,
+                  formatTimestamp,
+                  depthLabel,
+                  depthDescription,
+                  depthTargetWindow,
+                  scoreBandLabel,
+                  scoreTone,
+                  verdictMeta,
+                  sourceTone,
+                  sourceSentimentLabel,
+                  stageIcon,
+                  splitWorkflowTitle,
+                  sourceQualityMeta,
+                  sourceAccessMeta,
+                  sourceDisplayUrl,
+                  riskTone,
+                  singaporeAgreementMeta,
+                  quoteStanceMeta,
+                  providerLabel,
+                  historySortLabel,
+                  formatClaimForDisplay,
+                  recencyBucket,
+                  evidenceTierLabel,
+                  normalizedClaimKey,
+                  canCompareClaims,
+                  statusIcon,
+                  statusLabel,
+                  highlightedQuoteUrl,
+                  isRunning,
+                  palettePrimary: palette.primary,
+                  paletteDanger: palette.danger,
+                  paletteWarning: palette.warning,
+                  paletteText: palette.text,
+                }}
+              />
+            )}
 
-          {activeTab === "diet" && <DietPage requestApi={(path: string, init?: RequestInit, timeoutMsOverride?: number) => requestApi(path, init, timeoutMsOverride ?? 180000)} accountId={activeAccount?.id} accountEmail={activeAccount?.email} guideSignal={dietGuideSignal} />}
-          {activeTab === "activity" && <ActivityPage requestApi={(path: string, init?: RequestInit, timeoutMsOverride?: number) => requestApi(path, init, timeoutMsOverride ?? 180000)} accountId={activeAccount?.id} accountEmail={activeAccount?.email} guideSignal={activityGuideSignal} />}
-          {activeTab === "profile" && (
-            <ProfilePage
-              accountId={activeAccount?.id}
-              accountEmail={activeAccount?.email}
-              activeAccount={activeAccount}
-              authLoading={authLoading}
-              requestApi={(path: string, init?: RequestInit, timeoutMsOverride?: number) => requestApi(path, init, timeoutMsOverride ?? 5000)}
-              onAuthenticate={handleAuthenticate}
-              onLogout={() => void handleLogout()}
-            />
-          )}
+            {activeTab === "diet" && <DietPage requestApi={(path: string, init?: RequestInit, timeoutMsOverride?: number) => requestApi(path, init, timeoutMsOverride ?? 180000)} accountId={activeAccount?.id} accountEmail={activeAccount?.email} guideSignal={dietGuideSignal} />}
+            {activeTab === "activity" && <ActivityPage requestApi={(path: string, init?: RequestInit, timeoutMsOverride?: number) => requestApi(path, init, timeoutMsOverride ?? 180000)} accountId={activeAccount?.id} accountEmail={activeAccount?.email} guideSignal={activityGuideSignal} />}
+            {activeTab === "profile" && (
+              <ProfilePage
+                accountId={activeAccount?.id}
+                accountEmail={activeAccount?.email}
+                activeAccount={activeAccount}
+                authLoading={authLoading}
+                requestApi={(path: string, init?: RequestInit, timeoutMsOverride?: number) => requestApi(path, init, timeoutMsOverride ?? 5000)}
+                onAuthenticate={handleAuthenticate}
+                onLogout={() => void handleLogout()}
+              />
+            )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -1947,7 +1901,6 @@ function GramwinApp() {
         accountEmail={activeAccount?.email}
         activeAccount={activeAccount}
         authLoading={authLoading}
-        requestApi={(path: string, init?: RequestInit, timeoutMsOverride?: number) => requestApi(path, init, timeoutMsOverride ?? 5000)}
         onAuthenticate={handleAuthenticate}
         onClose={() => setOnboardingVisible(false)}
         onSaved={() => {
@@ -1974,7 +1927,16 @@ function GramwinApp() {
                 label: "Undo",
                 onPress: undoDeleteHistoryItem,
               }
-              : undefined
+              : snackbar.action === "setupProfile"
+                ? {
+                  label: "Set up",
+                  onPress: () => {
+                    setActiveTab("profile");
+                    setProfileView("overview");
+                    setOnboardingVisible(true);
+                  },
+                }
+                : undefined
         }
         style={styles.snackbar}
       >
@@ -2069,8 +2031,6 @@ function HomeScreen({
       </View>
 
       <QuickLinks onOpenTab={onOpenTab} />
-
-
     </View>
   );
 }
@@ -2078,7 +2038,7 @@ function HomeScreen({
 function QuickLinks({ onOpenTab }: { onOpenTab: (tab: AppTab) => void }) {
   const links: Array<{ tab: AppTab; icon: string; label: string; body: string }> = [
     { tab: "consultant", icon: "stethoscope", label: "Verify", body: "Investigate claims and read evidence." },
-    { tab: "diet", icon: "cup-water", label: "Scanner", body: "Diet, drinks, medications, and supplement checks together." },
+    { tab: "diet", icon: "food-apple-outline", label: "Scanner", body: "Food analysis, diet intake, and supplement checks together." },
     { tab: "activity", icon: "run", label: "Activity", body: "Movement, recovery, routines, and energy balance." },
     { tab: "profile", icon: "account-circle-outline", label: "Profile", body: "Health profile, goals, and context." },
   ];
@@ -2151,966 +2111,7 @@ type ConsultantScreenProps = {
   onConsultantViewChange: (value: ConsultantView) => void;
   onUseClaim: (item: FeaturedClaim) => void;
   onClearHistory: () => void;
-  styles: typeof styles;
-  helpers: Record<string, any>;
 };
-
-function Header({
-  brand,
-  tagline,
-  apiError: _apiError,
-  onRetry: _onRetry,
-  styles: screenStyles,
-}: {
-  brand: string;
-  tagline: string;
-  apiError?: string | null;
-  onRetry?: () => void;
-  styles: typeof styles;
-}) {
-  return (
-    <Surface style={screenStyles.headerSurface} elevation={0}>
-      <View style={screenStyles.headerTop}>
-        <View style={screenStyles.headerBrandWrap}>
-          <Text variant="headlineSmall" style={screenStyles.headerTitle}>
-            {brand}
-          </Text>
-          <Text variant="bodyMedium" style={screenStyles.headerSubtitle}>
-            {tagline}
-          </Text>
-        </View>
-      </View>
-      <Text variant="bodySmall" style={screenStyles.headerMicrocopy}>
-        A calmer health dashboard with claim checking, medication support, and saved investigations in one place.
-      </Text>
-    </Surface>
-  );
-}
-
-function ToolHeader({
-  title,
-  body,
-  apiError: _apiError,
-  onRetry: _onRetry,
-  onPressHelp,
-  styles: screenStyles,
-}: {
-  title: string;
-  body: string;
-  apiError?: string | null;
-  onRetry?: () => void;
-  onPressHelp?: () => void;
-  styles: typeof styles;
-}) {
-  return (
-    <Surface style={screenStyles.toolHeaderSurface} elevation={0}>
-      <View style={screenStyles.headerTop}>
-        <View style={screenStyles.headerBrandWrap}>
-          <Text variant="headlineSmall" style={screenStyles.headerTitle}>
-            {title}
-          </Text>
-          <Text variant="bodyMedium" style={screenStyles.headerSubtitle}>
-            {body}
-          </Text>
-        </View>
-        {onPressHelp ? (
-          <IconButton
-            icon="help-circle-outline"
-            onPress={onPressHelp}
-            iconColor={palette.primary}
-            style={screenStyles.headerHelpButton}
-          />
-        ) : null}
-      </View>
-    </Surface>
-  );
-}
-
-function BottomTabs({
-  activeTab,
-  onSelect,
-  bottomInset,
-  styles: screenStyles,
-}: {
-  activeTab: AppTab;
-  onSelect: (tab: AppTab) => void;
-  bottomInset: number;
-  styles: typeof styles;
-}) {
-  const tabs: Array<{ key: AppTab; label: string; icon: string; iconInactive?: string }> = [
-    { key: "home", label: "Home", icon: "home-heart" },
-    { key: "consultant", label: "Verify", icon: "stethoscope" },
-    { key: "diet", label: "Scanner", icon: "cup-water" },
-    { key: "activity", label: "Activity", icon: "run" },
-    { key: "profile", label: "Profile", icon: "account-circle-outline" },
-  ];
-
-  return (
-    <Surface style={[screenStyles.bottomTabs, { bottom: bottomInset }]} elevation={2}>
-      {tabs.map((tab) => {
-        const selected = activeTab === tab.key;
-        return (
-          <TouchableRipple key={tab.key} style={screenStyles.bottomTabItem} onPress={() => onSelect(tab.key)}>
-            <View style={screenStyles.bottomTabContent}>
-              <View style={[screenStyles.bottomTabBubble, selected && screenStyles.bottomTabBubbleSelected]}>
-                <MaterialCommunityIcons
-                  name={(selected ? tab.icon : tab.iconInactive || tab.icon) as MaterialIconName}
-                  size={20}
-                  color={palette.primary}
-                />
-              </View>
-              <Text variant="labelSmall" style={[screenStyles.bottomTabLabel, selected && screenStyles.bottomTabLabelSelected]}>
-                {tab.label}
-              </Text>
-            </View>
-          </TouchableRipple>
-        );
-      })}
-    </Surface>
-  );
-}
-
-function ConsultantPage(props: ConsultantScreenProps) {
-  const { width } = useWindowDimensions();
-  const isWide = width >= 1120;
-  const [showOptionalContext, setShowOptionalContext] = useState(false);
-  const [claimMenuVisible, setClaimMenuVisible] = useState(false);
-  const claimBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const {
-    consultantView,
-    claimDraft,
-    contextDraft,
-    claimSourceDraft,
-    sourceUrlDraft,
-    depth,
-    claimSuggestions,
-    suggestionsLoading,
-    healthGuard,
-    submitting,
-    loadingHistory,
-    loadingSelected,
-    history,
-    pinnedIds,
-    historySort,
-    historyFilter,
-    historyQuery,
-    comparisonIds,
-    comparisonItems,
-    comparisonResult,
-    comparisonLoading,
-    cancellingIds,
-    liveInvestigation,
-    styles: screenStyles,
-    helpers,
-    onClaimChange,
-    onContextChange,
-    onClaimSourceChange,
-    onSourceUrlChange,
-    onDepthChange,
-    onSubmit,
-    onOpenHistory,
-    onDeleteHistory,
-    onCancelInvestigation,
-    onTogglePin,
-    onToggleCompare,
-    onRunComparison,
-    onMoveUp,
-    onMoveDown,
-    onSortChange,
-    onFilterChange,
-    onHistoryQueryChange,
-    onConsultantViewChange,
-    onUseClaim,
-    onClearHistory,
-  } = props;
-
-  const recentSuggestions = useMemo(() => {
-    const seen = new Set<string>();
-    return history
-      .map((item) => ({
-        id: `recent-${item.id}`,
-        claim: item.claim,
-        whyItIsInteresting: "",
-      }))
-      .filter((item) => {
-        const key = helpers.normalizedClaimKey(item.claim);
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .slice(0, 12);
-  }, [helpers, history]);
-
-  const recentQueryMatches = useMemo(() => {
-    if (!healthGuard.allowed) return [];
-    const query = helpers.normalizedClaimKey(claimDraft);
-    if (!query) return [];
-    return recentSuggestions.filter((item) => helpers.normalizedClaimKey(item.claim).includes(query)).slice(0, 10);
-  }, [claimDraft, healthGuard.allowed, helpers, recentSuggestions]);
-
-  const liveQueryMatches = useMemo(() => {
-    const seen = new Set(recentQueryMatches.map((item) => helpers.normalizedClaimKey(item.claim)));
-    return claimSuggestions
-      .map((claim, index) => ({
-        id: `suggestion-${index}-${helpers.normalizedClaimKey(claim)}`,
-        claim,
-        whyItIsInteresting: "",
-      }))
-      .filter((item) => {
-        const key = helpers.normalizedClaimKey(item.claim);
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .slice(0, 10);
-  }, [claimSuggestions, helpers, recentQueryMatches]);
-  const suggestionItems = useMemo(() => [...recentQueryMatches, ...liveQueryMatches], [liveQueryMatches, recentQueryMatches]);
-
-  useEffect(() => {
-    if (!helpers.safeTrim(claimDraft) || !healthGuard.allowed || suggestionItems.length === 0) {
-      setClaimMenuVisible(false);
-    }
-  }, [claimDraft, healthGuard.allowed, helpers, suggestionItems.length]);
-
-  useEffect(
-    () => () => {
-      if (claimBlurTimeoutRef.current) {
-        clearTimeout(claimBlurTimeoutRef.current);
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    if ([contextDraft, claimSourceDraft, sourceUrlDraft].some((value) => helpers.safeTrim(value))) {
-      setShowOptionalContext(true);
-    }
-  }, [claimSourceDraft, contextDraft, helpers, sourceUrlDraft]);
-
-  return (
-    <View style={screenStyles.screenStack}>
-      <SectionTabs
-        value={consultantView}
-        onValueChange={(value) => onConsultantViewChange(value as ConsultantView)}
-        tabs={[
-          { value: "investigate", label: "Investigate", icon: "stethoscope" },
-          { value: "history", label: "History", icon: "history" },
-        ]}
-      />
-
-      {consultantView === "investigate" ? (
-        <View style={[screenStyles.cardStack, isWide && screenStyles.consultantWideGrid]}>
-          <View style={screenStyles.consultantPrimaryColumn}>
-            <Card mode="contained" style={screenStyles.formCard}>
-              <Card.Content style={screenStyles.formCardContent}>
-                <Text variant="titleLarge" style={screenStyles.formTitle}>
-                  New investigation
-                </Text>
-                <Text variant="bodyMedium" style={screenStyles.sectionBody}>
-                  Paste the claim as you saw it. Keep context light. The backend handles wording risk, contradiction checks, source quality, and final synthesis.
-                </Text>
-
-                <View style={screenStyles.cardStack}>
-                  <View style={screenStyles.claimInputWrap}>
-                    <Text variant="labelLarge" style={screenStyles.linkTitle}>Claim to investigate</Text>
-                    <View style={screenStyles.claimInputShell}>
-                      <TextInput
-                        mode="outlined"
-                        placeholder="Paste the health claim here"
-                        value={claimDraft}
-                        onChangeText={(value) => {
-                          onClaimChange(value);
-                          if (helpers.safeTrim(value) && healthGuard.allowed) {
-                            setClaimMenuVisible(true);
-                          }
-                        }}
-                        onFocus={() => {
-                          if (claimBlurTimeoutRef.current) {
-                            clearTimeout(claimBlurTimeoutRef.current);
-                          }
-                          if (suggestionItems.length > 0 && healthGuard.allowed) {
-                            setClaimMenuVisible(true);
-                          }
-                        }}
-                        onBlur={() => {
-                          if (claimBlurTimeoutRef.current) {
-                            clearTimeout(claimBlurTimeoutRef.current);
-                          }
-                          claimBlurTimeoutRef.current = setTimeout(() => setClaimMenuVisible(false), 140);
-                        }}
-                        multiline
-                        outlineStyle={screenStyles.claimInputOutline}
-                        style={[screenStyles.paperInput, screenStyles.multilineInput, screenStyles.claimMultilineInput]}
-                        contentStyle={screenStyles.inputContent}
-                      />
-                      {claimMenuVisible && suggestionItems.length > 0 ? (
-                        <Surface style={screenStyles.claimDropdown} elevation={3}>
-                          {suggestionsLoading ? (
-                            <View style={screenStyles.claimDropdownHeader}>
-                              <ActivityIndicator size="small" color={palette.primary} />
-                            </View>
-                          ) : null}
-                          <ScrollView nestedScrollEnabled style={screenStyles.claimDropdownScroll} keyboardShouldPersistTaps="always">
-                            {suggestionItems.map((item) => (
-                              <TouchableRipple
-                                key={item.id}
-                                style={screenStyles.claimDropdownRow}
-                                onPress={() => {
-                                  if (claimBlurTimeoutRef.current) {
-                                    clearTimeout(claimBlurTimeoutRef.current);
-                                  }
-                                  setClaimMenuVisible(false);
-                                  onUseClaim(item);
-                                }}
-                              >
-                                <View style={screenStyles.cardStack}>
-                                  <Text variant="bodyMedium" style={screenStyles.linkTitle}>
-                                    {helpers.formatClaimForDisplay(item.claim)}
-                                  </Text>
-                                </View>
-                              </TouchableRipple>
-                            ))}
-                          </ScrollView>
-                        </Surface>
-                      ) : null}
-                    </View>
-                  </View>
-                  {!healthGuard.allowed ? (
-                    <Card mode="contained" style={screenStyles.scopeWarningCard}>
-                      <Card.Content style={screenStyles.cardStack}>
-                        <View style={screenStyles.rowGapTop}>
-                          <View style={screenStyles.scopeWarningIcon}>
-                            <MaterialCommunityIcons name="shield-off-outline" size={20} color={palette.warning} />
-                          </View>
-                          <View style={screenStyles.flexOne}>
-                            <Text variant="titleMedium" style={screenStyles.linkTitle}>
-                              {healthGuard.title}
-                            </Text>
-                            <Text variant="bodySmall" style={screenStyles.sectionBody}>
-                              {healthGuard.body}
-                            </Text>
-                          </View>
-                        </View>
-                      </Card.Content>
-                    </Card>
-                  ) : null}
-                  <TouchableRipple style={screenStyles.optionalContextCard} onPress={() => setShowOptionalContext((current) => !current)}>
-                    <View style={screenStyles.rowBetween}>
-                      <View style={screenStyles.rowGapTop}>
-                        <View style={screenStyles.expandableIconWrap}>
-                          <MaterialCommunityIcons name="tune-variant" size={20} color={palette.primary} />
-                        </View>
-                        <View style={screenStyles.flexOne}>
-                          <Text variant="titleMedium" style={screenStyles.linkTitle}>
-                            Optional context
-                          </Text>
-                          <Text variant="bodySmall" style={screenStyles.sectionBody}>
-                            Add one note about what worries you, where you saw it, or links you already have.
-                          </Text>
-                        </View>
-                      </View>
-                      <IconButton icon={showOptionalContext ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={screenStyles.dragButton} />
-                    </View>
-                  </TouchableRipple>
-
-                  {showOptionalContext ? (
-                    <View style={screenStyles.cardStack}>
-                      <TextInput
-                        mode="outlined"
-                        placeholder="Extra note or concern"
-                        value={contextDraft}
-                        onChangeText={onContextChange}
-                        style={screenStyles.paperInput}
-                        outlineStyle={screenStyles.inputOutline}
-                        contentStyle={screenStyles.inputContent}
-                        left={<TextInput.Icon icon="text-box-outline" />}
-                      />
-                      <TextInput
-                        mode="outlined"
-                        placeholder="Where you saw it"
-                        value={claimSourceDraft}
-                        onChangeText={onClaimSourceChange}
-                        style={screenStyles.paperInput}
-                        outlineStyle={screenStyles.inputOutline}
-                        contentStyle={screenStyles.inputContent}
-                        left={<TextInput.Icon icon="eye-outline" />}
-                      />
-                      <TextInput
-                        mode="outlined"
-                        placeholder="Relevant links"
-                        value={sourceUrlDraft}
-                        onChangeText={onSourceUrlChange}
-                        style={screenStyles.paperInput}
-                        outlineStyle={screenStyles.inputOutline}
-                        contentStyle={screenStyles.inputContent}
-                        left={<TextInput.Icon icon="link-variant" />}
-                      />
-                    </View>
-                  ) : null}
-                </View>
-
-                <View style={screenStyles.segmentRow}>
-                  <Chip selected={depth === "quick"} onPress={() => onDepthChange("quick")} style={screenStyles.segmentChip}>Quick</Chip>
-                  <Chip selected={depth === "standard"} onPress={() => onDepthChange("standard")} style={screenStyles.segmentChip}>Standard</Chip>
-                  <Chip selected={depth === "deep"} onPress={() => onDepthChange("deep")} style={screenStyles.segmentChip}>Deep</Chip>
-                </View>
-                <Text variant="bodySmall" style={screenStyles.depthHint}>
-                  {helpers.depthDescription(depth)}
-                </Text>
-
-                <Button mode="contained" icon="magnify" onPress={onSubmit} loading={submitting} disabled={submitting || !healthGuard.allowed} buttonColor={palette.primary}>
-                  Start investigation
-                </Button>
-              </Card.Content>
-            </Card>
-          </View>
-
-          <View style={screenStyles.consultantSecondaryColumn}>
-            <View style={screenStyles.sectionHeader}>
-              <Text variant="labelLarge" style={screenStyles.eyebrow}>LIVE REPORT</Text>
-              <Text variant="headlineSmall" style={screenStyles.sectionTitle}>Current review</Text>
-              <Text variant="bodyMedium" style={screenStyles.sectionBody}>
-                Only investigations started in this session appear here. Saved history stays separate until you run it again.
-              </Text>
-            </View>
-            <ScrollView
-              style={screenStyles.consultantSecondaryScroller}
-              contentContainerStyle={screenStyles.cardStack}
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-            >
-              {loadingSelected ? (
-                <LoadingCard text="Loading investigation..." />
-              ) : liveInvestigation ? (
-                helpers.isRunning(liveInvestigation.status) ? (
-                  <ProcessingCard investigation={liveInvestigation} onCancel={() => onCancelInvestigation(liveInvestigation.id)} cancelling={cancellingIds.includes(liveInvestigation.id)} />
-                ) : (
-                  <InvestigationResult investigation={liveInvestigation} />
-                )
-              ) : !healthGuard.allowed && helpers.safeTrim(claimDraft) ? (
-                <EmptyState title={healthGuard.title} body={healthGuard.body} />
-              ) : (
-                <EmptyState title="No active investigation" body="Start a new review to populate the live report. Saved investigations stay in History until you choose to run them again." />
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      ) : (
-        <HistoryPanel
-          loadingHistory={loadingHistory}
-          history={history}
-          pinnedIds={pinnedIds}
-          historySort={historySort}
-          historyFilter={historyFilter}
-          historyQuery={historyQuery}
-          comparisonIds={comparisonIds}
-          comparisonItems={comparisonItems}
-          comparisonResult={comparisonResult}
-          comparisonLoading={comparisonLoading}
-          styles={screenStyles}
-          helpers={helpers}
-          onOpenHistory={onOpenHistory}
-          onDeleteHistory={onDeleteHistory}
-          onCancelInvestigation={onCancelInvestigation}
-          onTogglePin={onTogglePin}
-          onToggleCompare={onToggleCompare}
-          onRunComparison={onRunComparison}
-          onMoveUp={onMoveUp}
-          onMoveDown={onMoveDown}
-          onSortChange={onSortChange}
-          onFilterChange={onFilterChange}
-          onHistoryQueryChange={onHistoryQueryChange}
-          onClearHistory={onClearHistory}
-        />
-      )}
-    </View>
-  );
-}
-
-function HistoryPanel({
-  loadingHistory,
-  history,
-  pinnedIds,
-  historySort,
-  historyFilter,
-  historyQuery,
-  comparisonIds,
-  comparisonItems,
-  comparisonResult,
-  comparisonLoading,
-  styles: screenStyles,
-  helpers,
-  onOpenHistory,
-  onDeleteHistory,
-  onCancelInvestigation,
-  onTogglePin,
-  onToggleCompare,
-  onRunComparison,
-  onMoveUp,
-  onMoveDown,
-  onSortChange,
-  onFilterChange,
-  onHistoryQueryChange,
-  onClearHistory,
-}: any) {
-  const { width } = useWindowDimensions();
-  const isWide = width >= 1120;
-  const averageScore =
-    history.filter((item: InvestigationSummary) => item.overallScore !== null).reduce((sum: number, item: InvestigationSummary) => sum + (item.overallScore ?? 0), 0) /
-    Math.max(1, history.filter((item: InvestigationSummary) => item.overallScore !== null).length);
-
-  return (
-    <View style={screenStyles.cardStack}>
-      <View style={[screenStyles.cardStack, isWide && screenStyles.historyWideGrid]}>
-        <View style={screenStyles.historySidebarColumn}>
-          <Card mode="contained" style={screenStyles.resultSectionCard}>
-            <Card.Content style={screenStyles.resultMetaRow}>
-              <MiniStat label="Saved" value={String(history.length)} />
-              <MiniStat label="Pinned" value={String(pinnedIds.length)} />
-              <MiniStat label="Avg. score" value={Number.isFinite(averageScore) ? `${Math.round(averageScore)}/100` : "--"} />
-            </Card.Content>
-          </Card>
-
-          <Card mode="contained" style={screenStyles.filterCard}>
-            <Card.Content style={screenStyles.cardStack}>
-              <View style={screenStyles.rowBetween}>
-                <View style={screenStyles.flexOne}>
-                  <Text variant="titleSmall" style={screenStyles.linkTitle}>
-                    {helpers.historySortLabel(historySort)}
-                  </Text>
-                  <Text variant="bodySmall" style={screenStyles.sectionBody}>
-                    {isWide
-                      ? "Use the arrow controls to switch into custom order and fine-tune desktop sorting."
-                      : "Drag cards up or down to switch into custom order. Swipe right to pin and left to delete."}
-                  </Text>
-                </View>
-                <Button mode="text" textColor={palette.danger} onPress={onClearHistory}>
-                  Clear history
-                </Button>
-              </View>
-              <Searchbar
-                placeholder="Search claim, verdict, or summary"
-                value={historyQuery}
-                onChangeText={onHistoryQueryChange}
-                style={screenStyles.searchbar}
-                inputStyle={screenStyles.searchbarInput}
-                iconColor={palette.primary}
-              />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={screenStyles.chipRow}>
-                {([
-                  ["recent", "Newest"],
-                  ["oldest", "Oldest"],
-                  ["manual", "Custom"],
-                  ["score", "Highest score"],
-                  ["lowestScore", "Lowest score"],
-                ] as const).map(([value, label]) => (
-                  <Chip key={value} selected={historySort === value} onPress={() => onSortChange(value)} style={screenStyles.segmentChip}>{label}</Chip>
-                ))}
-              </ScrollView>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={screenStyles.chipRow}>
-                {([
-                  ["all", "All"],
-                  ["pinned", "Pinned"],
-                  ["running", "Running"],
-                  ["completed", "Completed"],
-                  ["deep", "Deep"],
-                  ["highConfidence", "High confidence"],
-                  ["trustworthy", "Trustworthy"],
-                  ["uncertain", "Mixed evidence"],
-                  ["untrustworthy", "Untrustworthy"],
-                ] as const).map(([value, label]) => (
-                  <Chip key={value} selected={historyFilter === value} onPress={() => onFilterChange(value)} style={screenStyles.segmentChip}>{label}</Chip>
-                ))}
-              </ScrollView>
-            </Card.Content>
-          </Card>
-        </View>
-
-        <View style={screenStyles.historyMainColumn}>
-          <ComparisonBoard items={comparisonItems} result={comparisonResult} loading={comparisonLoading} onRunComparison={onRunComparison} onOpenHistory={onOpenHistory} onRemove={onToggleCompare} styles={screenStyles} helpers={helpers} />
-          {loadingHistory ? (
-            <LoadingCard text="Loading investigation history..." />
-          ) : history.length === 0 ? (
-            <EmptyState title="No saved investigations yet" body="Completed runs will appear here so you can review, pin, compare, or rerun them later." />
-          ) : (
-            <View style={screenStyles.cardStack}>
-              {history.map((item: InvestigationSummary) => (
-                <HistoryItem
-                  key={item.id}
-                  item={item}
-                  styles={screenStyles}
-                  helpers={helpers}
-                  pinned={pinnedIds.includes(item.id)}
-                  compared={comparisonIds.includes(item.id)}
-                  onOpen={() => onOpenHistory(item.id)}
-                  onDelete={() => onDeleteHistory(item.id)}
-                  onCancel={() => onCancelInvestigation(item.id)}
-                  onPin={() => onTogglePin(item.id)}
-                  onCompare={() => onToggleCompare(item.id)}
-                  onMoveUp={() => onMoveUp(item.id)}
-                  onMoveDown={() => onMoveDown(item.id)}
-                />
-              ))}
-            </View>
-          )}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function HistoryItem({ item, pinned, compared, onOpen, onDelete, onCancel, onPin, onCompare, onMoveUp, onMoveDown, styles: screenStyles, helpers }: any) {
-  const { width } = useWindowDimensions();
-  const isDesktop = width >= 920;
-  const meta = helpers.verdictMeta(item.verdict);
-  const dragX = useRef(new Animated.Value(0)).current;
-  const dragY = useRef(new Animated.Value(0)).current;
-  const [dragMode, setDragMode] = useState(false);
-  const dragResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          if (isDesktop) {
-            return false;
-          }
-          const horizontalSwipe = Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy);
-          const verticalDrag = dragMode && Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
-          return horizontalSwipe || verticalDrag;
-        },
-        onMoveShouldSetPanResponderCapture: (_, gesture) => {
-          if (isDesktop) {
-            return false;
-          }
-          const horizontalSwipe = Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy);
-          const verticalDrag = dragMode && Math.abs(gesture.dy) > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
-          return horizontalSwipe || verticalDrag;
-        },
-        onPanResponderMove: (_, gesture) => {
-          if (Math.abs(gesture.dx) > Math.abs(gesture.dy)) {
-            dragX.setValue(gesture.dx);
-            dragY.setValue(0);
-          } else if (dragMode) {
-            dragY.setValue(gesture.dy);
-            dragX.setValue(0);
-          }
-        },
-        onPanResponderRelease: (_, gesture) => {
-          if (Math.abs(gesture.dx) > Math.abs(gesture.dy)) {
-            if (gesture.dx >= 52) {
-              onPin();
-            } else if (gesture.dx <= -52) {
-              onDelete();
-            }
-          } else if (dragMode && gesture.dy <= -36) {
-            onMoveUp();
-            setDragMode(false);
-          } else if (dragMode && gesture.dy >= 36) {
-            onMoveDown();
-            setDragMode(false);
-          }
-          Animated.spring(dragX, { toValue: 0, useNativeDriver: true }).start();
-          Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start();
-        },
-        onPanResponderTerminate: () => {
-          Animated.spring(dragX, { toValue: 0, useNativeDriver: true }).start();
-          Animated.spring(dragY, { toValue: 0, useNativeDriver: true }).start();
-        },
-      }),
-    [dragMode, dragX, dragY, isDesktop, onDelete, onMoveDown, onMoveUp, onPin]
-  );
-
-  return (
-    <View style={screenStyles.historySwipeShell}>
-      {!isDesktop ? (
-        <View style={screenStyles.historyRails}>
-          <View style={screenStyles.pinRail}>
-            <Avatar.Icon size={36} icon="pin-outline" style={screenStyles.pinRailAvatar} color={palette.pin} />
-          </View>
-          <View style={screenStyles.deleteRail}>
-            <Avatar.Icon size={36} icon="delete-outline" style={screenStyles.deleteRailAvatar} color={palette.danger} />
-          </View>
-        </View>
-      ) : null}
-      <Animated.View
-        {...(!isDesktop ? dragResponder.panHandlers : {})}
-        style={{ transform: [{ translateX: dragX }, { translateY: dragY }] }}
-      >
-      <TouchableRipple
-        onPress={onOpen}
-        style={[screenStyles.historyCard, pinned && screenStyles.historyCardPinned, dragMode && screenStyles.historyCardDragArmed]}
-      >
-        <View style={screenStyles.cardStack}>
-          <View style={screenStyles.rowBetween}>
-            <View style={screenStyles.rowGap}>
-              <HistoryVerdictMark verdict={item.verdict} />
-              <View style={screenStyles.flexOne}>
-                <Text variant="titleMedium" style={screenStyles.historyClaim}>{helpers.formatClaimForDisplay(item.claim)}</Text>
-                <Text variant="bodySmall" style={screenStyles.historySummary}>{item.summary}</Text>
-              </View>
-            </View>
-            <Chip compact style={{ backgroundColor: meta.background }} textStyle={{ color: meta.color, fontFamily: "Poppins_600SemiBold" }}>
-              {item.overallScore ?? "--"}/100
-            </Chip>
-          </View>
-          <View style={screenStyles.historyMetaRow}>
-            <Chip compact style={screenStyles.segmentChip}>{meta.label}</Chip>
-            <Chip compact style={screenStyles.segmentChip}>{helpers.depthLabel(item.desiredDepth)}</Chip>
-            <Chip compact style={screenStyles.segmentChip}>{helpers.safeUpper(item.confidenceLevel || "unknown")}</Chip>
-            {compared ? <Chip compact style={screenStyles.segmentChip}>Comparing</Chip> : null}
-          </View>
-          <Text variant="bodySmall" style={screenStyles.historyMetaLine}>Updated {helpers.formatTimestamp(item.updatedAt)}</Text>
-          <View style={screenStyles.historyHeaderActions}>
-            {helpers.isRunning(item.status) ? (
-              <Button mode="outlined" compact icon="stop-circle-outline" onPress={onCancel} textColor={palette.warning}>Stop</Button>
-            ) : null}
-            <Button mode="outlined" compact icon="compare-horizontal" onPress={onCompare} textColor={palette.primary}>Compare</Button>
-            {isDesktop ? (
-              <>
-                <IconButton icon="arrow-up" size={16} iconColor={palette.secondary} style={screenStyles.webActionButton} onPress={onMoveUp} />
-                <IconButton icon="arrow-down" size={16} iconColor={palette.secondary} style={screenStyles.webActionButton} onPress={onMoveDown} />
-                <IconButton icon={pinned ? "pin-off-outline" : "pin-outline"} size={16} iconColor={palette.pin} style={[screenStyles.webActionButton, screenStyles.webPinButton]} onPress={onPin} />
-                <IconButton icon="delete-outline" size={16} iconColor={palette.danger} style={[screenStyles.webActionButton, screenStyles.webDeleteButton]} onPress={onDelete} />
-              </>
-            ) : (
-              <>
-                <View style={screenStyles.mobileDragHintWrap}>
-                  <Pressable style={[screenStyles.mobileDragBadge, dragMode && screenStyles.mobileDragBadgeActive]} onPress={() => setDragMode((value) => !value)}>
-                    <Text style={[screenStyles.mobileDragBadgeText, dragMode && screenStyles.mobileDragBadgeTextActive]}>Drag{"\n"}mode</Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </TouchableRipple>
-    </Animated.View>
-    </View>
-  );
-}
-
-function ComparisonBoard({
-  items,
-  result,
-  loading,
-  onRunComparison,
-  onOpenHistory,
-  onRemove,
-  styles: screenStyles,
-  helpers,
-}: {
-  items: InvestigationSummary[];
-  result: InvestigationComparison | null;
-  loading: boolean;
-  onRunComparison: () => void;
-  onOpenHistory: (id: string) => void;
-  onRemove: (id: string) => void;
-  styles: typeof styles;
-  helpers: Record<string, any>;
-}) {
-  const { width } = useWindowDimensions();
-  const lastTapRef = useRef<Record<string, number>>({});
-  const openTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  if (items.length === 0) return null;
-
-  const groupedByClaim = new Map<string, InvestigationSummary[]>();
-  for (const item of items) {
-    const key = helpers.normalizedClaimKey(item.claim);
-    groupedByClaim.set(key, [...(groupedByClaim.get(key) ?? []), item]);
-  }
-  const sameClaim = [...groupedByClaim.values()].some((group) => group.length > 1);
-  const localCompatibility = items.length === 2 ? helpers.canCompareClaims(items[0], items[1]) : { allowed: false, similarity: 0 };
-  const stackedCards = width < 760;
-
-  return (
-    <Card mode="contained" style={screenStyles.resultSectionCard}>
-      <Card.Content style={screenStyles.cardStack}>
-        <View style={screenStyles.rowBetween}>
-          <View style={screenStyles.flexOne}>
-            <Text variant="titleMedium" style={screenStyles.linkTitle}>Multi-run comparison</Text>
-            <Text variant="bodySmall" style={screenStyles.sectionBody}>
-              {sameClaim ? "These runs share the same claim, so you can compare reruns side by side." : "Compare two closely related runs to spot score, confidence, and evidence shifts."}
-            </Text>
-            <View style={screenStyles.historyMetaRow}>
-              <Chip compact style={screenStyles.segmentChip}>{items.length}/2 selected</Chip>
-              {items.length === 2 ? <Chip compact style={screenStyles.segmentChip}>{`Similarity ${localCompatibility.similarity}/100`}</Chip> : null}
-            </View>
-          </View>
-        </View>
-        <View style={[screenStyles.comparisonCardGrid, stackedCards && screenStyles.comparisonCardGridStacked]}>
-          {items.map((item) => {
-            const meta = helpers.verdictMeta(item.verdict);
-            const tone = helpers.scoreTone(item.overallScore);
-            return (
-              <Pressable
-                key={item.id}
-                onPress={() => {
-                  const now = Date.now();
-                  const lastTap = lastTapRef.current[item.id] ?? 0;
-                  if (now - lastTap < 280) {
-                    const pendingOpen = openTimerRef.current[item.id];
-                    if (pendingOpen) clearTimeout(pendingOpen);
-                    delete openTimerRef.current[item.id];
-                    onRemove(item.id);
-                    lastTapRef.current[item.id] = 0;
-                    return;
-                  }
-                  lastTapRef.current[item.id] = now;
-                  openTimerRef.current[item.id] = setTimeout(() => {
-                    onOpenHistory(item.id);
-                    delete openTimerRef.current[item.id];
-                  }, 260);
-                }}
-                style={[screenStyles.comparisonCard, stackedCards && screenStyles.comparisonCardStacked]}
-              >
-                <View style={screenStyles.cardStack}>
-                  <View style={screenStyles.rowBetween}>
-                    <Chip compact style={{ backgroundColor: meta.background }} textStyle={{ color: meta.color, fontFamily: "Poppins_600SemiBold" }}>{meta.label}</Chip>
-                    <Chip compact style={{ backgroundColor: tone.background }} textStyle={{ color: tone.color, fontFamily: "Poppins_700Bold" }}>{item.overallScore ?? "--"}/100</Chip>
-                  </View>
-                  <Text variant="titleSmall" style={screenStyles.linkTitle}>{helpers.formatClaimForDisplay(item.claim)}</Text>
-                  <Text variant="bodySmall" style={screenStyles.sectionBody}>{item.summary}</Text>
-                  <Text variant="bodySmall" style={screenStyles.historyMetaLine}>Updated {helpers.formatTimestamp(item.updatedAt)}</Text>
-                  <Text variant="bodySmall" style={screenStyles.historyMetaLine}>Double-tap to remove from comparison.</Text>
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-        <View style={screenStyles.resultActionRow}>
-          <Button mode="contained" icon="compare-horizontal" onPress={onRunComparison} loading={loading} disabled={items.length !== 2 || !localCompatibility.allowed || loading} buttonColor={palette.primary}>
-            Compare selected runs
-          </Button>
-        </View>
-        {result ? (
-          <Card mode="contained" style={screenStyles.comparisonInsightCard}>
-            <Card.Content style={screenStyles.cardStack}>
-              <Text variant="titleMedium" style={screenStyles.linkTitle}>Comparison snapshot</Text>
-              <Text variant="bodyMedium" style={screenStyles.resultBody}>{result.shortSnippet || result.summary}</Text>
-              <Text variant="bodySmall" style={screenStyles.sectionBody}>{result.detail}</Text>
-            </Card.Content>
-          </Card>
-        ) : null}
-      </Card.Content>
-    </Card>
-  );
-}
-
-function HistorySheet({
-  visible,
-  investigation,
-  loading,
-  onClose,
-  onRestart,
-  onDelete,
-  onCancel,
-  cancellingIds,
-  helpers,
-}: {
-  visible: boolean;
-  investigation: InvestigationDetail | null;
-  loading: boolean;
-  onClose: () => void;
-  onRestart: (investigation: InvestigationDetail) => void;
-  onDelete: (id: string) => void;
-  onCancel: (id: string) => void;
-  cancellingIds: string[];
-  styles: typeof styles;
-  helpers: Record<string, any>;
-}) {
-  const translateY = useRef(new Animated.Value(360)).current;
-
-  useEffect(() => {
-    Animated.timing(translateY, {
-      toValue: visible ? 0 : 360,
-      duration: 220,
-      useNativeDriver: true,
-    }).start();
-  }, [translateY, visible]);
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-        onPanResponderMove: (_, gesture) => {
-          translateY.setValue(Math.max(0, gesture.dy));
-        },
-        onPanResponderRelease: (_, gesture) => {
-          if (gesture.dy > 120) {
-            onClose();
-            return;
-          }
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
-        },
-      }),
-    [onClose, translateY]
-  );
-
-  return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <View style={styles.sheetBackdrop}>
-        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
-        <Animated.View style={[styles.sheetPanel, { transform: [{ translateY }] }]} {...panResponder.panHandlers}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <View style={styles.flexOne}>
-              <Text variant="titleLarge" style={styles.formTitle}>
-                Saved investigation
-              </Text>
-              <Text variant="bodySmall" style={styles.historyMetaLine}>
-                Review the saved report, reopen the evidence, or run the claim again.
-              </Text>
-            </View>
-            <IconButton icon="close" onPress={onClose} iconColor={helpers.paletteText ?? "#111827"} />
-          </View>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.cardStack}>
-            {loading ? (
-              <LoadingCard text="Loading saved investigation..." />
-            ) : investigation ? (
-              <>
-                {helpers.safeTrim(investigation.context) ? (
-                  <View style={styles.resultSectionCard}>
-                    <View style={styles.cardStack}>
-                      <Text variant="titleMedium" style={styles.linkTitle}>
-                        Saved context
-                      </Text>
-                      <Text variant="bodyMedium" style={styles.sectionBody}>
-                        {investigation.context}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-                <InvestigationResult investigation={investigation} />
-                <View style={styles.resultActionRow}>
-                  {helpers.isRunning(investigation.status) ? (
-                    <Button
-                      mode="outlined"
-                      icon="stop-circle-outline"
-                      textColor={helpers.paletteWarning ?? "#D97706"}
-                      onPress={() => onCancel(investigation.id)}
-                      loading={cancellingIds.includes(investigation.id)}
-                      disabled={cancellingIds.includes(investigation.id)}
-                    >
-                      {cancellingIds.includes(investigation.id) ? "Stopping..." : "Stop run"}
-                    </Button>
-                  ) : (
-                    <Button mode="contained" icon="playlist-edit" buttonColor={helpers.palettePrimary} onPress={() => onRestart(investigation)}>
-                      Edit and rerun
-                    </Button>
-                  )}
-                  <Button mode="outlined" icon="delete-outline" textColor={helpers.paletteDanger} onPress={() => onDelete(investigation.id)}>
-                    Delete this investigation
-                  </Button>
-                </View>
-              </>
-            ) : (
-              <EmptyState title="Nothing to show" body="That saved investigation could not be loaded right now." />
-            )}
-          </ScrollView>
-        </Animated.View>
-      </View>
-    </Modal>
-  );
-}
 
 function ProfileSettingsPanel({
   bootstrap,
@@ -3177,8 +2178,6 @@ function ProcessingCard({
   const { width } = useWindowDimensions();
   const compact = width < 760;
   const steps = investigation.stepSummaries.length > 0 ? investigation.stepSummaries : [];
-  const activeStep = steps.find((step) => !["completed", "done", "success"].includes(safeLower(step.status))) ?? steps[steps.length - 1] ?? null;
-  const completedStepCount = steps.filter((step) => ["completed", "done", "success"].includes(safeLower(step.status))).length;
   const recentEvents = investigation.progressEvents.slice(-5).reverse();
   return (
     <Card mode="contained" style={styles.processingCard}>
@@ -3198,12 +2197,6 @@ function ProcessingCard({
         </View>
 
         <ProgressBar progress={Math.max(0.04, investigation.progressPercent / 100)} color={palette.primary} style={styles.progressBar} />
-        {steps.length > 0 ? (
-          <View style={styles.resultMetaRow}>
-            <MiniStat label="Steps completed" value={`${completedStepCount}/${steps.length}`} />
-            <MiniStat label="Current stage" value={activeStep ? splitWorkflowTitle(activeStep.title).purpose : "Queued"} style={!compact ? styles.miniStatFullWidth : undefined} />
-          </View>
-        ) : null}
         <View style={styles.resultActionRow}>
           <Button mode="outlined" icon="stop-circle-outline" onPress={onCancel} loading={cancelling} disabled={cancelling} textColor={palette.warning}>
             {cancelling ? "Stopping..." : "Stop current run"}
@@ -3281,7 +2274,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
   const compactSignals = width < 760;
   const compactLayout = width < 760;
   const verdict = verdictMeta(investigation.verdict);
-  const scoreMeta = scoreTone(investigation.overallScore);
+  const scoreMeta = scoreTone(investigation.overallScore, investigation.verdict);
   const groupedSources = investigation.sourceGroups.filter((group) => group.sources.length > 0);
   const sourceDeckGroups = useMemo(() => {
     if (groupedSources.length > 0) {
@@ -3412,7 +2405,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
             {explanationText}
           </Text>
           <View style={[styles.resultMetaRow, styles.resultMetaColumn]}>
-            <MiniStat label="Assessment" value={investigation.truthClassification || scoreBandLabel(investigation.overallScore)} style={styles.miniStatFullWidth} />
+            <MiniStat label="Assessment" value={investigation.truthClassification || scoreBandLabel(investigation.overallScore, investigation.verdict)} style={styles.miniStatFullWidth} />
             <MiniStat label="Confidence" value={safeUpper(investigation.confidenceLevel ?? "unknown")} style={styles.miniStatFullWidth} />
             <MiniStat label="Review Type" value={depthLabel(investigation.desiredDepth)} style={styles.miniStatFullWidth} />
           </View>
@@ -3482,7 +2475,7 @@ function InvestigationResult({ investigation }: { investigation: InvestigationDe
       {investigation.profilePersonalizationReview && (
         <ExpandableResultSection
           title="Profile relevance"
-          body={investigation.profilePersonalizationReview.summary || "This run included a user-profile relevance pass before the final verdict."}
+          body={investigation.profilePersonalizationReview.summary || "This run included a profile-based relevance pass before the final verdict."}
           icon="account-heart-outline"
           defaultExpanded={false}
         >
@@ -4188,7 +3181,7 @@ function ExpandableResultSection({
                 </Text>
               </View>
             </View>
-            <IconButton icon="dots-vertical" iconColor={palette.primary} size={18} style={styles.dragButton} />
+            <IconButton icon={expanded ? "chevron-up" : "chevron-down"} iconColor={palette.primary} size={18} style={styles.dragButton} />
           </View>
         </TouchableRipple>
         {expanded ? <View style={styles.cardStack}>{children}</View> : null}
@@ -4320,6 +3313,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 124,
+    alignItems: "center",
+  },
+  pageContainer: {
+    width: "100%",
+    maxWidth: 1120,
     gap: 28,
   },
   screenStack: {
@@ -4355,20 +3353,20 @@ const styles = StyleSheet.create({
   },
   headerSurface: {
     ...cardShadow,
-    borderRadius: 16,
+    borderRadius: 20,
     paddingHorizontal: 24,
     paddingVertical: 22,
-    backgroundColor: palette.surface,
+    backgroundColor: "#FCFDFC",
     borderWidth: softBorderWidth,
     borderColor: palette.border,
   },
   toolHeaderSurface: {
     ...cardShadow,
-    borderRadius: 14,
+    borderRadius: 20,
     paddingHorizontal: 24,
     paddingTop: 32,
     paddingBottom: 24,
-    backgroundColor: palette.surface,
+    backgroundColor: "#FCFDFC",
     borderWidth: softBorderWidth,
     borderColor: palette.border,
   },
@@ -4633,15 +3631,17 @@ const styles = StyleSheet.create({
   },
   formCard: {
     ...cardShadow,
-    backgroundColor: palette.surface,
+    backgroundColor: "#FCFDFC",
     borderWidth: 1,
     borderColor: palette.border,
+    borderRadius: 24,
   },
   segmentedCard: {
     ...cardShadow,
-    backgroundColor: palette.surface,
+    backgroundColor: "#FCFDFC",
     borderWidth: 1,
     borderColor: palette.border,
+    borderRadius: 24,
   },
   segmentedButtons: {
     backgroundColor: palette.surfaceSoft,
@@ -4649,32 +3649,19 @@ const styles = StyleSheet.create({
   formCardContent: {
     gap: 18,
   },
-  claimInputWrap: {
-    zIndex: 8,
-  },
-  claimInputShell: {
-    position: "relative",
-    marginTop: 8,
-  },
   optionalContextCard: {
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: softBorderWidth,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    borderColor: "rgba(40, 85, 74, 0.08)",
+    backgroundColor: "#F7FBF9",
+    paddingHorizontal: 18,
+    paddingVertical: 18,
   },
   formTitle: {
     color: palette.text,
     fontFamily: "Poppins_700Bold",
   },
   paperInput: {
-    backgroundColor: "#FFFFFF",
-  },
-  claimInputOutline: {
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: "rgba(31, 111, 102, 0.18)",
     backgroundColor: "#FFFFFF",
   },
   inputOutline: {
@@ -4685,56 +3672,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: palette.text,
     lineHeight: 22,
-    paddingTop: 10,
-    paddingLeft: 2,
   },
   multilineInput: {
     minHeight: 110,
-  },
-  claimMultilineInput: {
-    minHeight: 132,
-    backgroundColor: "#FFFFFF",
-  },
-  claimDropdown: {
-    position: "absolute",
-    top: "100%",
-    left: 0,
-    right: 0,
-    marginTop: 8,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: "rgba(255,255,255,0.99)",
-    overflow: "hidden",
-    zIndex: 20,
-    ...cardShadow,
-  },
-  claimDropdownHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: palette.surfaceSoft,
-    borderBottomWidth: 1,
-    borderBottomColor: palette.border,
-  },
-  dropdownHeaderLabel: {
-    color: palette.primary,
-    fontFamily: "Poppins_600SemiBold",
-  },
-  claimDropdownScroll: {
-    maxHeight: 320,
-  },
-  claimDropdownRow: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  dropdownMetaText: {
-    color: palette.muted,
-  },
-  consultantSecondaryScroller: {
-    flex: 1,
   },
   segmentRow: {
     flexDirection: "row",
@@ -4796,12 +3736,15 @@ const styles = StyleSheet.create({
   },
   processingCard: {
     ...cardShadow,
-    backgroundColor: palette.surface,
+    backgroundColor: "#FCFDFC",
     borderWidth: 1,
-    borderColor: palette.border,
+    borderColor: "rgba(40, 85, 74, 0.08)",
+    borderRadius: 24,
   },
   progressChip: {
     backgroundColor: palette.primarySoft,
+    borderWidth: 1,
+    borderColor: "rgba(40, 85, 74, 0.12)",
   },
   progressChipText: {
     color: palette.primary,
@@ -4813,12 +3756,6 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surfaceMuted,
   },
   stepRow: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -4866,10 +3803,10 @@ const styles = StyleSheet.create({
   },
   resultHero: {
     ...cardShadow,
-    backgroundColor: palette.surface,
+    backgroundColor: "#FEFFFE",
     borderWidth: 1,
-    borderColor: palette.border,
-    borderRadius: 16,
+    borderColor: "rgba(40, 85, 74, 0.08)",
+    borderRadius: 28,
   },
   resultTitle: {
     color: palette.text,
@@ -4906,8 +3843,10 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexBasis: 105,
     minWidth: 0,
-    borderRadius: 12,
-    backgroundColor: palette.surfaceSoft,
+    borderRadius: 18,
+    backgroundColor: "#F6FBF8",
+    borderWidth: 1,
+    borderColor: "rgba(40, 85, 74, 0.08)",
     paddingHorizontal: 14,
     paddingVertical: 14,
     gap: 6,
@@ -4927,10 +3866,10 @@ const styles = StyleSheet.create({
   },
   resultSectionCard: {
     ...cardShadow,
-    backgroundColor: palette.surface,
+    backgroundColor: "#FCFDFC",
     borderWidth: softBorderWidth,
-    borderColor: palette.border,
-    borderRadius: 16,
+    borderColor: "rgba(40, 85, 74, 0.08)",
+    borderRadius: 24,
   },
   expandableHeader: {
     borderRadius: 12,
@@ -4968,10 +3907,10 @@ const styles = StyleSheet.create({
   },
   evidenceCard: {
     ...cardShadow,
-    backgroundColor: palette.surface,
+    backgroundColor: "#FEFFFE",
     borderWidth: softBorderWidth,
-    borderColor: palette.border,
-    borderRadius: 16,
+    borderColor: "rgba(40, 85, 74, 0.08)",
+    borderRadius: 18,
   },
   evidenceTitle: {
     color: palette.text,
@@ -5034,13 +3973,47 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
   },
   searchbar: {
-    borderRadius: 14,
-    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    backgroundColor: "#FCFDFC",
     borderWidth: 1,
-    borderColor: palette.border,
+    borderColor: "rgba(16, 24, 40, 0.08)",
+  },
+  floatingFieldWrap: {
+    position: "relative",
+    zIndex: 12,
   },
   searchbarInput: {
     fontFamily: "Poppins_400Regular",
+    fontSize: 15,
+    minHeight: 54,
+    paddingHorizontal: 14,
+  },
+  suggestionFlyout: {
+    ...floatingShadow,
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 66,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(16, 24, 40, 0.08)",
+    borderRadius: 22,
+  },
+  suggestionFlyoutContent: {
+    gap: 12,
+    paddingVertical: 12,
+  },
+  suggestionGroup: {
+    gap: 6,
+  },
+  suggestionDivider: {
+    borderTopWidth: 1,
+    borderTopColor: palette.border,
+  },
+  suggestionLoadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   chipRow: {
     gap: 10,
@@ -5080,7 +4053,7 @@ const styles = StyleSheet.create({
   },
   historyCard: {
     ...cardShadow,
-    borderRadius: 14,
+    borderRadius: 20,
     backgroundColor: palette.surface,
     borderWidth: softBorderWidth,
     borderColor: palette.border,
@@ -5111,9 +4084,9 @@ const styles = StyleSheet.create({
     borderColor: "#E2C46C",
     backgroundColor: "#FFFBEF",
   },
-  historyCardDragArmed: {
+  historyCardDragging: {
     borderColor: palette.primary,
-    backgroundColor: "#F5FCFA",
+    backgroundColor: "#F7FCFA",
   },
   dragButton: {
     margin: 0,
@@ -5125,35 +4098,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 2,
-  },
-  mobileDragHintWrap: {
-    marginLeft: "auto",
-    alignSelf: "flex-end",
-  },
-  mobileDragBadge: {
-    minWidth: 54,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: palette.border,
-    backgroundColor: palette.surfaceSoft,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  mobileDragBadgeActive: {
-    borderColor: palette.primary,
-    backgroundColor: palette.primarySoft,
-  },
-  mobileDragBadgeText: {
-    color: palette.muted,
-    fontSize: 11,
-    lineHeight: 14,
-    textAlign: "center",
-    fontFamily: "Poppins_600SemiBold",
-  },
-  mobileDragBadgeTextActive: {
-    color: palette.primary,
   },
   historyVerdictMark: {
     width: 34,
@@ -5199,10 +4143,11 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     borderWidth: 1,
     borderColor: palette.border,
+    borderRadius: 24,
   },
   loadingCardContent: {
-    minHeight: 168,
-    alignItems: "center",
+    minHeight: 220,
+    alignItems: "stretch",
     justifyContent: "center",
     gap: 12,
   },
@@ -5245,31 +4190,31 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 20,
     right: 20,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.98)",
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.96)",
     borderWidth: 1,
-    borderColor: palette.border,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderColor: "rgba(16, 24, 40, 0.08)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: "row",
     justifyContent: "space-between",
   },
   bottomTabItem: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 18,
   },
   bottomTabContent: {
     alignItems: "center",
-    gap: 6,
+    gap: 7,
     paddingVertical: 6,
   },
   bottomTabBubble: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: palette.surfaceSoft,
+    backgroundColor: "#F3F7F4",
   },
   bottomTabBubbleSelected: {
     backgroundColor: palette.primarySoft,
@@ -5283,21 +4228,54 @@ const styles = StyleSheet.create({
   bottomTabLabel: {
     color: palette.primary,
     fontFamily: "Poppins_500Medium",
+    fontSize: 11,
   },
   bottomTabLabelSelected: {
     color: palette.primary,
     fontFamily: "Poppins_700Bold",
+    fontSize: 11,
   },
   snackbar: {
     backgroundColor: palette.text,
     bottom: 116,
   },
   scoreChip: {
-    backgroundColor: palette.primarySoft,
+    borderRadius: 999,
+    paddingHorizontal: 4,
   },
   scoreChipText: {
+    fontFamily: "Poppins_700Bold",
+  },
+  loadingBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: palette.primarySoft,
+  },
+  loadingBadgeText: {
     color: palette.primary,
     fontFamily: "Poppins_700Bold",
+    fontSize: 11,
+    textTransform: "uppercase",
+  },
+  loadingTitle: {
+    color: palette.text,
+    fontFamily: "Poppins_700Bold",
+  },
+  loadingSkeleton: {
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: "#E7EEE9",
+  },
+  loadingSkeletonShort: {
+    width: "52%",
+  },
+  loadingSkeletonMedium: {
+    width: "72%",
+  },
+  loadingSkeletonLong: {
+    width: "100%",
   },
   comparisonCard: {
     ...cardShadow,

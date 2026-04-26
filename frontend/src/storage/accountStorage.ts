@@ -7,6 +7,7 @@ import {
   signInWithPopup,
   signOut
 } from "firebase/auth";
+import { Platform } from "react-native";
 
 import { auth } from "../lib/firebaseClient";
 
@@ -89,6 +90,9 @@ export async function loginOrRegisterAccount(email, password) {
 export async function signInWithGoogleAccount() {
   if (!auth) {
     throw new Error("Firebase authentication is not configured for this build.");
+  }
+  if (Platform.OS !== "web") {
+    throw new Error("Google sign-in is only supported on web in this build. Use email/password on mobile.");
   }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
