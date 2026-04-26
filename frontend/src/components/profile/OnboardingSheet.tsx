@@ -87,13 +87,13 @@ function normalizeFreeformTerm(rawValue, allowedOptions) {
 }
 
 async function fetchGoogleAutocomplete(query, contextHint = "", requestApi) {
-    const cleaned = cleanTagValue(query);
-    if (typeof requestApi !== "function") {
-      return [];
-    }
-    if (!cleaned || cleaned.length < 2) {
-      return [];
-    }
+  const cleaned = cleanTagValue(query);
+  if (typeof requestApi !== "function") {
+    return [];
+  }
+  if (!cleaned || cleaned.length < 2) {
+    return [];
+  }
   try {
     if (typeof requestApi !== "function") {
       return [];
@@ -326,306 +326,306 @@ export default function OnboardingSheet({
           </Card>
 
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboardArea}>
-          <ScrollView
-            style={styles.scrollArea}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-          >
-            {loading ? (
-              <Card mode="contained" style={styles.sectionCard}>
-                <Card.Content>
-                  <Text variant="bodyMedium" style={styles.bodyText}>
-                    Loading your profile...
-                  </Text>
-                </Card.Content>
-              </Card>
-            ) : (
-              <>
-                {currentStep.key === "account" ? (
-                  <>
-                    <Card mode="contained" style={styles.sectionCard}>
-                      <Card.Content style={styles.cardStack}>
-                        <Text variant="titleMedium" style={styles.sectionTitle}>
-                          Create an account or stay local
-                        </Text>
-                        <Text variant="bodySmall" style={styles.bodyText}>
-                          Sign in with email and password if you want your profile and history restored across devices. If you continue without an account, GramWIN keeps everything local on this device.
-                        </Text>
-                        {activeAccount ? (
-                          <View style={styles.accountPill}>
-                            <MaterialCommunityIcons name="cloud-check-outline" size={18} color={palette.primary} />
-                            <Text variant="bodyMedium" style={styles.accountText}>
-                              Signed in as {activeAccount.email}
+            <ScrollView
+              style={styles.scrollArea}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            >
+              {loading ? (
+                <Card mode="contained" style={styles.sectionCard}>
+                  <Card.Content>
+                    <Text variant="bodyMedium" style={styles.bodyText}>
+                      Loading your profile...
+                    </Text>
+                  </Card.Content>
+                </Card>
+              ) : (
+                <>
+                  {currentStep.key === "account" ? (
+                    <>
+                      <Card mode="contained" style={styles.sectionCard}>
+                        <Card.Content style={styles.cardStack}>
+                          <Text variant="titleMedium" style={styles.sectionTitle}>
+                            Create an account or stay local
+                          </Text>
+                          <Text variant="bodySmall" style={styles.bodyText}>
+                            Sign in with email and password if you want your profile and history restored across devices. If you continue without an account, GramWIN keeps everything local on this device.
+                          </Text>
+                          {activeAccount ? (
+                            <View style={styles.accountPill}>
+                              <MaterialCommunityIcons name="cloud-check-outline" size={18} color={palette.primary} />
+                              <Text variant="bodyMedium" style={styles.accountText}>
+                                Signed in as {activeAccount.email}
+                              </Text>
+                            </View>
+                          ) : (
+                            <AuthGate
+                              onAuthenticate={async (email, password) => {
+                                const account = await onAuthenticate?.(email, password);
+                                await refreshDraftForAccount(account?.id, account?.email);
+                              }}
+                              loading={authLoading}
+                              title="Create an account or sign in"
+                              subtitle="Email and password only for now. You can also skip and keep everything local on this device."
+                            />
+                          )}
+                          <View style={styles.storageInfoCard}>
+                            <MaterialCommunityIcons
+                              name={activeAccount ? "cloud-sync-outline" : "cellphone-lock"}
+                              size={18}
+                              color={activeAccount ? palette.primary : palette.text}
+                            />
+                            <Text variant="bodySmall" style={styles.bodyText}>
+                              {activeAccount
+                                ? "Your profile will sync to your account. If you sign out, local data clears from this device and reloads the next time you sign back in."
+                                : "No account means local-only storage on this device. You can add an account later if you want cloud restore."}
                             </Text>
                           </View>
-                        ) : (
-                          <AuthGate
-                            onAuthenticate={async (email, password) => {
-                              const account = await onAuthenticate?.(email, password);
-                              await refreshDraftForAccount(account?.id, account?.email);
-                            }}
-                            loading={authLoading}
-                            title="Create an account or sign in"
-                            subtitle="Email and password only for now. You can also skip and keep everything local on this device."
-                          />
-                        )}
-                        <View style={styles.storageInfoCard}>
-                          <MaterialCommunityIcons
-                            name={activeAccount ? "cloud-sync-outline" : "cellphone-lock"}
-                            size={18}
-                            color={activeAccount ? palette.primary : palette.text}
-                          />
-                          <Text variant="bodySmall" style={styles.bodyText}>
-                            {activeAccount
-                              ? "Your profile will sync to your account. If you sign out, local data clears from this device and reloads the next time you sign back in."
-                              : "No account means local-only storage on this device. You can add an account later if you want cloud restore."}
-                          </Text>
-                        </View>
-                      </Card.Content>
-                    </Card>
-                  </>
-                ) : null}
+                        </Card.Content>
+                      </Card>
+                    </>
+                  ) : null}
 
-                {currentStep.key === "basic" ? (
+                  {currentStep.key === "basic" ? (
                     <Card mode="contained" style={styles.sectionCard}>
                       <Card.Content style={styles.cardStack}>
                         <Text variant="titleMedium" style={styles.sectionTitle}>
                           Basic information
                         </Text>
-                      <Field label="Name (optional)" value={draft.name} onChangeText={(value) => updateField("name", value)} placeholder="Preferred name" />
-                      <Field label="Age" value={draft.age} onChangeText={(value) => updateField("age", value)} placeholder="Age" keyboardType="numeric" />
-                      <ChoiceChips label="Sex" value={draft.gender} options={SEX_OPTIONS} onSelect={(value) => updateField("gender", value)} />
-                      <Field label="Country" value={draft.country} onChangeText={(value) => updateField("country", value)} placeholder="Country" />
-                      <Field label="Region / city (optional)" value={draft.region} onChangeText={(value) => updateField("region", value)} placeholder="Region or city" />
-                    </Card.Content>
-                  </Card>
-                ) : null}
-
-                {currentStep.key === "body" ? (
-                  <>
-                    <Card mode="contained" style={styles.sectionCard}>
-                      <Card.Content style={styles.cardStack}>
-                        <Text variant="titleMedium" style={styles.sectionTitle}>
-                          Body metrics
-                        </Text>
-                        <Field label="Height (cm)" value={draft.height} onChangeText={(value) => updateField("height", value)} placeholder="Height in cm" keyboardType="numeric" />
-                        <Field label="Weight (kg)" value={draft.weight} onChangeText={(value) => updateField("weight", value)} placeholder="Weight in kg" keyboardType="numeric" />
-                        <Field label="Body fat % (optional)" value={draft.bodyFatPercentage} onChangeText={(value) => updateField("bodyFatPercentage", value)} placeholder="Body fat percentage" keyboardType="numeric" />
-                        <Field label="Muscle mass (optional)" value={draft.muscleMass} onChangeText={(value) => updateField("muscleMass", value)} placeholder="Muscle mass estimate" keyboardType="numeric" />
-                        <Field label="Waist circumference (optional)" value={draft.waistCircumference} onChangeText={(value) => updateField("waistCircumference", value)} placeholder="Waist circumference" keyboardType="numeric" />
+                        <Field label="Name (optional)" value={draft.name} onChangeText={(value) => updateField("name", value)} placeholder="Preferred name" />
+                        <Field label="Age" value={draft.age} onChangeText={(value) => updateField("age", value)} placeholder="Age" keyboardType="numeric" />
+                        <ChoiceChips label="Sex" value={draft.gender} options={SEX_OPTIONS} onSelect={(value) => updateField("gender", value)} />
+                        <Field label="Country" value={draft.country} onChangeText={(value) => updateField("country", value)} placeholder="Country" />
+                        <Field label="Region / city (optional)" value={draft.region} onChangeText={(value) => updateField("region", value)} placeholder="Region or city" />
                       </Card.Content>
                     </Card>
-                    <Card mode="contained" style={styles.sectionCard}>
-                      <Card.Content style={styles.cardStack}>
-                        <Text variant="titleMedium" style={styles.sectionTitle}>
-                          Current snapshot
-                        </Text>
-                        <SummaryStat label="BMI" value={typeof bmiValue === "number" ? bmiValue.toFixed(1) : "Waiting for height and weight"} />
-                        <SummaryStat label="Basal metabolic rate" value={typeof bmrValue === "number" ? `${Math.round(bmrValue)} kcal/day` : "Waiting for age, sex, height, and weight"} />
-                      </Card.Content>
-                    </Card>
-                  </>
-                ) : null}
+                  ) : null}
 
-                {currentStep.key === "health" ? (
-                  <>
+                  {currentStep.key === "body" ? (
+                    <>
+                      <Card mode="contained" style={styles.sectionCard}>
+                        <Card.Content style={styles.cardStack}>
+                          <Text variant="titleMedium" style={styles.sectionTitle}>
+                            Body metrics
+                          </Text>
+                          <Field label="Height (cm)" value={draft.height} onChangeText={(value) => updateField("height", value)} placeholder="Height in cm" keyboardType="numeric" />
+                          <Field label="Weight (kg)" value={draft.weight} onChangeText={(value) => updateField("weight", value)} placeholder="Weight in kg" keyboardType="numeric" />
+                          <Field label="Body fat % (optional)" value={draft.bodyFatPercentage} onChangeText={(value) => updateField("bodyFatPercentage", value)} placeholder="Body fat percentage" keyboardType="numeric" />
+                          <Field label="Muscle mass (optional)" value={draft.muscleMass} onChangeText={(value) => updateField("muscleMass", value)} placeholder="Muscle mass estimate" keyboardType="numeric" />
+                          <Field label="Waist circumference (optional)" value={draft.waistCircumference} onChangeText={(value) => updateField("waistCircumference", value)} placeholder="Waist circumference" keyboardType="numeric" />
+                        </Card.Content>
+                      </Card>
+                      <Card mode="contained" style={styles.sectionCard}>
+                        <Card.Content style={styles.cardStack}>
+                          <Text variant="titleMedium" style={styles.sectionTitle}>
+                            Current snapshot
+                          </Text>
+                          <SummaryStat label="BMI" value={typeof bmiValue === "number" ? bmiValue.toFixed(1) : "Waiting for height and weight"} />
+                          <SummaryStat label="Basal metabolic rate" value={typeof bmrValue === "number" ? `${Math.round(bmrValue)} kcal/day` : "Waiting for age, sex, height, and weight"} />
+                        </Card.Content>
+                      </Card>
+                    </>
+                  ) : null}
+
+                  {currentStep.key === "health" ? (
+                    <>
                       <SearchableTagSelectorCard
                         title="Health conditions"
                         label="Search, browse by category, or add a messy term and GramWIN will normalize it."
                         groups={HEALTH_CONDITION_GROUPS}
                         requestApi={requestApi}
                         values={draft.healthConditionTags}
-                      onToggle={(value) => toggleFieldItem("healthConditionTags", value, HEALTH_CONDITION_GROUPS.flatMap((group) => group.options))}
-                      noteLabel="Condition notes"
-                      noteValue={draft.healthConditionNotes}
-                      onNoteChange={(value) => updateField("healthConditionNotes", value)}
-                      notePlaceholder="Add extra context such as severity, diagnosis, or current management."
-                    />
-                    <SearchableTagSelectorCard
-                      title="Allergies"
-                      groups={ALLERGY_GROUPS}
-                      requestApi={requestApi}
-                      values={draft.allergyTags}
-                      onToggle={(value) => toggleFieldItem("allergyTags", value, ALLERGY_GROUPS.flatMap((group) => group.options))}
-                      extraContent={
-                        <ChoiceChips
-                          label="Highest allergy severity"
-                          value={draft.allergySeverity}
-                          options={ALLERGY_SEVERITY_OPTIONS}
-                          onSelect={(value) => updateField("allergySeverity", value)}
-                        />
-                      }
-                      noteLabel="Allergy notes"
-                      noteValue={draft.allergyNotes}
-                      onNoteChange={(value) => updateField("allergyNotes", value)}
-                      notePlaceholder="Add custom allergies or reactions."
-                    />
-                    <SearchableTagSelectorCard
-                      title="Family history"
-                      label="Track hereditary risks that could shape health, diet, or activity guidance."
-                      groups={FAMILY_HISTORY_GROUPS}
-                      requestApi={requestApi}
-                      values={draft.familyHistoryTags}
-                      onToggle={(value) => toggleFieldItem("familyHistoryTags", value, FAMILY_HISTORY_GROUPS.flatMap((group) => group.options))}
-                      noteLabel="Family history notes"
-                      noteValue={draft.familyHistoryNotes}
-                      onNoteChange={(value) => updateField("familyHistoryNotes", value)}
-                      notePlaceholder="Optional details like relation or age of onset."
-                    />
-                  </>
-                ) : null}
-
-                {currentStep.key === "lifestyle" ? (
-                  <Card mode="contained" style={styles.sectionCard}>
-                    <Card.Content style={styles.cardStack}>
-                      <ChoiceChips label="Activity level" value={draft.activityLevel} options={ACTIVITY_LEVEL_OPTIONS} onSelect={(value) => updateField("activityLevel", value)} />
-                      <Field label="Average steps / day (optional)" value={draft.averageStepsPerDay} onChangeText={(value) => updateField("averageStepsPerDay", value)} placeholder="Average steps per day" keyboardType="numeric" />
-                      <Field label="Average sleep hours" value={draft.sleepHours} onChangeText={(value) => updateField("sleepHours", value)} placeholder="e.g. 7.5" keyboardType="numeric" />
-                      <ChoiceChips label="Sleep quality" value={draft.sleepQuality} options={SLEEP_QUALITY_OPTIONS} onSelect={(value) => updateField("sleepQuality", value)} />
-                      <ChoiceChips label="Stress level" value={draft.stressLevel} options={STRESS_LEVEL_OPTIONS} onSelect={(value) => updateField("stressLevel", value)} />
-                      <ChoiceChips label="Smoking" value={draft.smoking} options={SMOKING_OPTIONS} onSelect={(value) => updateField("smoking", value)} />
-                      <ChoiceChips label="Alcohol" value={draft.alcohol} options={ALCOHOL_OPTIONS} onSelect={(value) => updateField("alcohol", value)} />
-                      <ChoiceChips label="Caffeine intake" value={draft.caffeineIntake} options={CAFFEINE_OPTIONS} onSelect={(value) => updateField("caffeineIntake", value)} />
-                    </Card.Content>
-                  </Card>
-                ) : null}
-
-                {currentStep.key === "diet" ? (
-                  <Card mode="contained" style={styles.sectionCard}>
-                    <Card.Content style={styles.cardStack}>
-                      <SearchableSingleSelectCard
-                        title="Diet type"
-                        groups={DIET_TYPE_GROUPS}
-                        requestApi={requestApi}
-                        value={draft.dietType}
-                        onSelect={(value) => updateField("dietType", value)}
-                      />
-                      <SearchableSingleSelectCard
-                        title="Eating pattern"
-                        groups={EATING_PATTERN_GROUPS}
-                        requestApi={requestApi}
-                        value={draft.eatingPattern}
-                        onSelect={(value) => updateField("eatingPattern", value)}
+                        onToggle={(value) => toggleFieldItem("healthConditionTags", value, HEALTH_CONDITION_GROUPS.flatMap((group) => group.options))}
+                        noteLabel="Condition notes"
+                        noteValue={draft.healthConditionNotes}
+                        onNoteChange={(value) => updateField("healthConditionNotes", value)}
+                        notePlaceholder="Add extra context such as severity, diagnosis, or current management."
                       />
                       <SearchableTagSelectorCard
-                        title="Religious or cultural restrictions"
-                        label="Add dietary rules that matter for food and supplement analysis."
-                        groups={[{ label: "Common restrictions", options: RELIGIOUS_RESTRICTION_OPTIONS }]}
+                        title="Allergies"
+                        groups={ALLERGY_GROUPS}
                         requestApi={requestApi}
-                        values={draft.religiousRestrictionTags}
-                        onToggle={(value) => toggleFieldItem("religiousRestrictionTags", value, RELIGIOUS_RESTRICTION_OPTIONS)}
+                        values={draft.allergyTags}
+                        onToggle={(value) => toggleFieldItem("allergyTags", value, ALLERGY_GROUPS.flatMap((group) => group.options))}
+                        extraContent={
+                          <ChoiceChips
+                            label="Highest allergy severity"
+                            value={draft.allergySeverity}
+                            options={ALLERGY_SEVERITY_OPTIONS}
+                            onSelect={(value) => updateField("allergySeverity", value)}
+                          />
+                        }
+                        noteLabel="Allergy notes"
+                        noteValue={draft.allergyNotes}
+                        onNoteChange={(value) => updateField("allergyNotes", value)}
+                        notePlaceholder="Add custom allergies or reactions."
                       />
-                      <SearchableFreeformTagCard
-                        title="Food dislikes or food rules"
-                        values={draft.foodDislikeTags}
-                        suggestions={FOOD_PREFERENCE_SUGGESTIONS}
+                      <SearchableTagSelectorCard
+                        title="Family history"
+                        label="Track hereditary risks that could shape health, diet, or activity guidance."
+                        groups={FAMILY_HISTORY_GROUPS}
                         requestApi={requestApi}
-                        placeholder="Search food dislikes, restrictions, or preferences"
-                        onAdd={(value) => toggleFieldItem("foodDislikeTags", value, FOOD_PREFERENCE_SUGGESTIONS)}
-                        onRemove={(value) => toggleFieldItem("foodDislikeTags", value, FOOD_PREFERENCE_SUGGESTIONS)}
+                        values={draft.familyHistoryTags}
+                        onToggle={(value) => toggleFieldItem("familyHistoryTags", value, FAMILY_HISTORY_GROUPS.flatMap((group) => group.options))}
+                        noteLabel="Family history notes"
+                        noteValue={draft.familyHistoryNotes}
+                        onNoteChange={(value) => updateField("familyHistoryNotes", value)}
+                        notePlaceholder="Optional details like relation or age of onset."
                       />
-                    </Card.Content>
-                  </Card>
-                ) : null}
+                    </>
+                  ) : null}
 
-                {currentStep.key === "goals" ? (
-                  <>
-                    <SearchableTagSelectorCard
-                      title="Diet goals"
-                      label="Pick the main outcomes you want your food analysis to optimize for."
-                      groups={DIET_GOAL_GROUPS}
-                      requestApi={requestApi}
-                      values={draft.goalTags}
-                      onToggle={(value) => toggleFieldItem("goalTags", value, DIET_GOAL_GROUPS.flatMap((group) => group.options))}
-                    />
-                    <SearchableTagSelectorCard
-                      title="Activity goals"
-                      label="Pick the outcomes you want your activity planning to support."
-                      groups={ACTIVITY_GOAL_GROUPS}
-                      requestApi={requestApi}
-                      values={draft.activityGoalTags}
-                      onToggle={(value) => toggleFieldItem("activityGoalTags", value, ACTIVITY_GOAL_GROUPS.flatMap((group) => group.options))}
-                    />
+                  {currentStep.key === "lifestyle" ? (
                     <Card mode="contained" style={styles.sectionCard}>
                       <Card.Content style={styles.cardStack}>
-                        <Text variant="titleMedium" style={styles.sectionTitle}>
-                          Target settings
-                        </Text>
-                        <Field label="Target weight (kg)" value={draft.targetWeight} onChangeText={(value) => updateField("targetWeight", value)} placeholder="kg" keyboardType="numeric" />
-                        <Field label="Daily calorie goal (kcal/day)" value={draft.dailyCalorieTarget} onChangeText={(value) => updateField("dailyCalorieTarget", value)} placeholder="kcal/day" keyboardType="numeric" />
-                        <Field label="Protein target (g/day)" value={draft.proteinTarget} onChangeText={(value) => updateField("proteinTarget", value)} placeholder="g/day" keyboardType="numeric" />
-                        <Field label="Carb target (g/day)" value={draft.carbTarget} onChangeText={(value) => updateField("carbTarget", value)} placeholder="g/day" keyboardType="numeric" />
-                        <Field label="Fat target (g/day)" value={draft.fatTarget} onChangeText={(value) => updateField("fatTarget", value)} placeholder="g/day" keyboardType="numeric" />
-                        <Field label="Sodium limit (mg/day)" value={draft.sodiumLimit} onChangeText={(value) => updateField("sodiumLimit", value)} placeholder="mg/day" keyboardType="numeric" />
-                        <Field label="Sugar limit (g/day)" value={draft.sugarLimit} onChangeText={(value) => updateField("sugarLimit", value)} placeholder="g/day" keyboardType="numeric" />
+                        <ChoiceChips label="Activity level" value={draft.activityLevel} options={ACTIVITY_LEVEL_OPTIONS} onSelect={(value) => updateField("activityLevel", value)} />
+                        <Field label="Average steps / day (optional)" value={draft.averageStepsPerDay} onChangeText={(value) => updateField("averageStepsPerDay", value)} placeholder="Average steps per day" keyboardType="numeric" />
+                        <Field label="Average sleep hours" value={draft.sleepHours} onChangeText={(value) => updateField("sleepHours", value)} placeholder="e.g. 7.5" keyboardType="numeric" />
+                        <ChoiceChips label="Sleep quality" value={draft.sleepQuality} options={SLEEP_QUALITY_OPTIONS} onSelect={(value) => updateField("sleepQuality", value)} />
+                        <ChoiceChips label="Stress level" value={draft.stressLevel} options={STRESS_LEVEL_OPTIONS} onSelect={(value) => updateField("stressLevel", value)} />
+                        <ChoiceChips label="Smoking" value={draft.smoking} options={SMOKING_OPTIONS} onSelect={(value) => updateField("smoking", value)} />
+                        <ChoiceChips label="Alcohol" value={draft.alcohol} options={ALCOHOL_OPTIONS} onSelect={(value) => updateField("alcohol", value)} />
+                        <ChoiceChips label="Caffeine intake" value={draft.caffeineIntake} options={CAFFEINE_OPTIONS} onSelect={(value) => updateField("caffeineIntake", value)} />
                       </Card.Content>
                     </Card>
-                  </>
-                ) : null}
+                  ) : null}
 
-                {currentStep.key === "medical" ? (
-                  <>
-                    <SearchableTagSelectorCard
-                      title="Current medications"
-                      label="Search common medications or add your own."
-                      groups={[
-                        { label: "Common medications", options: COMMON_MEDICATION_OPTIONS },
-                        { label: "Drug library", options: DRUG_LIBRARY_OPTIONS },
-                      ]}
-                      requestApi={requestApi}
-                      values={draft.medicationTags}
-                      onToggle={(value) => toggleFieldItem("medicationTags", value, [...COMMON_MEDICATION_OPTIONS, ...DRUG_LIBRARY_OPTIONS])}
-                      noteLabel="Medication details"
-                      noteValue={draft.medicationDetails}
-                      onNoteChange={(value) => updateField("medicationDetails", value)}
-                      notePlaceholder="Name, dosage, frequency, purpose"
-                    />
-                    <SearchableTagSelectorCard
-                      title="Supplements"
-                      label="Search common supplements or add your current stack."
-                      groups={[{ label: "Common supplements", options: COMMON_SUPPLEMENT_OPTIONS }]}
-                      requestApi={requestApi}
-                      values={draft.supplementTags}
-                      onToggle={(value) => toggleFieldItem("supplementTags", value, COMMON_SUPPLEMENT_OPTIONS)}
-                      noteLabel="Supplement details"
-                      noteValue={draft.supplementDetails}
-                      onNoteChange={(value) => updateField("supplementDetails", value)}
-                      notePlaceholder="Form, dosage, frequency, reason"
-                    />
+                  {currentStep.key === "diet" ? (
                     <Card mode="contained" style={styles.sectionCard}>
                       <Card.Content style={styles.cardStack}>
-                        <Field
-                          label="Extra medical or supplement context"
-                          value={draft.medicalHistory}
-                          onChangeText={(value) => updateField("medicalHistory", value)}
-                          placeholder="Extra context"
-                          multiline
+                        <SearchableSingleSelectCard
+                          title="Diet type"
+                          groups={DIET_TYPE_GROUPS}
+                          requestApi={requestApi}
+                          value={draft.dietType}
+                          onSelect={(value) => updateField("dietType", value)}
+                        />
+                        <SearchableSingleSelectCard
+                          title="Eating pattern"
+                          groups={EATING_PATTERN_GROUPS}
+                          requestApi={requestApi}
+                          value={draft.eatingPattern}
+                          onSelect={(value) => updateField("eatingPattern", value)}
+                        />
+                        <SearchableTagSelectorCard
+                          title="Religious or cultural restrictions"
+                          label="Add dietary rules that matter for food and supplement analysis."
+                          groups={[{ label: "Common restrictions", options: RELIGIOUS_RESTRICTION_OPTIONS }]}
+                          requestApi={requestApi}
+                          values={draft.religiousRestrictionTags}
+                          onToggle={(value) => toggleFieldItem("religiousRestrictionTags", value, RELIGIOUS_RESTRICTION_OPTIONS)}
+                        />
+                        <SearchableFreeformTagCard
+                          title="Food dislikes or food rules"
+                          values={draft.foodDislikeTags}
+                          suggestions={FOOD_PREFERENCE_SUGGESTIONS}
+                          requestApi={requestApi}
+                          placeholder="Search food dislikes, restrictions, or preferences"
+                          onAdd={(value) => toggleFieldItem("foodDislikeTags", value, FOOD_PREFERENCE_SUGGESTIONS)}
+                          onRemove={(value) => toggleFieldItem("foodDislikeTags", value, FOOD_PREFERENCE_SUGGESTIONS)}
                         />
                       </Card.Content>
                     </Card>
-                  </>
-                ) : null}
+                  ) : null}
 
-                {currentStep.key === "privacy" ? (
+                  {currentStep.key === "goals" ? (
+                    <>
+                      <SearchableTagSelectorCard
+                        title="Diet goals"
+                        label="Pick the main outcomes you want your food analysis to optimize for."
+                        groups={DIET_GOAL_GROUPS}
+                        requestApi={requestApi}
+                        values={draft.goalTags}
+                        onToggle={(value) => toggleFieldItem("goalTags", value, DIET_GOAL_GROUPS.flatMap((group) => group.options))}
+                      />
+                      <SearchableTagSelectorCard
+                        title="Activity goals"
+                        label="Pick the outcomes you want your activity planning to support."
+                        groups={ACTIVITY_GOAL_GROUPS}
+                        requestApi={requestApi}
+                        values={draft.activityGoalTags}
+                        onToggle={(value) => toggleFieldItem("activityGoalTags", value, ACTIVITY_GOAL_GROUPS.flatMap((group) => group.options))}
+                      />
+                      <Card mode="contained" style={styles.sectionCard}>
+                        <Card.Content style={styles.cardStack}>
+                          <Text variant="titleMedium" style={styles.sectionTitle}>
+                            Target settings
+                          </Text>
+                          <Field label="Target weight (kg)" value={draft.targetWeight} onChangeText={(value) => updateField("targetWeight", value)} placeholder="kg" keyboardType="numeric" />
+                          <Field label="Daily calorie goal (kcal/day)" value={draft.dailyCalorieTarget} onChangeText={(value) => updateField("dailyCalorieTarget", value)} placeholder="kcal/day" keyboardType="numeric" />
+                          <Field label="Protein target (g/day)" value={draft.proteinTarget} onChangeText={(value) => updateField("proteinTarget", value)} placeholder="g/day" keyboardType="numeric" />
+                          <Field label="Carb target (g/day)" value={draft.carbTarget} onChangeText={(value) => updateField("carbTarget", value)} placeholder="g/day" keyboardType="numeric" />
+                          <Field label="Fat target (g/day)" value={draft.fatTarget} onChangeText={(value) => updateField("fatTarget", value)} placeholder="g/day" keyboardType="numeric" />
+                          <Field label="Sodium limit (mg/day)" value={draft.sodiumLimit} onChangeText={(value) => updateField("sodiumLimit", value)} placeholder="mg/day" keyboardType="numeric" />
+                          <Field label="Sugar limit (g/day)" value={draft.sugarLimit} onChangeText={(value) => updateField("sugarLimit", value)} placeholder="g/day" keyboardType="numeric" />
+                        </Card.Content>
+                      </Card>
+                    </>
+                  ) : null}
+
+                  {currentStep.key === "medical" ? (
+                    <>
+                      <SearchableTagSelectorCard
+                        title="Current medications"
+                        label="Search common medications or add your own."
+                        groups={[
+                          { label: "Common medications", options: COMMON_MEDICATION_OPTIONS },
+                          { label: "Drug library", options: DRUG_LIBRARY_OPTIONS },
+                        ]}
+                        requestApi={requestApi}
+                        values={draft.medicationTags}
+                        onToggle={(value) => toggleFieldItem("medicationTags", value, [...COMMON_MEDICATION_OPTIONS, ...DRUG_LIBRARY_OPTIONS])}
+                        noteLabel="Medication details"
+                        noteValue={draft.medicationDetails}
+                        onNoteChange={(value) => updateField("medicationDetails", value)}
+                        notePlaceholder="Name, dosage, frequency, purpose"
+                      />
+                      <SearchableTagSelectorCard
+                        title="Supplements"
+                        label="Search common supplements or add your current stack."
+                        groups={[{ label: "Common supplements", options: COMMON_SUPPLEMENT_OPTIONS }]}
+                        requestApi={requestApi}
+                        values={draft.supplementTags}
+                        onToggle={(value) => toggleFieldItem("supplementTags", value, COMMON_SUPPLEMENT_OPTIONS)}
+                        noteLabel="Supplement details"
+                        noteValue={draft.supplementDetails}
+                        onNoteChange={(value) => updateField("supplementDetails", value)}
+                        notePlaceholder="Form, dosage, frequency, reason"
+                      />
+                      <Card mode="contained" style={styles.sectionCard}>
+                        <Card.Content style={styles.cardStack}>
+                          <Field
+                            label="Extra medical or supplement context"
+                            value={draft.medicalHistory}
+                            onChangeText={(value) => updateField("medicalHistory", value)}
+                            placeholder="Extra context"
+                            multiline
+                          />
+                        </Card.Content>
+                      </Card>
+                    </>
+                  ) : null}
+
+                  {currentStep.key === "privacy" ? (
                     <Card mode="contained" style={styles.sectionCard}>
                       <Card.Content style={styles.cardStack}>
                         <ChoiceChips label="Insight depth" value={draft.insightDepth} options={INSIGHT_DEPTH_OPTIONS} onSelect={(value) => updateField("insightDepth", value)} />
                         <ChoiceChips label="Recommendation style" value={draft.recommendationStyle} options={RECOMMENDATION_STYLE_OPTIONS} onSelect={(value) => updateField("recommendationStyle", value)} />
-                      <ToggleRow label="Allow data sharing for synced analysis" value={draft.dataSharingConsent} onValueChange={(value) => updateField("dataSharingConsent", value)} />
-                      <ToggleRow label="Share anonymised data" value={draft.shareAnonymisedData} onValueChange={(value) => updateField("shareAnonymisedData", value)} />
-                      <ToggleRow label="Meal reminders" value={draft.notificationMealReminders} onValueChange={(value) => updateField("notificationMealReminders", value)} />
-                      <ToggleRow label="Activity reminders" value={draft.notificationActivityReminders} onValueChange={(value) => updateField("notificationActivityReminders", value)} />
-                      <ToggleRow label="Insight notifications" value={draft.notificationInsights} onValueChange={(value) => updateField("notificationInsights", value)} />
-                      <ToggleRow label="Alerts" value={draft.notificationAlerts} onValueChange={(value) => updateField("notificationAlerts", value)} />
-                      <ToggleRow label="Investigation results" value={draft.notificationInvestigationResults} onValueChange={(value) => updateField("notificationInvestigationResults", value)} />
-                    </Card.Content>
-                  </Card>
-                ) : null}
-              </>
-            )}
-          </ScrollView>
+                        <ToggleRow label="Allow data sharing for synced analysis" value={draft.dataSharingConsent} onValueChange={(value) => updateField("dataSharingConsent", value)} />
+                        <ToggleRow label="Share anonymised data" value={draft.shareAnonymisedData} onValueChange={(value) => updateField("shareAnonymisedData", value)} />
+                        <ToggleRow label="Meal reminders" value={draft.notificationMealReminders} onValueChange={(value) => updateField("notificationMealReminders", value)} />
+                        <ToggleRow label="Activity reminders" value={draft.notificationActivityReminders} onValueChange={(value) => updateField("notificationActivityReminders", value)} />
+                        <ToggleRow label="Insight notifications" value={draft.notificationInsights} onValueChange={(value) => updateField("notificationInsights", value)} />
+                        <ToggleRow label="Alerts" value={draft.notificationAlerts} onValueChange={(value) => updateField("notificationAlerts", value)} />
+                        <ToggleRow label="Investigation results" value={draft.notificationInvestigationResults} onValueChange={(value) => updateField("notificationInvestigationResults", value)} />
+                      </Card.Content>
+                    </Card>
+                  ) : null}
+                </>
+              )}
+            </ScrollView>
           </KeyboardAvoidingView>
 
           <View style={styles.footer}>
@@ -733,14 +733,14 @@ function SearchableSingleSelectCard({ title, groups, value, onSelect, requestApi
         </View>
       </Pressable>
       {value ? <Chip style={styles.activeValueChip}>{value}</Chip> : null}
-        <SelectionOverlay
-          visible={overlayVisible}
-          title={title}
-          query={query}
-          onQueryChange={setQuery}
-          onClose={() => setOverlayVisible(false)}
-          groups={overlayGroups}
-          renderOption={(option) => (
+      <SelectionOverlay
+        visible={overlayVisible}
+        title={title}
+        query={query}
+        onQueryChange={setQuery}
+        onClose={() => setOverlayVisible(false)}
+        groups={overlayGroups}
+        renderOption={(option) => (
           <Chip
             key={option}
             selected={value === option}
