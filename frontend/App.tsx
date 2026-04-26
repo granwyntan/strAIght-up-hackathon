@@ -362,7 +362,11 @@ function normalizeApiBaseUrl(rawValue?: string | null) {
     return "";
   }
 
-  const withProtocol = /^https?:\/\//.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const preferredScheme =
+    process.env.NODE_ENV === "production" || (Platform.OS === "web" && globalThis.location?.protocol === "https:")
+      ? "https"
+      : "http";
+  const withProtocol = /^https?:\/\//.test(trimmed) ? trimmed : `${preferredScheme}://${trimmed}`;
   return withProtocol.replace(/\/+$/, "").replace("://20.0.2.2", "://10.0.2.2");
 }
 
