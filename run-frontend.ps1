@@ -83,8 +83,9 @@ if (Test-Path $backendEnvFile) {
             $publicFrontendEnv[$key] = $value
             continue
         }
+        # Keep FIREBASE_ prefix as-is (no EXPO_PUBLIC_ conversion)
         if ($line -match '^\s*(FIREBASE_[A-Z0-9_]+)\s*=\s*(.*)$') {
-            $key = "EXPO_PUBLIC_$($matches[1])"
+            $key = $matches[1]
             $value = $matches[2].Trim().Trim('"').Trim("'")
             $publicFrontendEnv[$key] = $value
         }
