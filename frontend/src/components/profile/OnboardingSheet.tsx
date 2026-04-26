@@ -261,16 +261,7 @@ export default function OnboardingSheet({
   }
 
   function continueStep() {
-    // In setup mode, close after first step is completed (user can edit later)
-    if (mode === "setup" && stepIndex === 0) {
-      void persist("complete");
-      return;
-    }
-    if (mode === "setup" && isFinalStep && !activeAccount) {
-      // No account - still complete onboarding and close
-      void persist("complete");
-      return;
-    }
+    // Always go to next page - don't close on first step
     if (isFinalStep) {
       void persist("complete");
       return;
@@ -283,7 +274,8 @@ export default function OnboardingSheet({
   }
 
   function skipForNow() {
-    // Skip just closes modal and saves locally - user can edit profile later
+    // Skip saves any entered data locally and closes modal
+    // User can continue editing profile later
     void persist("skipped");
   }
 
@@ -639,7 +631,7 @@ export default function OnboardingSheet({
                 </Button>
               ) : null}
               <Button mode="contained" onPress={continueStep} loading={saving} disabled={loading} buttonColor={palette.primary}>
-                {mode === "setup" && stepIndex === 0 ? "Save & Close" : isFinalStep ? (mode === "setup" && !activeAccount ? "Sign in to finish" : "Finish setup") : "Continue"}
+                {isFinalStep ? "Finish setup" : "Continue"}
               </Button>
             </View>
           </View>
