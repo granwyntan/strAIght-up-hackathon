@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import {
@@ -9,13 +10,22 @@ import {
     initializeAuth,
 } from "firebase/auth";
 
+function readExpoExtraFirebase() {
+    const extra = Constants?.expoConfig?.extra || Constants?.manifest?.extra || {};
+    return extra?.firebase || {};
+}
+
+const extraFirebase = readExpoExtraFirebase();
+
 const firebaseConfig = {
-    apiKey: process.env.FIREBASE_API_KEY,
-    authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.FIREBASE_APP_ID,
+    // In Expo web (including Vercel builds), runtime env vars without EXPO_PUBLIC_ are not exposed
+    // to the browser bundle. We inject FIREBASE_* into `expo.extra.firebase` via `app.config.js`.
+    apiKey: extraFirebase.apiKey || process.env.FIREBASE_API_KEY,
+    authDomain: extraFirebase.authDomain || process.env.FIREBASE_AUTH_DOMAIN,
+    projectId: extraFirebase.projectId || process.env.FIREBASE_PROJECT_ID,
+    storageBucket: extraFirebase.storageBucket || process.env.FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: extraFirebase.messagingSenderId || process.env.FIREBASE_MESSAGING_SENDER_ID,
+    appId: extraFirebase.appId || process.env.FIREBASE_APP_ID,
 };
 
 function ensureFirebaseConfig() {
